@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClubSense — Max Teeple</title>
+    <meta
+      name="description"
+      content="ClubSense is a course-aware golf app and an open grip-sensor stack. The phone maps the hole. A coin-cell sensor in the club tells it which club you hit."
+    />
+    <meta property="og:title" content="ClubSense — Max Teeple" />
+    <meta
+      property="og:description"
+      content="Know every club. Own every yard. A course-aware app and grip-end sensors."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://maxteeple.com/projects/clubsense/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="project">
+    <div class="frame" aria-hidden="true"></div>
+    <header class="bar">
+      <a class="bar-id" href="/">maxteeple.com</a>
+      <span class="status">
+        <span class="dot"></span>
+        online
+      </span>
+    </header>
+
+    <main>
+      <article>
+        <p class="kicker">
+          <a href="/#projects">Projects</a>
+          <span aria-hidden="true"> / </span>
+          ClubSense
+        </p>
+        <div class="title-row">
+          <img
+            src="/projects/clubsense/mark.png"
+            alt=""
+            width="84"
+            height="84"
+          />
+          <div>
+            <h1>ClubSense</h1>
+            <p class="lede">Know every club. Own every yard.</p>
+          </div>
+        </div>
+        <p class="intro">
+          A phone app for the round, and a small sensor that lives in the butt
+          of the grip. The sensor notices the hit and names the club. The phone
+          places the shot on the hole and keeps the distances.
+        </p>
+
+        <section>
+          <h2>The app</h2>
+          <p>
+            The round runs on the phone. OpenStreetMap supplies the hole:
+            fairway, green, bunkers, and yardages to the front, middle, and
+            back. You aim, the app suggests a club from your own history, and
+            a dispersion ellipse shows where that club actually finishes, not
+            a generic circle. After the shot, you mark the landing. Carry,
+            miss direction, score, and a hole replay stay with the round.
+          </p>
+          <div class="gallery" tabindex="0">
+            <figure>
+              <img
+                src="/projects/clubsense/home-hero.jpg"
+                alt="ClubSense home with last round at Pine Canyon and scoring form"
+                width="270"
+                height="600"
+              />
+              <figcaption>Home. Last round, scoring form, and a start button.</figcaption>
+            </figure>
+            <figure>
+              <img
+                src="/projects/clubsense/round-aim-dispersion.jpg"
+                alt="Aim shot on hole 2 with yardages and a driver dispersion ring on the pin"
+                width="270"
+                height="600"
+              />
+              <figcaption>On the hole. Aim line, green depths, and the club’s spread on the pin.</figcaption>
+            </figure>
+            <figure>
+              <img
+                src="/projects/clubsense/bag-setup.jpg"
+                alt="Bag setup listing driver, woods, and irons with pair sensor actions"
+                width="270"
+                height="600"
+              />
+              <figcaption>The bag. Each club keeps an average and a one-time sensor pairing.</figcaption>
+            </figure>
+            <figure>
+              <img
+                src="/projects/clubsense/club-dispersion.jpg"
+                alt="4 iron dispersion plot with a 90 percent ellipse left of the aim line"
+                width="270"
+                height="600"
+              />
+              <figcaption>Per club. Average, longest, and the real miss pattern.</figcaption>
+            </figure>
+            <figure>
+              <img
+                src="/projects/clubsense/hole-replay.jpg"
+                alt="Hole replay of a par 5 with driver and 7 iron shots drawn on the map"
+                width="270"
+                height="600"
+              />
+              <figcaption>Replay. The saved hole, shot by shot, back on the map.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section>
+          <h2>The hardware</h2>
+          <p>
+            Each club gets a coin-cell board in the grip cap. It sleeps until
+            the swing, detects impact with a 6-axis IMU, and sends a short
+            Bluetooth advertisement. The phone matches that id to a club. It
+            does not keep fourteen connections open during the round. GPS stays
+            on the phone.
+          </p>
+          <p class="note">
+            The course app is in preview builds. The grip firmware is the piece
+            in bring-up on the bench.
+          </p>
+          <dl class="stack">
+            <div>
+              <dt>Board</dt>
+              <dd>Seeed XIAO nRF52840 Sense Plus, sitting in the butt of the grip</dd>
+            </div>
+            <div>
+              <dt>Radio</dt>
+              <dd>nRF52840, advertisement bursts only</dd>
+            </div>
+            <div>
+              <dt>Motion</dt>
+              <dd>6-axis IMU. Wake on the swing, tag the impact</dd>
+            </div>
+            <div>
+              <dt>Power</dt>
+              <dd>CR2032 coin cell. No pack to charge on every club</dd>
+            </div>
+            <div>
+              <dt>Phone</dt>
+              <dd>Expo and React Native</dd>
+            </div>
+            <div>
+              <dt>Maps</dt>
+              <dd>Leaflet over OpenStreetMap golf features, plus the phone’s GPS</dd>
+            </div>
+          </dl>
+        </section>
+      </article>
+    </main>
+
+    <footer class="bar">
+      <a class="bar-id" href="/#projects">All projects</a>
+      <time id="clock" datetime="">—</time>
+    </footer>
+    <script src="/clock.js"></script>
+  </body>
+</html>

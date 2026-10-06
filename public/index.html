@@ -24,10 +24,10 @@
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
+  <body class="home">
     <div class="frame" aria-hidden="true"></div>
     <header class="bar">
-      <span class="bar-id">maxteeple.com</span>
+      <a class="bar-id" href="/">maxteeple.com</a>
       <span class="status">
         <span class="dot"></span>
         online
@@ -35,38 +35,52 @@
     </header>
 
     <main>
-      <p class="kicker">01 — personal site</p>
-      <h1>Max Teeple</h1>
-      <p class="lede">A place for projects, writing, and a résumé.</p>
-      <nav class="links" aria-label="Contact">
-        <a href="https://github.com/Max-Teeple">GitHub</a>
-        <a href="mailto:max.teeple@gmail.com">Email</a>
-      </nav>
+      <section class="hero">
+        <p class="kicker">01 — personal site</p>
+        <h1>Max Teeple</h1>
+        <p class="lede">A place for projects, writing, and a résumé.</p>
+        <nav class="links" aria-label="On this site">
+          <a href="#projects">Projects</a>
+          <a href="mailto:max.teeple@gmail.com">Email</a>
+        </nav>
+      </section>
+
+      <section class="projects" id="projects">
+        <p class="kicker">02 — projects</p>
+        <a class="spotlight" href="/projects/clubsense/">
+          <img
+            class="spotlight-shot"
+            src="/projects/clubsense/home-hero.jpg"
+            alt="ClubSense home screen over a satellite view of a golf course"
+            width="180"
+            height="320"
+          />
+          <div class="spotlight-copy">
+            <p class="eyebrow">Spotlight</p>
+            <div class="spotlight-head">
+              <img
+                class="spotlight-mark"
+                src="/projects/clubsense/mark.png"
+                alt=""
+                width="56"
+                height="56"
+              />
+              <h2>ClubSense</h2>
+            </div>
+            <p>
+              Grip-end sensors and a course-aware app that record which club
+              you hit, and how far it actually went.
+            </p>
+            <span class="more">Open project</span>
+          </div>
+        </a>
+      </section>
     </main>
 
     <footer class="bar">
-      <span>static · cloudflare pages</span>
+      <span>static · cloudflare</span>
       <time id="clock" datetime="">—</time>
     </footer>
-
-    <script>
-      const clock = document.getElementById("clock");
-      const format = new Intl.DateTimeFormat("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hourCycle: "h23",
-        timeZone: "UTC",
-      });
-
-      function tick() {
-        const now = new Date();
-        clock.dateTime = now.toISOString();
-        clock.textContent = format.format(now) + " UTC";
-      }
-
-      tick();
-      setInterval(tick, 1000);
-    </script>
+    <script src="/clock.js"></script>
   </body>
 </html>
