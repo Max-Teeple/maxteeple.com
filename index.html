@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Max Teeple</title>
+    <meta
+      name="description"
+      content="Personal site of Max Teeple. Projects, writing, and a résumé."
+    />
+    <meta property="og:title" content="Max Teeple" />
+    <meta
+      property="og:description"
+      content="Personal site of Max Teeple. Projects, writing, and a résumé."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://maxteeple.com" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="frame" aria-hidden="true"></div>
+    <header class="bar">
+      <span class="bar-id">maxteeple.com</span>
+      <span class="status">
+        <span class="dot"></span>
+        online
+      </span>
+    </header>
+
+    <main>
+      <p class="kicker">01 — personal site</p>
+      <h1>Max Teeple</h1>
+      <p class="lede">A place for projects, writing, and a résumé.</p>
+      <nav class="links" aria-label="Contact">
+        <a href="https://github.com/Max-Teeple">GitHub</a>
+        <a href="mailto:max.teeple@gmail.com">Email</a>
+      </nav>
+    </main>
+
+    <footer class="bar">
+      <span>static · cloudflare pages</span>
+      <time id="clock" datetime="">—</time>
+    </footer>
+
+    <script>
+      const clock = document.getElementById("clock");
+      const format = new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+        timeZone: "UTC",
+      });
+
+      function tick() {
+        const now = new Date();
+        clock.dateTime = now.toISOString();
+        clock.textContent = format.format(now) + " UTC";
+      }
+
+      tick();
+      setInterval(tick, 1000);
+    </script>
+  </body>
+</html>
