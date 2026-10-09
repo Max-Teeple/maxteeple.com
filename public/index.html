@@ -28,6 +28,11 @@
     <div class="frame" aria-hidden="true"></div>
     <header class="bar">
       <a class="bar-id" href="/">maxteeple.com</a>
+      <nav class="bar-nav" aria-label="Site">
+        <a href="/#projects">Projects</a>
+        <a href="/resume/">Résumé</a>
+        <a class="demo" href="/projects/clubsense/demo/">Live demo</a>
+      </nav>
       <span class="status">
         <span class="dot"></span>
         online
@@ -47,20 +52,23 @@
         <nav class="links" aria-label="On this site">
           <a href="#projects">Projects</a>
           <a href="/resume/">Résumé</a>
+          <a class="accent-link" href="/projects/clubsense/demo/">Live demo</a>
           <a href="mailto:max.teeple@gmail.com">Email</a>
         </nav>
       </section>
 
       <section class="projects" id="projects">
         <p class="kicker">02 — projects</p>
-        <a class="spotlight" href="/projects/clubsense/">
-          <img
-            class="spotlight-shot"
-            src="/projects/clubsense/home-hero.jpg"
-            alt="ClubSense home screen over a satellite view of a golf course"
-            width="180"
-            height="320"
-          />
+        <article class="spotlight">
+          <a class="shot-link" href="/projects/clubsense/">
+            <img
+              class="spotlight-shot"
+              src="/projects/clubsense/home-hero.jpg"
+              alt="ClubSense home screen over a satellite view of a golf course"
+              width="180"
+              height="320"
+            />
+          </a>
           <div class="spotlight-copy">
             <p class="eyebrow">Spotlight</p>
             <div class="spotlight-head">
@@ -77,9 +85,12 @@
               Grip-end sensors and a course-aware app that record which club
               you hit, and how far it actually went.
             </p>
-            <span class="more">Open project</span>
+            <nav class="links" aria-label="ClubSense">
+              <a href="/projects/clubsense/">Open project</a>
+              <a class="accent-link" href="/projects/clubsense/demo/">Live demo</a>
+            </nav>
           </div>
-        </a>
+        </article>
       </section>
 
       <section class="projects" id="experience">
