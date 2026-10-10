@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveView">
+    <title>Profile - LiveView Golf</title>
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
+    <link rel="manifest" href="/liveview/manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body class="page-profile" data-nav-page="profile">
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="brand" href="index.html" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+            <nav class="desktop-nav" aria-label="Primary navigation">
+                <a href="index.html#streams" data-nav="streams">Streams</a>
+                <a href="explore.html" data-nav="explore">Explore</a>
+                <a href="#" data-nav="profile" hidden>Profile</a>
+                <a href="#" data-nav="bio" hidden>My bio</a>
+                <a href="index.html#about" data-nav="courses">For courses</a>
+                <a href="index.html#contact" data-nav="contact">Contact</a>
+            </nav>
+            <div class="header-actions">
+                <a href="messages.html" class="header-icon-link" id="messagesLink" title="Messages" hidden>💬</a>
+                <button type="button" class="header-icon-link" id="notifBell" title="Notifications" hidden aria-label="Notifications">🔔<span id="notifCount" class="notif-badge" hidden></span></button>
+                <a href="groups.html" class="header-icon-link" id="groupsLink" title="Friends & groups" hidden>👥</a>
+                <a id="profileBarLink" class="profile-pill" href="#" style="display:none;">
+                    <img id="profileBarImg" src="" alt="Profile">
+                    <span id="profileBarName"></span>
+                </a>
+                <button class="login-btn" type="button" id="logoutBtn">Logout</button>
+                <div class="menu-button">
+                    <button id="menu-toggle" class="menu-btn" type="button" aria-label="Open menu">☰</button>
+                    <nav id="dropdown-menu" class="dropdown-menu" aria-label="Mobile navigation">
+                        <ul>
+                            <li><a href="index.html">Home</a></li>
+                            <li><a href="index.html#streams" data-nav="streams">Streams</a></li>
+                            <li><a href="explore.html" data-nav="explore">Explore</a></li>
+                            <li><a href="#" data-nav="profile" hidden>Profile</a></li>
+                            <li><a href="#" data-nav="bio" hidden>My bio</a></li>
+                            <li><a href="index.html#about" data-nav="courses">For courses</a></li>
+                            <li><a href="index.html#contact" data-nav="contact">Contact</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="profile-shell">
+        <section class="profile-hero">
+            <div class="profile-hero-copy">
+                <p class="eyebrow">Your account</p>
+                <h1 id="profilePageTitle">Profile</h1>
+                <p class="lead" id="profilePageLead">Manage your info, photos, and golf circle.</p>
+            </div>
+            <div class="profile-hero-actions">
+                <button type="button" id="restartTourBtn" class="secondary-link profile-ghost-btn">Restart homepage tour</button>
+            </div>
+        </section>
+
+        <div class="profile-layout">
+            <section class="profile-panel profile-media-panel">
+                <h2 class="profile-panel-title">Photos</h2>
+                <div class="profile-media-grid">
+                    <article class="profile-media-card" id="logoCard">
+                        <p class="profile-media-label">Course logo</p>
+                        <button type="button" class="profile-media-frame" onclick="showImageModal('currentLogo')" aria-label="Preview course logo">
+                            <img id="currentLogo" src="" alt="Course logo" class="profile-img">
+                        </button>
+                        <input type="file" id="course_logo" accept="image/*" hidden>
+                        <button type="button" class="profile-media-btn" onclick="document.getElementById('course_logo').click()">Change image</button>
+                    </article>
+                    <article class="profile-media-card" id="previewCard">
+                        <p class="profile-media-label">Stream preview</p>
+                        <button type="button" class="profile-media-frame" onclick="showImageModal('currentPreview')" aria-label="Preview stream photo">
+                            <img id="currentPreview" src="" alt="Stream preview" class="profile-img">
+                        </button>
+                        <input type="file" id="stream_preview_photo" accept="image/*" hidden>
+                        <button type="button" class="profile-media-btn" onclick="document.getElementById('stream_preview_photo').click()">Change image</button>
+                    </article>
+                    <article class="profile-media-card" id="avatarCard">
+                        <p class="profile-media-label">Profile picture</p>
+                        <button type="button" class="profile-media-frame profile-media-frame--avatar" onclick="showImageModal('currentProfilePic')" aria-label="Preview profile picture">
+                            <img id="currentProfilePic" src="" alt="Profile picture" class="profile-img">
+                        </button>
+                        <input type="file" id="profile_picture" accept="image/*" hidden>
+                        <button type="button" class="profile-media-btn" onclick="document.getElementById('profile_picture').click()">Change image</button>
+                    </article>
+                </div>
+            </section>
+
+            <section class="profile-panel">
+                <h2 class="profile-panel-title">Details</h2>
+                <form id="profileForm" class="profile-form profile-form-modern">
+                    <div class="profile-form-grid">
+                        <label>First name<input type="text" id="first_name" autocomplete="given-name"></label>
+                        <label>Last name<input type="text" id="last_name" autocomplete="family-name"></label>
+                        <label>City<input type="text" id="city" autocomplete="address-level2"></label>
+                        <label>State<input type="text" id="state" autocomplete="address-level1"></label>
+                        <label id="streetAddressLabel" class="profile-span-2" hidden>Street address<input type="text" id="street_address" placeholder="123 Fairway Dr"></label>
+                        <label id="bioLabel" class="profile-span-2" hidden>Your story<textarea id="bio" rows="4" placeholder="Tell golfers about yourself, your game, and favorite courses."></textarea></label>
+                        <label id="handicapLabel" hidden>Handicap<input type="number" step="0.1" id="handicap" min="0" max="54"></label>
+                        <label id="homeCourseLabel" hidden>Home course<input type="text" id="home_course"></label>
+                        <label id="roundsLabel" hidden>Rounds played (approx)<input type="number" id="rounds_played" min="0"></label>
+                        <label id="descriptionLabel" class="profile-span-2" hidden>Description<textarea id="description" rows="3"></textarea></label>
+                        <label id="streamUrlLabel" class="profile-span-2" hidden>Stream link (YouTube Live, Twitch, Vimeo, or public HLS)<input type="url" id="stream_url" placeholder="https://www.youtube.com/watch?v=..."></label>
+                    </div>
+                    <div class="profile-form-actions">
+                        <button type="submit" class="primary-link profile-save-btn">Save changes</button>
+                        <p id="message" class="profile-status" role="status" aria-live="polite"></p>
+                    </div>
+                </form>
+            </section>
+
+            <section id="consumerDashboard" class="profile-panel profile-hub-panel" hidden>
+                <div id="onboardingResumeBanner" class="onboarding-resume-banner" hidden>
+                    <span>Finish your profile setup to get personalized recommendations.</span>
+                    <a href="onboarding.html">Resume setup</a>
+                </div>
+
+                <div class="profile-hub-header">
+                    <div>
+                        <h2 class="profile-panel-title">My Golf Hub</h2>
+                        <p class="profile-hub-lead">Follow courses, connect with golfers, and manage friend requests.</p>
+                    </div>
+                </div>
+
+                <div class="profile-hub-grid">
+                    <article class="profile-hub-card">
+                        <h3>Friend requests</h3>
+                        <div id="incomingRequests" class="mini-list"></div>
+                        <div id="outgoingRequests" class="mini-list"></div>
+                    </article>
+
+                    <article class="profile-hub-card profile-hub-card--invite">
+                        <h3>Invite a friend</h3>
+                        <p class="profile-hub-note">Send an email or text invite. They can join LiveView and accept your request.</p>
+                        <form id="friendForm" class="profile-form profile-form-modern">
+                            <label>Email<input type="email" id="friendEmail" placeholder="friend@example.com"></label>
+                            <label>Phone <span class="hint">(optional — texts only if Twilio is configured; otherwise you get a share link)</span><input type="tel" id="friendPhone" placeholder="555-123-4567"></label>
+                            <button type="submit" class="primary-link profile-save-btn">Send friend request</button>
+                        </form>
+                    </article>
+
+                    <article class="profile-hub-card">
+                        <h3>Favorite courses</h3>
+                        <div id="favoriteCoursesList" class="mini-list"></div>
+                    </article>
+                    <article class="profile-hub-card">
+                        <h3>Followed courses</h3>
+                        <div id="followedCoursesList" class="mini-list"></div>
+                    </article>
+                    <article class="profile-hub-card profile-hub-card--wide">
+                        <h3>Friends</h3>
+                        <div id="friendsList" class="mini-list"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="streamStudioPanel" class="profile-panel profile-stream-panel">
+                <h2 class="profile-panel-title">Live stream setup</h2>
+                <div id="streamChecklist" class="setup-checklist"></div>
+                <div id="streamInfo" class="profile-stream-meta"></div>
+                <div class="profile-stream-actions">
+                    <button type="button" id="generateStreamKeyBtn" class="secondary-link profile-ghost-btn">Generate webhook key</button>
+                    <button type="button" id="requestApprovalBtn" class="secondary-link profile-ghost-btn">Request stream approval</button>
+                    <button type="button" id="toggleStreamBtn" class="primary-link profile-save-btn">Turn stream on</button>
+                </div>
+                <p id="streamStatusMessage" class="profile-hub-note"></p>
+                <div class="hardware-guide">
+                    <h3>Fastest setup path</h3>
+                    <ol>
+                        <li>Use a phone with a stable tripod for a starter setup, or a camera with HDMI out plus a capture card for a cleaner production feed.</li>
+                        <li>Stream to YouTube Live, Twitch, or Vimeo — or publish a public HLS (.m3u8) URL. Cloudflare Stream and RTMP ingest are not on the free plan.</li>
+                        <li>Paste that link into Stream link and save. Optionally generate a webhook key if your encoder will POST live/offline updates.</li>
+                        <li>Request LiveView approval. After approval, use the stream toggle to mark the broadcast live or offline for fans.</li>
+                    </ol>
+                    <p><strong>Recommended hardware:</strong> phone or mirrorless camera, tripod, external battery, microphone if commentary matters, reliable Wi-Fi or wired internet, and shade/weather protection for outdoor setups.</p>
+                </div>
+                <p class="profile-stream-warning">Regenerating the webhook key breaks any encoder already posting status updates with the old key. It does not change your YouTube, Twitch, Vimeo, or HLS link.</p>
+            </section>
+
+            <section id="streamPreviewPanel" class="profile-panel stream-preview-section">
+                <h2 class="profile-panel-title">Live stream preview</h2>
+                <video id="liveStreamPreview" controls autoplay muted playsinline></video>
+                <p id="noStreamMsg" class="profile-hub-note" hidden>No live stream available.</p>
+            </section>
+        </div>
+    </main>
+
+    <div id="imageModal" class="modal" onclick="closeImageModal()" hidden>
+        <span class="modal-close">&times;</span>
+        <img class="modal-content" id="modalImg" alt="">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="stream-player.js"></script>
+    <script src="config.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="auth-guard.js"></script>
+    <script src="script.js"></script>
+    <script src="site-chrome.js"></script>
+    <script src="profile.js"></script>
+    <script src="sw-register.js"></script>
+</body>
+</html>

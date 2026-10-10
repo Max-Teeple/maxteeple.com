@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream approval - LiveView Admin</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-page">
+    <main class="page-shell">
+        <h1>Stream approval queue</h1>
+        <p>Sign in as the demo admin (<code>admin@liveview.demo</code>, password <code>demo1234</code>) after demo data is loaded, or paste <code>ADMIN_APPROVAL_TOKEN</code> if that secret is set.</p>
+        <label>Email <input id="adminEmail" value="admin@liveview.demo" autocomplete="username" style="width:100%;padding:10px;margin:8px 0"></label>
+        <label>Password <input type="password" id="adminPassword" autocomplete="current-password" style="width:100%;padding:10px;margin:8px 0"></label>
+        <button type="button" id="adminLogin" class="primary-link" style="border:none;cursor:pointer">Sign in</button>
+        <p id="adminLoginStatus" class="for-you-status"></p>
+        <label>Admin token <input type="password" id="adminToken" style="width:100%;padding:10px;margin:8px 0"></label>
+        <button type="button" id="loadQueue" class="primary-link" style="border:none;cursor:pointer">Load queue</button>
+        <div id="adminQueue" class="discover-grid" style="margin-top:24px"></div>
+        <h2 style="margin-top:40px">Demo data</h2>
+        <p>Loads 50 labeled demo courses and 80 demo accounts. Password <code>demo1234</code>. Safe to run again.</p>
+        <button type="button" id="seedDemo" class="primary-link" style="border:none;cursor:pointer">Load demo data</button>
+        <p id="seedStatus" class="for-you-status"></p>
+    </main>
+    <script src="/liveview/config.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>

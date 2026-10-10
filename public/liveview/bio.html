@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <title>Bio - LiveView Golf</title>
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body data-nav-page="bio">
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="brand" href="index.html" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+            <nav class="desktop-nav" aria-label="Primary navigation">
+                <a href="index.html#streams" data-nav="streams">Streams</a>
+                <a href="explore.html" data-nav="explore">Explore</a>
+                <a href="#" data-nav="profile" hidden>Profile</a>
+                <a href="#" data-nav="bio" hidden>My bio</a>
+                <a href="index.html#about" data-nav="courses">For courses</a>
+                <a href="index.html#contact" data-nav="contact">Contact</a>
+            </nav>
+            <div class="header-actions">
+                <a href="messages.html" class="header-icon-link" id="messagesLink" title="Messages" hidden>💬</a>
+                <button type="button" class="header-icon-link" id="notifBell" title="Notifications" hidden aria-label="Notifications">🔔<span id="notifCount" class="notif-badge" hidden></span></button>
+                <a href="groups.html" class="header-icon-link" id="groupsLink" title="Friends & groups" hidden>👥</a>
+                <a id="profileBarLink" class="profile-pill" href="#" style="display:none;">
+                    <img id="profileBarImg" src="" alt="Profile">
+                    <span id="profileBarName"></span>
+                </a>
+                <button class="login-btn" type="button">Login</button>
+                <div class="menu-button">
+                    <button id="menu-toggle" class="menu-btn" type="button" aria-label="Open menu">☰</button>
+                    <nav id="dropdown-menu" class="dropdown-menu" aria-label="Mobile navigation">
+                        <ul>
+                            <li><a href="index.html">Home</a></li>
+                            <li><a href="index.html#streams" data-nav="streams">Streams</a></li>
+                            <li><a href="explore.html" data-nav="explore">Explore</a></li>
+                            <li><a href="#" data-nav="profile" hidden>Profile</a></li>
+                            <li><a href="#" data-nav="bio" hidden>My bio</a></li>
+                            <li><a href="index.html#about" data-nav="courses">For courses</a></li>
+                            <li><a href="index.html#contact" data-nav="contact">Contact</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="bio-shell">
+        <div id="bioLoading" class="loading-state">Loading profile...</div>
+        <div id="bioContent" hidden>
+            <section class="bio-hero">
+                <div id="bioAvatarWrap"></div>
+                <div>
+                    <p class="eyebrow" id="bioRole">Golfer</p>
+                    <h1 id="bioName">Profile</h1>
+                    <p id="bioLocation" class="lead"></p>
+                    <div id="bioActions" style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;"></div>
+                </div>
+            </section>
+
+            <div class="bio-meta-grid" id="bioMeta"></div>
+
+            <section>
+                <h2 style="margin-bottom:12px;">Story</h2>
+                <div class="bio-story" id="bioStory">No story yet.</div>
+            </section>
+
+            <section id="bioInterestsSection" style="margin-top:24px;" hidden>
+                <h2 style="margin-bottom:12px;">Interests</h2>
+                <div id="bioInterests" class="chip-row"></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="/liveview/config.js"></script>
+    <script src="/liveview/auth-guard.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="script.js"></script>
+    <script src="site-chrome.js"></script>
+    <script src="bio.js"></script>
+    <script src="sw-register.js"></script>
+</body>
+</html>

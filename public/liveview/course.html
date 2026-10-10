@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#f4511e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveView">
+    <title>Course Stream - LiveView Golf</title>
+    <meta name="description" content="Watch live golf from this course on LiveView Golf.">
+    <meta property="og:title" content="LiveView Golf Course">
+    <meta property="og:type" content="website">
+    <link rel="icon" type="image/jpeg" href="/liveview/images/liveview-logo.svg">
+    <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
+    <link rel="manifest" href="/liveview/manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=New+Amsterdam&family=Teko:wght@300..700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/jpeg" href="/liveview/images/liveview-logo.svg">
+</head>
+<body data-nav-page="course">
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="brand" href="index.html" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+            <nav class="desktop-nav" aria-label="Primary navigation">
+                <a href="index.html#streams" data-nav="streams">Streams</a>
+                <a href="explore.html" data-nav="explore">Explore</a>
+                <a href="#" data-nav="profile" hidden>Profile</a>
+                <a href="#" data-nav="bio" hidden>My bio</a>
+                <a href="index.html#about" data-nav="courses">For courses</a>
+                <a href="index.html#contact" data-nav="contact">Contact</a>
+            </nav>
+            <div class="header-actions">
+                <a href="messages.html" class="header-icon-link" id="messagesLink" title="Messages" hidden>💬</a>
+                <button type="button" class="header-icon-link" id="notifBell" title="Notifications" hidden aria-label="Notifications">🔔<span id="notifCount" class="notif-badge" hidden></span></button>
+                <a href="groups.html" class="header-icon-link" id="groupsLink" title="Friends & groups" hidden>👥</a>
+                <a id="profileBarLink" class="profile-pill" href="#" style="display:none;">
+                    <img id="profileBarImg" src="" alt="Profile">
+                    <span id="profileBarName"></span>
+                </a>
+                <button class="login-btn" type="button" id="courseLogoutBtn">Login</button>
+                <div class="menu-button">
+                    <button id="menu-toggle" class="menu-btn" type="button" aria-label="Open menu">☰</button>
+                    <nav id="dropdown-menu" class="dropdown-menu" aria-label="Mobile navigation">
+                        <ul>
+                            <li><a href="index.html">Home</a></li>
+                            <li><a href="index.html#streams" data-nav="streams">Streams</a></li>
+                            <li><a href="explore.html" data-nav="explore">Explore</a></li>
+                            <li><a href="#" data-nav="profile" hidden>Profile</a></li>
+                            <li><a href="#" data-nav="bio" hidden>My bio</a></li>
+                            <li><a href="index.html#about" data-nav="courses">For courses</a></li>
+                            <li><a href="index.html#contact" data-nav="contact">Contact</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main>
+        <div class="course-stream-container" style="max-width:900px;margin:80px auto 0 auto;background:#222;border-radius:16px;padding:32px 24px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+            <div style="display:flex;align-items:center;gap:32px;">
+                <img id="courseLogo" src="" alt="Course Logo" style="width:180px;height:180px;border-radius:12px;object-fit:cover;display:none;">
+                <div>
+                    <h1 id="courseName" style="margin-bottom:8px;"></h1>
+                    <div id="courseLocation" style="color:#aaa;margin-bottom:8px;"></div>
+                    <div id="courseDescription" style="color:#fff;"></div>
+                    <div id="courseStreamStatus" class="live-badge" style="margin-top:14px;">Loading stream status...</div>
+                    <div id="consumerCourseActions" style="display:none;margin-top:16px;gap:10px;flex-wrap:wrap;">
+                        <button type="button" id="favoriteCourseBtn">Favorite Course</button>
+                        <button type="button" id="followCourseBtn">Follow Course</button>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:32px;text-align:center;">
+                <video id="courseStreamPlayer" controls autoplay playsinline style="width:100%;max-width:700px;background:#000;"></video>
+                <div id="noStreamMsg" style="color:#aaa;margin-top:8px;display:none;">Stream currently not live.</div>
+            </div>
+            <section id="highlightsSection" class="highlights-section" hidden style="margin-top:32px;">
+                <h2>Recent highlights</h2>
+                <p style="color:#aaa;">Replay clips when the course is offline.</p>
+                <div id="highlightsList" class="discover-grid"></div>
+            </section>
+        </div>
+    </main>
+    <script src="config.js"></script>
+    <script src="auth-guard.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="script.js"></script>
+    <script src="site-chrome.js"></script>
+    <script src="stream-player.js"></script>
+    <script src="course.js"></script>
+    <script src="sw-register.js"></script>
+</body>
+</html>

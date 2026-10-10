@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <title>Welcome - LiveView Golf</title>
+    <link rel="icon" type="image/jpeg" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="onboarding-styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="onboarding-header">
+        <a class="brand" href="index.html">
+            <img src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+            <span>LiveView Golf</span>
+        </a>
+        <button type="button" class="btn btn-ghost" id="skipAllBtn">Skip setup</button>
+    </header>
+
+    <main class="onboarding-shell">
+        <div id="onboardingError" class="error-banner" hidden role="alert"></div>
+        <p id="stepProgressLabel" class="step-progress-label">Step 1 of 4</p>
+        <div class="progress-bar" id="progressBar" aria-hidden="true"></div>
+
+        <section class="step-panel active" id="step-welcome" data-step="welcome">
+            <div class="welcome-card">
+                <p class="eyebrow" id="welcomeEyebrow">Welcome aboard</p>
+                <h1 id="welcomeTitle">Let's build your LiveView profile</h1>
+                <p class="lead" id="welcomeLead">Tell us a bit about yourself so we can recommend streams and golfers near you.</p>
+
+                <form id="profileForm" onsubmit="return false;">
+                    <div class="form-grid">
+                        <label>First name
+                            <input type="text" id="obFirstName" name="first_name" autocomplete="given-name" required>
+                        </label>
+                        <label>Last name
+                            <input type="text" id="obLastName" name="last_name" autocomplete="family-name">
+                        </label>
+                        <label>City
+                            <input type="text" id="obCity" name="city" required>
+                        </label>
+                        <label>State
+                            <input type="text" id="obState" name="state" maxlength="32" placeholder="AZ or Arizona" required>
+                        </label>
+                        <label id="phoneLabel">Phone <span class="hint">(for friend invites)</span>
+                            <input type="tel" id="obPhone" name="phone" placeholder="555-123-4567">
+                        </label>
+                    </div>
+                    <label class="stack-label" id="bioLabel">About you
+                        <textarea id="obBio" name="bio" placeholder="What kind of golf do you love? Favorite courses?"></textarea>
+                    </label>
+                    <div id="interestsBlock">
+                        <label>Interests</label>
+                        <div class="chip-row" id="interestChips">
+                            <button type="button" class="chip" data-value="watching live streams">Live streams</button>
+                            <button type="button" class="chip" data-value="local courses">Local courses</button>
+                            <button type="button" class="chip" data-value="tournament golf">Tournaments</button>
+                            <button type="button" class="chip" data-value="casual rounds">Casual rounds</button>
+                            <button type="button" class="chip" data-value="course photography">Course photos</button>
+                        </div>
+                    </div>
+                    <label class="stack-label" id="profilePicLabel">Profile photo (optional)
+                        <input type="file" id="obProfilePic" accept="image/*">
+                    </label>
+                </form>
+
+                <div class="step-actions">
+                    <span></span>
+                    <button type="button" class="btn btn-primary" id="welcomeNextBtn">Continue</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="step-panel" id="step-discover" data-step="discover">
+            <div class="welcome-card">
+                <p class="eyebrow">For you</p>
+                <h1>Recommended streams & golfers</h1>
+                <p class="lead" id="discoverLead">Based on your location. Follow courses and add friends with one tap.</p>
+
+                <h2 class="section-title">Recommended streams</h2>
+                <p class="section-hint" id="streamsHint">Live and nearby courses you may enjoy</p>
+                <div id="recommendedStreams" class="discover-grid">
+                    <div class="loading-state">Loading streams...</div>
+                </div>
+
+                <h2 class="section-title">Recommended friends</h2>
+                <p class="section-hint">Golfers on LiveView you can connect with</p>
+                <div id="recommendedFriends" class="discover-grid">
+                    <div class="loading-state">Loading golfers...</div>
+                </div>
+
+                <button type="button" class="btn btn-secondary btn-block" id="browseAllBtn">Browse all golfers</button>
+                <div id="allGolfers" class="discover-grid" hidden></div>
+
+                <div class="step-actions">
+                    <button type="button" class="btn btn-secondary" data-back="welcome">Back</button>
+                    <button type="button" class="btn btn-primary" data-next="friends">Continue</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="step-panel" id="step-friends" data-step="friends">
+            <div class="welcome-card">
+                <p class="eyebrow">Your circle</p>
+                <h1>Add more friends</h1>
+                <p class="lead">Invite anyone by email or phone. They get a link to join or accept your request.</p>
+
+                <div class="invite-row">
+                    <input type="email" id="inviteEmail" placeholder="friend@email.com" aria-label="Friend email">
+                    <input type="tel" id="invitePhone" placeholder="Phone number" aria-label="Friend phone">
+                    <button type="button" class="btn btn-primary" id="sendInviteBtn">Send invite</button>
+                </div>
+                <p class="status-msg" id="inviteStatus"></p>
+
+                <h2 class="section-title">Quick add from recommendations</h2>
+                <div id="friendsQuickAdd" class="discover-grid"></div>
+
+                <div class="step-actions">
+                    <button type="button" class="btn btn-secondary" data-back="discover">Back</button>
+                    <div class="step-actions-right">
+                        <button type="button" class="btn btn-ghost" id="finishOnboardingSkipBtn">Skip for now</button>
+                        <button type="button" class="btn btn-primary" id="finishOnboardingBtn">Finish & explore LiveView</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="step-panel" id="step-tour" data-step="tour" hidden aria-hidden="true">
+            <div class="welcome-card">
+                <p class="eyebrow">Quick tour</p>
+                <h1 id="tourTitle">How LiveView works</h1>
+                <p class="lead" id="tourLead">Walk through the homepage and your profile tools.</p>
+
+                <div class="tour-mode-tabs" id="tourModeTabs">
+                    <button type="button" class="tour-mode active" data-mode="mock">Guided highlights</button>
+                    <button type="button" class="tour-mode" data-mode="live">Live preview</button>
+                </div>
+
+                <div class="tour-viewport" id="tourViewport">
+                    <div class="tour-mock" id="tourMock"></div>
+                    <iframe id="tourIframe" class="tour-iframe" hidden title="LiveView preview"></iframe>
+                    <div class="tour-highlight" id="tourHighlight" hidden></div>
+                    <div class="tour-callout" id="tourCallout" hidden>
+                        <h4 id="tourCalloutTitle"></h4>
+                        <p id="tourCalloutText"></p>
+                    </div>
+                </div>
+                <div class="tour-dots" id="tourDots"></div>
+
+                <div class="step-actions">
+                    <button type="button" class="btn btn-secondary" id="tourPrevBtn">Previous</button>
+                    <button type="button" class="btn btn-primary" id="tourNextBtn">Next</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="step-panel" id="step-stream" data-step="stream">
+            <div class="welcome-card">
+                <p class="eyebrow">Course studio</p>
+                <h1>Set up your live broadcast</h1>
+                <p class="lead">Your course profile is ready. Here's how to go live for viewers.</p>
+                <ul class="checklist" id="streamChecklist">
+                    <li>Complete your course profile (name, city, branding)</li>
+                    <li>Upload course logo and stream preview photo</li>
+                    <li>Generate your unique stream key in Profile</li>
+                    <li>Request LiveView approval for public streams</li>
+                    <li>Connect your encoder and toggle stream ON</li>
+                </ul>
+                <p class="lead">Manage everything from <strong>Profile → Stream Studio</strong>.</p>
+                <div class="step-actions">
+                    <button type="button" class="btn btn-secondary" data-back="welcome">Back</button>
+                    <a class="btn btn-secondary" href="#" id="openProfileBtn" target="_blank" rel="noopener">Open profile studio</a>
+                    <button type="button" class="btn btn-primary" id="ownerFinishOnboardingBtn">Enter LiveView</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/liveview/config.js"></script>
+    <script src="/liveview/auth-guard.js"></script>
+    <script src="onboarding-utils.js"></script>
+    <script src="onboarding.js"></script>
+</body>
+</html>

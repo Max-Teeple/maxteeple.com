@@ -1,0 +1,4 @@
+# Local only. wrangler dev reads .dev.vars (gitignored). Do not put real secrets here.
+# Production admin approval uses the same header when you set it in the dashboard:
+#   npx wrangler secret put ADMIN_APPROVAL_TOKEN
+ADMIN_APPROVAL_TOKEN=demo-admin
