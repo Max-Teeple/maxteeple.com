@@ -1,0 +1,21 @@
+{
+  "name": "maxteeple-com",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.10.0",
+    "@cloudflare/workers-types": "^5.20261010.1",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.28.0"
+  }
+}

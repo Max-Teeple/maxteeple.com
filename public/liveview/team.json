@@ -1,0 +1,16 @@
+{
+    "team": [
+        {
+            "name": "Max Teeple",
+            "title": "Founder",
+            "image": "images/teepleHeadshot.jpg",
+            "description": "Building the broadcast layer for modern golf courses."
+        },
+        {
+            "name": "LiveView Operations",
+            "title": "Course Success",
+            "image": "images/teepleHeadshot.jpg",
+            "description": "Helping course teams get set up, go live, and deliver a polished viewer experience."
+        }
+    ]
+}

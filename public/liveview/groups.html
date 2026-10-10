@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <title>Groups - LiveView Golf</title>
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="/liveview/manifest.json">
+</head>
+<body class="app-page" data-nav-page="groups">
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="brand" href="index.html" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+            <nav class="desktop-nav" aria-label="Primary navigation">
+                <a href="index.html#streams" data-nav="streams">Streams</a>
+                <a href="explore.html" data-nav="explore">Explore</a>
+                <a href="#" data-nav="profile" hidden>Profile</a>
+                <a href="#" data-nav="bio" hidden>My bio</a>
+                <a href="index.html#about" data-nav="courses">For courses</a>
+                <a href="index.html#contact" data-nav="contact">Contact</a>
+            </nav>
+            <div class="header-actions">
+                <a href="messages.html" class="header-icon-link" id="messagesLink" title="Messages" hidden>💬</a>
+                <button type="button" class="header-icon-link" id="notifBell" title="Notifications" hidden aria-label="Notifications">🔔<span id="notifCount" class="notif-badge" hidden></span></button>
+                <a href="groups.html" class="header-icon-link" id="groupsLink" title="Friends & groups" hidden>👥</a>
+                <a id="profileBarLink" class="profile-pill" href="#" style="display:none;">
+                    <img id="profileBarImg" src="" alt="Profile">
+                    <span id="profileBarName"></span>
+                </a>
+                <button class="login-btn" type="button">Login</button>
+                <div class="menu-button">
+                    <button id="menu-toggle" class="menu-btn" type="button" aria-label="Open menu">☰</button>
+                    <nav id="dropdown-menu" class="dropdown-menu" aria-label="Mobile navigation">
+                        <ul>
+                            <li><a href="index.html">Home</a></li>
+                            <li><a href="index.html#streams" data-nav="streams">Streams</a></li>
+                            <li><a href="explore.html" data-nav="explore">Explore</a></li>
+                            <li><a href="#" data-nav="profile" hidden>Profile</a></li>
+                            <li><a href="#" data-nav="bio" hidden>My bio</a></li>
+                            <li><a href="index.html#about" data-nav="courses">For courses</a></li>
+                            <li><a href="index.html#contact" data-nav="contact">Contact</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main class="page-shell">
+        <h1>Watch groups</h1>
+        <p class="lead">City leagues and invite-only groups for shared viewing.</p>
+        <form id="createGroupForm" class="invite-row">
+            <input type="text" id="groupName" placeholder="Group name" required>
+            <button type="submit" class="primary-link" style="border:none;cursor:pointer">Create group</button>
+        </form>
+        <form id="joinGroupForm" class="invite-row">
+            <input type="text" id="inviteCode" placeholder="Invite code">
+            <button type="submit" class="secondary-link" style="border:none;cursor:pointer">Join group</button>
+        </form>
+        <label class="invite-row">Course id for a watch party
+            <input type="number" id="watchPartyCourseId" min="1" placeholder="1" value="1">
+        </label>
+        <div id="groupsList" class="discover-grid"></div>
+        <p id="groupStatus" class="for-you-status"></p>
+    </main>
+    <script src="/liveview/config.js"></script>
+    <script src="/liveview/auth-guard.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="social.js"></script>
+    <script src="script.js"></script>
+    <script src="site-chrome.js"></script>
+    <script src="groups.js"></script>
+</body>
+</html>

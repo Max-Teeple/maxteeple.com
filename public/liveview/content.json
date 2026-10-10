@@ -1,0 +1,104 @@
+{
+    "cards": [
+        {
+            "title": "Eagle Mountain Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image1.jpg",
+            "city": "Fountain Hills",
+            "state": "Arizona",
+            "link": "page1.html",
+            "livestream": "https://www.example.com/livestream1"
+        },
+        {
+            "title": "Veenker Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image2.jpg",
+            "city": "Ames",
+            "state": "Iowa",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream2"
+        },
+        {
+            "title": "Coldwater Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image3.jpg",
+            "city": "Ames",
+            "state": "Iowa",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream3"
+        },
+        {
+            "title": "Sedona Golf Resort",
+            "date": "",
+            "description": "",
+            "image": "images/image1.jpg",
+            "city": "Sedona",
+            "state": "Arizona",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        },       
+        {
+            "title": "Phoenician Golf Club",
+            "date": "",
+            "description": "",
+            "image": "images/image2.jpg",
+            "city": "Scottsdale",
+            "state": "Arizona",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream5"
+        },
+        {
+            "title": "OakCreek Country Club",
+            "date": "",
+            "description": "",
+            "image": "images/image3.jpg",
+            "city": "Sedona",
+            "state": "Arizona",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        },   
+        {
+            "title": "Superstition Springs Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image1.jpg",
+            "city": "Mesa",
+            "state": "Arizona",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        },   
+        {
+            "title": "Briarwood Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image2.jpg",
+            "city": "Ankeny",
+            "state": "Iowa",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        },   
+        {
+            "title": "Jester Park Golf Course",
+            "date": "",
+            "description": "",
+            "image": "images/image1.jpg",
+            "city": "Johnston",
+            "state": "Iowa",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        },   
+        {
+            "title": "Augusta National",
+            "date": "",
+            "description": "",
+            "image": "images/image3.jpg",
+            "city": "Augusta",
+            "state": "Georgia",
+            "link": "page2.html",
+            "livestream": "https://www.example.com/livestream4"
+        }         
+    ]
+}

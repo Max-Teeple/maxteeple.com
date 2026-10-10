@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveView">
+    <title>LiveView Golf — Live Course Streams</title>
+    <meta name="description" content="Discover live golf course broadcasts, follow courses, and connect with golfers on LiveView Golf.">
+    <meta property="og:title" content="LiveView Golf">
+    <meta property="og:description" content="Live golf course streams and fan discovery.">
+    <meta property="og:image" content="/liveview/images/liveview-logo.svg">
+    <meta property="og:type" content="website">
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
+    <link rel="manifest" href="/liveview/manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body data-nav-page="home">
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="brand" href="#home" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+
+            <nav class="desktop-nav" aria-label="Primary navigation">
+                <a href="#streams" data-nav="streams">Streams</a>
+                <a href="explore.html" data-nav="explore">Explore</a>
+                <a href="#" data-nav="profile" hidden>Profile</a>
+                <a href="#" data-nav="bio" hidden>My bio</a>
+                <a href="#about" data-nav="courses">For courses</a>
+                <a href="#contact" data-nav="contact">Contact</a>
+            </nav>
+
+            <div class="header-actions">
+                <a href="messages.html" class="header-icon-link" id="messagesLink" title="Messages" hidden>💬</a>
+                <button type="button" class="header-icon-link" id="notifBell" title="Notifications" hidden aria-label="Notifications">🔔<span id="notifCount" class="notif-badge" hidden></span></button>
+                <a href="groups.html" class="header-icon-link" id="groupsLink" title="Friends & groups" hidden>👥</a>
+                <a id="profileBarLink" class="profile-pill" href="#" style="display:none;">
+                    <img id="profileBarImg" src="" alt="Profile">
+                    <span id="profileBarName"></span>
+                </a>
+                <button class="login-btn" type="button">Login</button>
+                <div class="menu-button">
+                    <button id="menu-toggle" class="menu-btn" type="button" aria-label="Open menu">☰</button>
+                    <nav id="dropdown-menu" class="dropdown-menu" aria-label="Mobile navigation">
+                        <ul>
+                            <li><a href="#home">Home</a></li>
+                            <li><a href="#streams" data-nav="streams">Live Streams</a></li>
+                            <li><a href="explore.html" data-nav="explore">Explore</a></li>
+                            <li><a href="#" data-nav="profile" hidden>Profile</a></li>
+                            <li><a href="#" data-nav="bio" hidden>My bio</a></li>
+                            <li><a href="#about" data-nav="courses">For Courses</a></li>
+                            <li><a href="#contact" data-nav="contact">Contact</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section id="home" class="hero">
+        <div class="header-bg" aria-hidden="true"></div>
+        <div class="hero-content">
+            <p class="eyebrow">Live golf, course-owned</p>
+            <h1>Stream the first tee like prime time.</h1>
+            <p>LiveView gives golf courses a rugged, modern broadcast hub and gives fans a fast way to find live course content.</p>
+            <div class="hero-actions">
+                <a class="primary-link" href="#streams">Watch streams</a>
+                <a class="secondary-link" href="explore.html">Explore courses</a>
+                <a class="secondary-link" href="login.html">Register your course</a>
+            </div>
+        </div>
+        <aside class="hero-card" aria-label="Platform stats">
+            <img class="hero-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf logo">
+            <span>Owner studio</span>
+            <strong>YouTube, Twitch, Vimeo, or HLS — approved by the course, watched by fans.</strong>
+        </aside>
+    </section>
+
+    <main>
+        <section id="activity-feed" class="activity-section" hidden>
+            <div class="section-heading">
+                <p class="eyebrow">Your network</p>
+                <h2>Activity feed</h2>
+            </div>
+            <div id="activityFeedList" class="activity-list" aria-live="polite"></div>
+            <a href="messages.html" class="secondary-link">Open messages</a>
+        </section>
+
+        <section id="for-you" class="for-you-section" hidden>
+            <div class="section-heading">
+                <p class="eyebrow">Personalized</p>
+                <h2 id="forYouTitle">Recommended for you</h2>
+                <p id="forYouSubtitle">Streams and golfers near your area</p>
+            </div>
+            <h3 class="for-you-label">Streams in your area</h3>
+            <div id="forYouStreams" class="for-you-grid" aria-live="polite"></div>
+            <h3 class="for-you-label">Golfers to connect with</h3>
+            <div id="forYouFriends" class="for-you-people" aria-live="polite"></div>
+            <div class="for-you-invite">
+                <p>Know someone who would love live golf?</p>
+                <div class="for-you-invite-row">
+                    <input type="email" id="forYouInviteEmail" placeholder="friend@email.com" aria-label="Friend email">
+                    <input type="tel" id="forYouInvitePhone" placeholder="Phone (optional)" aria-label="Friend phone">
+                    <button type="button" id="forYouInviteBtn" class="primary-link" style="border:none;cursor:pointer">Send invite</button>
+                </div>
+                <p id="forYouInviteStatus" class="for-you-status"></p>
+            </div>
+        </section>
+
+        <section id="streams" class="stream-section">
+            <div class="section-heading">
+                <p class="eyebrow">Find a broadcast</p>
+                <h2>Live course directory</h2>
+                <p>Search by course, city, or state and jump into the course stream page.</p>
+            </div>
+            <p id="demoDataBanner" class="demo-banner" hidden>Demo data — sample courses and accounts for trying LiveView. These are not real broadcasts.</p>
+
+            <section id="liveNowLane" class="live-now-lane" hidden>
+                <div class="section-heading compact">
+                    <h3>Live now</h3>
+                    <p>Courses broadcasting right now</p>
+                </div>
+                <div id="liveNowTrack" class="live-now-track"></div>
+            </section>
+
+            <div class="directory-toolbar">
+                <div class="filter-section">
+                    <input type="text" id="search-box" placeholder="Search by city or golf course" aria-label="Search by city or golf course">
+                    <select id="state-filter" aria-label="Filter by state">
+                        <option value="">All states</option>
+                    </select>
+                    <button id="reset-filters" type="button">Reset</button>
+                </div>
+                <div class="view-toggle">
+                    <button type="button" class="filter-chip active" data-view="grid">Grid</button>
+                    <button type="button" class="filter-chip" data-view="map">Map</button>
+                    <button type="button" class="filter-chip" id="filterLiveOnly">Live only</button>
+                </div>
+            </div>
+
+            <div id="mapView" class="map-view" hidden>
+                <div id="courseMap" class="course-map" role="application" aria-label="Course map"></div>
+            </div>
+
+            <section class="card-grid" id="card-grid" aria-live="polite"></section>
+            <button type="button" id="loadMoreCourses" class="load-more-btn" style="display:none">Load more courses</button>
+        </section>
+
+        <section id="about" class="about-us">
+            <div class="about-content">
+                <div class="about-description">
+                    <p class="eyebrow">For course operators</p>
+                    <div id="about-description">
+                        <h2>Turn every tee time into content.</h2>
+                        <p>Register your course, upload your brand assets, generate a stream key, and publish live golf video with a polished viewer experience.</p>
+                    </div>
+                </div>
+                <div class="operator-panel">
+                    <h3>Course accounts unlock</h3>
+                    <ul>
+                        <li>Private stream setup</li>
+                        <li>Course profile management</li>
+                        <li>Preview image and logo uploads</li>
+                        <li>Fan-facing stream pages</li>
+                    </ul>
+                    <a href="login.html" class="primary-link">Create course account</a>
+                </div>
+            </div>
+            <div id="team-section" class="team-section"></div>
+        </section>
+
+        <section id="contact" class="contact">
+            <p class="eyebrow">Get in the booth</p>
+            <h2>Bring LiveView to your course.</h2>
+            <div id="contact-details"></div>
+            <div id="social-links" class="social-links"></div>
+        </section>
+    </main>
+
+    <div id="streamModal" class="modal" style="display:none;">
+        <span class="modal-close" onclick="closeStreamModal()">&times;</span>
+        <video id="modalVideoPlayer" controls autoplay></video>
+    </div>
+
+    <div id="notifPanel" class="notif-panel" hidden>
+        <div class="notif-panel-header">
+            <strong>Notifications</strong>
+            <button type="button" id="closeNotifPanel" aria-label="Close">×</button>
+        </div>
+        <div id="notifPanelList" class="notif-panel-list"></div>
+    </div>
+
+    <script src="/liveview/config.js"></script>
+    <script src="/liveview/auth-guard.js"></script>
+    <script src="liveview-core.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+    <script src="directory.js"></script>
+    <script src="social.js"></script>
+    <script src="site-tour.js"></script>
+    <script src="script.js"></script>
+    <script src="site-chrome.js"></script>
+    <script src="sw-register.js"></script>
+</body>
+</html>

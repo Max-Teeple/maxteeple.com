@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Card Title</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+         <!-- Include the config script first -->
+         <script src="/liveview/config.js"></script>
+         <!-- Include the login script -->
+         <script src="/liveview/login-script.js"></script>
+    <header>
+        <div class="header-content">
+            <img src="images/company-bg.jpg" alt="Company Background" class="header-bg">
+            <div class="company-description">
+                <h1 id="card-title">Card Title</h1>
+                <p id="card-description">Details about this content.</p>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Live Stream Section -->
+        <section class="livestream-section">
+            <h2>Live Stream</h2>
+            <div class="livestream-container">
+                <iframe id="livestream" src="" frameborder="0" allowfullscreen></iframe>
+            </div>
+            <button id="fullscreen-btn">Full Screen</button>
+        </section>
+
+        <!-- Additional content can go here -->
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            const cardIndex = urlParams.get('card');
+            if (cardIndex !== null) {
+                fetch(`${config.apiBaseUrl}/content.json`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const card = data.cards[cardIndex];
+                        if (card) {
+                            document.getElementById('page-title').innerText = card.title;
+                            document.getElementById('card-title').innerText = card.title;
+                            document.getElementById('card-description').innerText = card.description;
+                            document.getElementById('livestream').src = card.livestream;
+                        } else {
+                            document.body.innerHTML = '<p>Card not found</p>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading content:', error);
+                        document.body.innerHTML = '<p>Error loading content. Please check the console for more details.</p>';
+                    });
+            } else {
+                document.body.innerHTML = '<p>No card selected</p>';
+            }
+        });
+
+        document.getElementById('fullscreen-btn').addEventListener('click', function () {
+            const iframe = document.getElementById('livestream');
+            if (iframe.requestFullscreen) {
+                iframe.requestFullscreen();
+            } else if (iframe.mozRequestFullScreen) { /* Firefox */
+                iframe.mozRequestFullScreen();
+            } else if (iframe.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                iframe.webkitRequestFullscreen();
+            } else if (iframe.msRequestFullscreen) { /* IE/Edge */
+                iframe.msRequestFullscreen();
+            }
+        });
+    </script>
+</body>
+</html>

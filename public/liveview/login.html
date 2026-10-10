@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ff4d18">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveView">
+    <title>Login / Sign Up - LiveView Golf</title>
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
+    <link rel="manifest" href="/liveview/manifest.json">
+    <link rel="stylesheet" href="login-styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="auth-header">
+        <a class="page-home-button" href="index.html" aria-label="Go to homepage">Home</a>
+        <a class="brand" href="index.html" aria-label="LiveView Golf home">
+            <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+            <span class="brand-wordmark">LiveView Golf</span>
+        </a>
+        <a class="ghost-link" href="index.html">Browse streams</a>
+    </header>
+
+    <main class="auth-shell">
+        <section class="auth-hero" aria-labelledby="authHeroTitle">
+            <p class="eyebrow">Built for golf broadcasts</p>
+            <h1 id="authHeroTitle">Own the tee box. Watch from anywhere.</h1>
+            <p class="hero-copy">Course reps get a private stream studio. Golf fans get a fast, clean way to follow every course that goes live.</p>
+            <div class="trust-row" aria-label="Platform highlights">
+                <span>Secure login</span>
+                <span>Owner tools</span>
+                <span>Live HLS playback</span>
+            </div>
+        </section>
+
+        <section class="auth-card" aria-live="polite">
+            <div class="mode-tabs" role="tablist" aria-label="Authentication mode">
+                <button class="mode-tab active" type="button" data-target="loginForm">Log in</button>
+                <button class="mode-tab" type="button" data-target="signupOptions">Create account</button>
+            </div>
+
+            <div id="authStatus" class="auth-status" hidden></div>
+
+            <section class="login-form auth-panel" id="loginPanel">
+                <p class="panel-kicker">Welcome back</p>
+                <h2>Access your LiveView account</h2>
+                <form id="loginForm">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" name="email" autocomplete="email" placeholder="you@example.com" required>
+
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Your password" required>
+
+                    <button type="submit" class="primary-btn">Log in</button>
+                </form>
+                <p class="switch-copy">New here? <a href="#" id="showSignupOptions">Choose your account type</a></p>
+            </section>
+
+            <section id="signupOptions" class="signup-selection auth-panel hidden">
+                <p class="panel-kicker">Pick your lane</p>
+                <h2>Create the right account</h2>
+                <div class="role-grid">
+                    <button id="golfCourseBtn" class="role-card" type="button">
+                        <span class="role-label">Golf course owner or rep</span>
+                        <strong>Launch a course profile</strong>
+                        <span>Set up branding, stream previews, and live stream keys.</span>
+                    </button>
+                    <button id="singleUserBtn" class="role-card" type="button">
+                        <span class="role-label">Golf fan</span>
+                        <strong>Watch and follow courses</strong>
+                        <span>Create a clean viewer account for faster stream access.</span>
+                    </button>
+                </div>
+                <button type="button" class="text-btn" data-target="loginForm">Back to login</button>
+            </section>
+
+            <section id="golfCourseForm" class="signup-form auth-panel hidden">
+                <p class="panel-kicker">Course studio</p>
+                <h2>Register your course</h2>
+                <form id="golfCourseSignupForm">
+                    <div class="form-grid">
+                        <label>Golf course name
+                            <input type="text" id="courseName" name="name" autocomplete="organization" required>
+                        </label>
+                        <label>Street address
+                            <input type="text" id="courseStreet" name="street_address" autocomplete="street-address" placeholder="123 Fairway Dr">
+                        </label>
+                        <label>City
+                            <input type="text" id="courseCity" name="city" autocomplete="address-level2" required>
+                        </label>
+                        <label>State
+                            <input type="text" id="courseState" name="state" autocomplete="address-level1" maxlength="32" required>
+                        </label>
+                        <label>Email
+                            <input type="email" id="courseEmail" name="email" autocomplete="email" required>
+                        </label>
+                        <label>Password
+                            <input type="password" id="coursePassword" name="password" autocomplete="new-password" minlength="8" required>
+                        </label>
+                        <label>Stream link
+                            <input type="url" id="streamUrl" name="stream_url" placeholder="YouTube, Twitch, Vimeo, or .m3u8 link">
+                        </label>
+                    </div>
+
+                    <label>Course description
+                        <textarea id="courseDescription" name="description" rows="4" placeholder="What makes this course worth tuning into?"></textarea>
+                    </label>
+
+                    <div class="upload-grid">
+                        <label>Course logo
+                            <input type="file" id="courseLogo" name="course_logo" accept="image/*">
+                        </label>
+                        <label>Stream preview photo
+                            <input type="file" id="streamPreviewPhoto" name="stream_preview_photo" accept="image/*">
+                        </label>
+                    </div>
+
+                    <p class="switch-copy" style="margin-bottom:12px">Next you will get a guided tour to set up your course profile and live streams.</p>
+                    <button type="submit" class="primary-btn">Create owner account</button>
+                </form>
+                <button type="button" class="text-btn" data-target="signupOptions">Choose a different account type</button>
+            </section>
+
+            <section id="singleUserForm" class="signup-form auth-panel hidden">
+                <p class="panel-kicker">Viewer access</p>
+                <h2>Create a fan account</h2>
+                <form id="singleUserSignupForm">
+                    <div class="form-grid">
+                        <label>Full name
+                            <input type="text" id="userName" name="name" autocomplete="name" required>
+                        </label>
+                        <label>City
+                            <input type="text" id="userCity" name="city" autocomplete="address-level2" required>
+                        </label>
+                        <label>State
+                            <input type="text" id="userState" name="state" autocomplete="address-level1" maxlength="32" required>
+                        </label>
+                        <label>Email
+                            <input type="email" id="userEmail" name="email" autocomplete="email" required>
+                        </label>
+                        <label>Password
+                            <input type="password" id="userPassword" name="password" autocomplete="new-password" minlength="8" required>
+                        </label>
+                        <label>Phone <span style="font-weight:400;color:#a7a29a">(optional, for friend invites)</span>
+                            <input type="tel" id="userPhone" name="phone" placeholder="555-123-4567">
+                        </label>
+                    </div>
+                    <p class="switch-copy" style="margin-bottom:12px">After signup you will get a short welcome tour to find streams and friends near you.</p>
+                    <button type="submit" class="primary-btn">Create viewer account</button>
+                </form>
+                <button type="button" class="text-btn" data-target="signupOptions">Choose a different account type</button>
+            </section>
+        </section>
+    </main>
+
+    <script src="/liveview/config.js"></script>
+    <script src="/liveview/auth-guard.js"></script>
+    <script src="login-script.js"></script>
+    <script src="sw-register.js"></script>
+</body>
+</html>
