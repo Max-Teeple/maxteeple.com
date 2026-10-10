@@ -6,6 +6,7 @@ export type Bindings = {
   ASSETS: Fetcher;
   /** Optional override. When unset, a generated secret is stored in D1 and reused. */
   JWT_SECRET?: string;
+  /** Optional override. When unset, a generated admin token is stored in D1 and never returned. */
   ADMIN_APPROVAL_TOKEN?: string;
   /** Public site base, e.g. https://maxteeple.com/liveview */
   SITE_URL?: string;

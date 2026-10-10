@@ -1,4 +1,5 @@
-# Local only. wrangler dev reads .dev.vars (gitignored). Do not put real secrets here.
-# Production admin approval uses the same header when you set it in the dashboard:
+# Local only. wrangler dev reads .dev.vars (gitignored). Do not put a production secret here.
+# Production admin is a Worker secret, free, no payment method:
 #   npx wrangler secret put ADMIN_APPROVAL_TOKEN
+# Then paste that value into /liveview/admin.html. Demo passwords are not admin.
 ADMIN_APPROVAL_TOKEN=demo-admin

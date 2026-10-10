@@ -266,21 +266,14 @@ export async function seedDemoData(db: D1Database) {
     highlights += 1;
   }
 
-  const adminEmail = 'admin@liveview.demo';
-  if (!existingEmails.has(adminEmail) && !(await findAccountByEmail(db, adminEmail))) {
-    await insertAccount(db, {
-      name: 'Demo Admin',
-      first_name: 'Demo',
-      last_name: 'Admin',
-      city: 'Phoenix',
-      state: 'AZ',
-      email: adminEmail,
-      role: 'admin',
-      password: DEMO_PASSWORD_HASH,
-      onboarding_completed: 1,
-      is_demo: 1
-    });
-  }
+  await db
+    .prepare(
+      `UPDATE courses
+       SET role = 'consumer', updated_at = ?
+       WHERE role = 'admin' AND (is_demo = 1 OR email LIKE '%@liveview.demo')`
+    )
+    .bind(now)
+    .run();
 
   return {
     demo: true,
@@ -290,8 +283,7 @@ export async function seedDemoData(db: D1Database) {
     accounts: { created: accountsCreated, updated: accountsUpdated, total: 80 },
     highlights,
     exampleCourseLogin: 'demo-course-01-pebble-beach-golf-links@liveview.demo',
-    exampleUserLogin: 'demo-user-001@liveview.demo',
-    exampleAdminLogin: adminEmail
+    exampleUserLogin: 'demo-user-001@liveview.demo'
   };
 }
 
