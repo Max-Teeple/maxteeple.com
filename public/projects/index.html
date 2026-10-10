@@ -3,29 +3,26 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Max Teeple</title>
+    <title>Projects — Max Teeple</title>
     <meta
       name="description"
-      content="Max Teeple works on perception and autonomy for agricultural machines: how they see, where they are, and how they steer."
+      content="Two golf projects from Max Teeple: ClubSense, a grip sensor and course app, and LiveView, a way to watch live golf from a course."
     />
-    <meta property="og:title" content="Max Teeple" />
+    <meta property="og:title" content="Projects — Max Teeple" />
     <meta
       property="og:description"
-      content="Max Teeple works on perception and autonomy for agricultural machines: how they see, where they are, and how they steer."
+      content="ClubSense and LiveView."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://maxteeple.com" />
-    <meta property="og:image" content="https://maxteeple.com/og/home.png" />
+    <meta property="og:url" content="https://maxteeple.com/projects/" />
+    <meta property="og:image" content="https://maxteeple.com/og/projects.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Max Teeple" />
-    <meta
-      name="twitter:description"
-      content="Perception and autonomy for agricultural machines."
-    />
-    <meta name="twitter:image" content="https://maxteeple.com/og/home.png" />
-    <link rel="canonical" href="https://maxteeple.com/" />
+    <meta name="twitter:title" content="Projects — Max Teeple" />
+    <meta name="twitter:description" content="ClubSense and LiveView." />
+    <meta name="twitter:image" content="https://maxteeple.com/og/projects.png" />
+    <link rel="canonical" href="https://maxteeple.com/projects/" />
     <meta name="theme-color" content="#090a0c" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -36,44 +33,35 @@
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body class="home">
+  <body class="project">
     <a class="skip" href="#content">Skip to content</a>
     <div class="frame" aria-hidden="true"></div>
     <header class="bar">
       <a class="bar-id" href="/">maxteeple.com</a>
       <nav class="bar-nav" aria-label="Site">
-        <a href="/" aria-current="page">Home</a>
-        <a href="/projects/">Projects</a>
+        <a href="/">Home</a>
+        <a href="/projects/" aria-current="page">Projects</a>
         <a href="/projects/clubsense/">ClubSense</a>
         <a href="/projects/liveview/">LiveView</a>
         <a href="/resume/">Résumé</a>
       </nav>
-      <span class="status">
-        <span class="dot"></span>
-        online
-      </span>
+      <span class="status"><span class="dot"></span> online</span>
     </header>
 
     <main id="content">
-      <section class="hero">
-        <p class="kicker">01 — personal site</p>
-        <h1>Max Teeple</h1>
-        <p class="lede">
-          I work on perception and autonomy for agricultural machines: how
-          they see, where they are, and how they steer. Lately that has been
-          lidar benchmarking, wide-baseline stereo and the algorithms we write
-          for it, and filtering and detection on 3D sensor data.
-        </p>
-        <nav class="links" aria-label="On this site">
-          <a href="/projects/">Projects</a>
-          <a href="/resume/">Résumé</a>
-          <a href="mailto:max.teeple@gmail.com">Email</a>
-        </nav>
-      </section>
+      <p class="kicker">
+        <a href="/">Home</a>
+        <span aria-hidden="true"> / </span>
+        Projects
+      </p>
+      <h1>Projects</h1>
+      <p class="lede">
+        Two golf projects. ClubSense records the club and the yardage.
+        LiveView is for watching a course when you are not on it.
+      </p>
 
-      <section class="projects" id="projects">
-        <p class="kicker">02 — projects</p>
-        <div class="project-grid">
+      <section class="projects" aria-label="Project list">
+        <div class="card-list">
           <article class="spotlight">
             <a class="shot-link" href="/projects/clubsense/">
               <img
@@ -85,7 +73,7 @@
               />
             </a>
             <div class="spotlight-copy">
-              <p class="eyebrow">Spotlight</p>
+              <p class="eyebrow">On the course</p>
               <div class="spotlight-head">
                 <img
                   class="spotlight-mark"
@@ -106,6 +94,7 @@
               </nav>
             </div>
           </article>
+
           <article class="spotlight">
             <a class="shot-link" href="/projects/liveview/">
               <img
@@ -117,7 +106,7 @@
               />
             </a>
             <div class="spotlight-copy">
-              <p class="eyebrow">Spotlight</p>
+              <p class="eyebrow">From somewhere else</p>
               <div class="spotlight-head">
                 <img
                   class="spotlight-mark"
@@ -130,6 +119,7 @@
               </div>
               <p>
                 A phone app for watching live golf from courses near you.
+                Directory, replays, and a watch party.
               </p>
               <nav class="links" aria-label="LiveView">
                 <a href="/projects/liveview/">Open project</a>
@@ -138,30 +128,6 @@
             </div>
           </article>
         </div>
-      </section>
-
-      <section class="projects" id="experience">
-        <p class="kicker">03 — experience</p>
-        <a class="spotlight" href="/resume/">
-          <div class="role-log" aria-hidden="true">
-            <span><b>CNH</b> 2023</span>
-            <span><b>Raven</b> 2022</span>
-            <span><b>ISU</b> 2020</span>
-            <span><b>Deere</b> 2019</span>
-          </div>
-          <div class="spotlight-copy">
-            <p class="eyebrow">Résumé</p>
-            <div class="spotlight-head">
-              <h2>Research</h2>
-            </div>
-            <p>
-              Lidar and wide-baseline stereo on current machines. Before that,
-              a loosely coupled inertial navigation system from chip selection
-              to launch.
-            </p>
-            <span class="more">Open résumé</span>
-          </div>
-        </a>
       </section>
     </main>
   </body>

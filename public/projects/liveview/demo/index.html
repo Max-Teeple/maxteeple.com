@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LiveView demo — Max Teeple</title>
+    <meta
+      name="description"
+      content="A static LiveView demo: sample courses, a live-now lane, a map, replay clips, an activity feed, and a watch party. Nothing here is a live broadcast."
+    />
+    <meta property="og:title" content="LiveView demo — Max Teeple" />
+    <meta
+      property="og:description"
+      content="Sample courses, stock clips, and a watch party. A static demo of LiveView."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://maxteeple.com/projects/liveview/demo/" />
+    <meta property="og:image" content="https://maxteeple.com/og/liveview-demo.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LiveView demo — Max Teeple" />
+    <meta name="twitter:description" content="Sample courses, stock clips, and a watch party." />
+    <meta name="twitter:image" content="https://maxteeple.com/og/liveview-demo.png" />
+    <link rel="canonical" href="https://maxteeple.com/projects/liveview/demo/" />
+    <meta name="theme-color" content="#0c1210" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <a class="skip" href="#view">Skip to content</a>
+    <header class="app-bar">
+      <a class="brand" href="#/">
+        <img src="/projects/liveview/mark.svg" alt="" width="28" height="28" />
+        LiveView
+      </a>
+      <span class="pill">Demo</span>
+      <nav class="app-nav" aria-label="Demo">
+        <a id="nav-directory" href="#/">Directory</a>
+        <a id="nav-feed" href="#/feed">Feed</a>
+        <a href="/projects/liveview/">About</a>
+      </nav>
+    </header>
+    <p class="banner">
+      <strong>Demo.</strong> Invented courses, sample people, and stock clips. Nothing on this page is a live broadcast.
+    </p>
+    <main id="view"></main>
+    <noscript>
+      <p class="noscript">This demo needs JavaScript to switch between the directory, a course, and a watch party. The clips themselves are files on this site.</p>
+    </noscript>
+    <script src="./map.js"></script>
+    <script src="./demo.js"></script>
+  </body>
+</html>
