@@ -1,7 +1,5 @@
 const { getApiBaseUrl, escapeHtml } = window.LiveViewCore;
 
-let sessionToken = '';
-
 function token() {
     return document.getElementById('adminToken').value.trim();
 }
@@ -9,7 +7,6 @@ function token() {
 function authHeaders(extra) {
     const headers = Object.assign({}, extra || {});
     if (token()) headers['x-admin-token'] = token();
-    if (sessionToken) headers.Authorization = 'Bearer ' + sessionToken;
     return headers;
 }
 
@@ -46,25 +43,6 @@ async function loadQueue() {
     });
 }
 
-document.getElementById('adminLogin')?.addEventListener('click', async () => {
-    const status = document.getElementById('adminLoginStatus');
-    const res = await fetch(`${getApiBaseUrl()}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            email: document.getElementById('adminEmail').value.trim(),
-            password: document.getElementById('adminPassword').value
-        })
-    });
-    const data = await res.json();
-    sessionToken = data.success && data.user && data.user.role === 'admin' ? data.token : '';
-    if (status) {
-        status.textContent = sessionToken
-            ? `Signed in as ${data.user.email}.`
-            : (data.message || 'Admin sign-in failed. Load demo data first.');
-    }
-});
-
 document.getElementById('loadQueue')?.addEventListener('click', loadQueue);
 
 document.getElementById('seedDemo')?.addEventListener('click', async () => {
@@ -77,7 +55,7 @@ document.getElementById('seedDemo')?.addEventListener('click', async () => {
   const data = await res.json();
   if (status) {
     status.textContent = data.success
-      ? `Demo data ready. ${data.courses?.total || 0} courses, ${data.accounts?.total || 0} accounts. Password ${data.password}. Example: ${data.exampleUserLogin}`
+      ? `Demo data ready. ${data.courses?.total || 0} courses, ${data.accounts?.total || 0} accounts. Fan password ${data.password}. Example: ${data.exampleUserLogin}`
       : (data.message || 'Could not load demo data');
   }
 });

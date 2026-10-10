@@ -28,7 +28,7 @@ describe('LiveView on maxteeple.com', () => {
       ['/liveview/course.html', 'course'],
       ['/liveview/messages.html', 'message'],
       ['/liveview/groups.html', 'group'],
-      ['/liveview/admin.html', 'admin@liveview.demo']
+      ['/liveview/admin.html', 'wrangler secret put ADMIN_APPROVAL_TOKEN']
     ] as const;
 
     for (const [path, needle] of pages) {
@@ -88,15 +88,19 @@ describe('LiveView on maxteeple.com', () => {
   });
 
   it('seeds demo data, then directory, messages, watch party, and the admin queue work', async () => {
-    const seeded = await json('/liveview/admin/seed-demo', { method: 'POST' });
+    const openSeed = await json('/liveview/admin/seed-demo', { method: 'POST' });
+    expect(openSeed.response.status).toBe(403);
+
+    const seeded = await json('/liveview/admin/seed-demo', {
+      method: 'POST',
+      headers: { 'x-admin-token': 'demo-admin' }
+    });
     expect(seeded.response.status).toBe(200);
     expect(seeded.body.success).toBe(true);
     expect(seeded.body.courses.total).toBeGreaterThan(10);
-    expect(seeded.body.exampleAdminLogin).toBe('admin@liveview.demo');
+    expect(seeded.body.exampleAdminLogin).toBeUndefined();
     expect(seeded.body.password).toBe('demo1234');
-
-    const again = await json('/liveview/admin/seed-demo', { method: 'POST' });
-    expect(again.response.status).toBe(403);
+    expect(JSON.stringify(seeded.body)).not.toContain('admin_approval_token');
 
     const courses = await json('/liveview/courses?limit=48');
     expect(courses.response.status).toBe(200);
@@ -162,27 +166,97 @@ describe('LiveView on maxteeple.com', () => {
     expect(party.response.status).toBe(200);
     expect(String(party.body.link)).toContain('party=');
 
-    const admin = await json('/liveview/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@liveview.demo', password: 'demo1234' })
+    const fanQueue = await json('/liveview/admin/stream-queue', {
+      headers: { Authorization: `Bearer ${user.body.token}` }
     });
-    expect(admin.body.user.role).toBe('admin');
-    const queue = await json('/liveview/admin/stream-queue', {
-      headers: { Authorization: `Bearer ${admin.body.token}` }
-    });
-    expect(queue.response.status).toBe(200);
-    expect(queue.body.success).toBe(true);
+    expect(fanQueue.response.status).toBe(403);
 
     const tokenQueue = await json('/liveview/admin/stream-queue', {
       headers: { 'x-admin-token': 'demo-admin' }
     });
     expect(tokenQueue.response.status).toBe(200);
+    expect(tokenQueue.body.success).toBe(true);
 
     const reseed = await json('/liveview/admin/seed-demo', {
       method: 'POST',
       headers: { 'x-admin-token': 'demo-admin' }
     });
     expect(reseed.response.status).toBe(200);
+
+    const reset = await json('/liveview/admin/reset-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user.body.token}`
+      },
+      body: JSON.stringify({ email: user.body.user.email, password: 'demo1234' })
+    });
+    expect(reset.response.status).toBe(403);
+  });
+
+  it('strips demo admin rights and deletes the retired test account', async () => {
+    expect((await api('/liveview/health')).status).toBe(200);
+    await env.LIVEVIEW_DB.prepare(
+      `INSERT INTO courses (name, city, state, email, role, password, is_demo)
+       VALUES ('Demo Admin', 'Phoenix', 'AZ', 'admin@liveview.demo', 'admin', 'x', 1)`
+    ).run();
+    const created = await json('/liveview/register-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Casey Check',
+        city: 'Phoenix',
+        state: 'AZ',
+        email: 'casey.prod.check@example.com',
+        password: 'prod-check-1'
+      })
+    });
+    expect(created.response.status).toBe(201);
+    const createdId = created.body.user.id as number;
+    await env.LIVEVIEW_DB.prepare(
+      `INSERT INTO messages (from_user_id, to_user_id, body) VALUES (?, ?, 'hello')`
+    ).bind(createdId, createdId).run();
+    await env.LIVEVIEW_DB.prepare(
+      `INSERT INTO friend_requests (from_user_id, invite_email, status) VALUES (?, ?, 'pending')`
+    ).bind(createdId, 'casey.prod.check@example.com').run();
+
+    const health = await api('/liveview/health');
+    expect(health.status).toBe(200);
+
+    const admin = await env.LIVEVIEW_DB.prepare(
+      `SELECT role FROM courses WHERE email = 'admin@liveview.demo'`
+    ).first<{ role: string }>();
+    expect(admin?.role).toBe('consumer');
+
+    const retired = await env.LIVEVIEW_DB.prepare(
+      `SELECT id FROM courses WHERE email = 'casey.prod.check@example.com'`
+    ).first();
+    expect(retired).toBeNull();
+    const messages = await env.LIVEVIEW_DB.prepare(
+      `SELECT id FROM messages WHERE from_user_id = ? OR to_user_id = ?`
+    ).bind(createdId, createdId).all();
+    expect(messages.results?.length ?? 0).toBe(0);
+    const invites = await env.LIVEVIEW_DB.prepare(
+      `SELECT id FROM friend_requests WHERE from_user_id = ? OR invite_email = ?`
+    ).bind(createdId, 'casey.prod.check@example.com').all();
+    expect(invites.results?.length ?? 0).toBe(0);
+
+    const login = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'casey.prod.check@example.com', password: 'prod-check-1' })
+    });
+    expect(login.response.status).toBe(401);
+
+    const promoted = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@liveview.demo', password: 'demo1234' })
+    });
+    expect(promoted.response.status).not.toBe(200);
+    const queue = await json('/liveview/admin/stream-queue', {
+      headers: { 'x-admin-token': 'demo1234' }
+    });
+    expect(queue.response.status).toBe(403);
   });
 });

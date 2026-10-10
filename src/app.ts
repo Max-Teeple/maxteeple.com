@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { MiddlewareHandler } from 'hono';
-import { hashPassword, jwtSecret, signJwt, verifyJwt, verifyPassword } from './auth';
+import { adminTokenMatches, hashPassword, jwtSecret, signJwt, verifyJwt, verifyPassword } from './auth';
 import { coordsForCity } from './cities';
 import {
   accountsByIds,
@@ -35,6 +35,7 @@ import {
 } from './db';
 import { geocodeAddress } from './geo';
 import { MAX_UPLOAD_BYTES, readImage, saveImage } from './media';
+import { enforceAccountPolicy } from './security';
 import { ensureSchema } from './schema';
 import { seedDemoData } from './seed';
 import type { AppEnv } from './types';
@@ -64,6 +65,7 @@ app.use('*', cors({
 
 app.use('*', async (c, next) => {
   await ensureSchema(c.env.LIVEVIEW_DB);
+  await enforceAccountPolicy(c.env.LIVEVIEW_DB);
   await next();
 });
 
@@ -134,22 +136,11 @@ async function assertAdmin(c: {
   env: AppEnv['Bindings'];
   req: { header: (name: string) => string | undefined };
 }) {
-  const expected = c.env.ADMIN_APPROVAL_TOKEN?.trim();
-  if (expected && c.req.header('x-admin-token') === expected) return;
-
-  const header = c.req.header('authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (token) {
-    const payload = await verifyJwt(token, await jwtSecret(c.env));
-    if (payload?.role === 'admin') {
-      const account = await findAccountById(c.env.LIVEVIEW_DB, Number(payload.id));
-      if (account?.role === 'admin') return;
-    }
-  }
-
-  throw new HttpError(403, expected
-    ? 'Admin approval token required'
-    : 'Sign in as admin@liveview.demo after demo data is loaded, or set ADMIN_APPROVAL_TOKEN (free: wrangler secret put ADMIN_APPROVAL_TOKEN).');
+  if (await adminTokenMatches(c.env, c.req.header('x-admin-token'))) return;
+  throw new HttpError(
+    403,
+    'Admin approval token required. Set it with: npx wrangler secret put ADMIN_APPROVAL_TOKEN'
+  );
 }
 
 async function readFields(c: { req: { header: (name: string) => string | undefined; formData: () => Promise<FormData>; json: () => Promise<unknown> } }) {
@@ -918,13 +909,9 @@ app.post('/admin/courses/:id/approval', async (c) => {
 });
 
 app.post('/admin/seed-demo', async (c) => {
-  const row = await qOne<{ n: number }>(c.env.LIVEVIEW_DB, 'SELECT COUNT(*) AS n FROM courses');
-  const empty = !row || Number(row.n) === 0;
-  // An empty database can be seeded once without a token so the first deploy
-  // can fill the directory. Later runs require the admin token or demo admin.
-  if (!empty) await assertAdmin(c);
+  await assertAdmin(c);
   const result = await seedDemoData(c.env.LIVEVIEW_DB);
-  return c.json({ success: true, bootstrapped: empty, ...result });
+  return c.json({ success: true, ...result });
 });
 
 app.post('/admin/reset-password', async (c) => {
@@ -933,11 +920,6 @@ app.post('/admin/reset-password', async (c) => {
   const email = normalizeEmail(body.email || '');
   const password = String(body.password || '');
   if (!email || password.length < 8) throw new HttpError(400, 'Email and a password of at least 8 characters are required');
-  const tokenOk = Boolean(c.env.ADMIN_APPROVAL_TOKEN?.trim())
-    && c.req.header('x-admin-token') === c.env.ADMIN_APPROVAL_TOKEN?.trim();
-  if (!email.endsWith('@liveview.demo') && !tokenOk) {
-    throw new HttpError(403, 'Resetting a non-demo password requires ADMIN_APPROVAL_TOKEN.');
-  }
   const user = await findAccountByEmail(c.env.LIVEVIEW_DB, email);
   if (!user) return c.json({ success: false, message: 'Account not found' }, 404);
   await updateAccount(c.env.LIVEVIEW_DB, user.id, { password: await hashPassword(password) });

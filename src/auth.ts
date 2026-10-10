@@ -58,6 +58,58 @@ export async function jwtSecret(env: Bindings): Promise<string> {
   return storedSecret;
 }
 
+let storedAdminToken: string | null = null;
+
+/**
+ * Token for the stream queue, demo seed, and password reset.
+ * `ADMIN_APPROVAL_TOKEN` wins when it is set. Otherwise the first check
+ * stores one random value in D1 (`app_secrets`, id `admin_approval_token`).
+ * The value is never returned by the API. Demo account passwords are not
+ * admin credentials.
+ */
+export async function adminApprovalToken(env: Bindings): Promise<string> {
+  const configured = env.ADMIN_APPROVAL_TOKEN?.trim();
+  if (configured) return configured;
+  if (storedAdminToken) return storedAdminToken;
+
+  const db = env.LIVEVIEW_DB;
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS app_secrets (
+        id TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      )`
+    )
+    .run();
+
+  const existing = await db
+    .prepare(`SELECT value FROM app_secrets WHERE id = 'admin_approval_token'`)
+    .first<{ value: string }>();
+  if (existing?.value) {
+    storedAdminToken = existing.value;
+    return storedAdminToken;
+  }
+
+  const generated = bytesToB64url(crypto.getRandomValues(new Uint8Array(32)));
+  await db
+    .prepare(`INSERT INTO app_secrets (id, value) VALUES ('admin_approval_token', ?) ON CONFLICT(id) DO NOTHING`)
+    .bind(generated)
+    .run();
+  const row = await db
+    .prepare(`SELECT value FROM app_secrets WHERE id = 'admin_approval_token'`)
+    .first<{ value: string }>();
+  storedAdminToken = row?.value || generated;
+  return storedAdminToken;
+}
+
+export async function adminTokenMatches(env: Bindings, provided: string | undefined): Promise<boolean> {
+  const expected = await adminApprovalToken(env);
+  const got = provided?.trim() || '';
+  if (!got) return false;
+  return safeEqual(got, expected);
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const bits = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
