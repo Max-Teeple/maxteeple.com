@@ -233,7 +233,7 @@ app.get('/health', async (c) => {
     smsConfigured: smsConfigured(c.env),
     jwtSecretConfigured: true,
     jwtSecretSource: fromEnv ? 'env' : 'd1',
-    loginLimit: 'd1-v2',
+    loginLimit: 'd1-v3',
     maxUploadBytes: MAX_UPLOAD_BYTES
   });
 });

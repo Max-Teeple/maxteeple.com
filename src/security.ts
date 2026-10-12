@@ -10,6 +10,10 @@ function loginAttemptKey(ip: string, email: string) {
   return `login-fail:${ip}:${email}`;
 }
 
+function attemptKeys(ip: string, email: string) {
+  return [loginAttemptKey(ip, email), loginAttemptKey('email', email)];
+}
+
 function localCount(key: string): number {
   const row = localFails.get(key);
   if (!row || row.resetAt <= Date.now()) return 0;
@@ -32,9 +36,7 @@ async function ensureAttemptTable(db: D1Database) {
  * Count is authoritative in D1 so back-to-back failures still add up.
  * KV is written as a mirror; a KV-only counter stays at 1 under eventual consistency.
  */
-export async function loginAttemptCount(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
-  const key = loginAttemptKey(ip, email);
-  await ensureAttemptTable(db);
+async function readAttempt(db: D1Database, kv: KVNamespace, key: string): Promise<number> {
   const row = await db
     .prepare(`SELECT attempt_count, updated_at FROM login_attempt_counts WHERE id = ?`)
     .bind(key)
@@ -53,10 +55,13 @@ export async function loginAttemptCount(db: D1Database, kv: KVNamespace, ip: str
   return Math.max(stored, mirrored, localCount(key));
 }
 
-export async function recordFailedLogin(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
-  const key = loginAttemptKey(ip, email);
-  const now = new Date().toISOString();
+export async function loginAttemptCount(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
   await ensureAttemptTable(db);
+  const counts = await Promise.all(attemptKeys(ip, email).map((key) => readAttempt(db, kv, key)));
+  return Math.max(...counts, 0);
+}
+
+async function bumpAttempt(db: D1Database, kv: KVNamespace, key: string, now: string): Promise<number> {
   const existing = await db
     .prepare(`SELECT attempt_count, updated_at FROM login_attempt_counts WHERE id = ?`)
     .bind(key)
@@ -84,15 +89,26 @@ export async function recordFailedLogin(db: D1Database, kv: KVNamespace, ip: str
   return next;
 }
 
-export async function clearFailedLogins(db: D1Database, kv: KVNamespace, ip: string, email: string) {
-  const key = loginAttemptKey(ip, email);
-  localFails.delete(key);
+export async function recordFailedLogin(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
+  const now = new Date().toISOString();
   await ensureAttemptTable(db);
-  await db.prepare(`DELETE FROM login_attempt_counts WHERE id = ?`).bind(key).run();
-  try {
-    await kv.delete(key);
-  } catch {
-    /* ignore */
+  const counts = [];
+  for (const key of attemptKeys(ip, email)) {
+    counts.push(await bumpAttempt(db, kv, key, now));
+  }
+  return Math.max(...counts, 0);
+}
+
+export async function clearFailedLogins(db: D1Database, kv: KVNamespace, ip: string, email: string) {
+  await ensureAttemptTable(db);
+  for (const key of attemptKeys(ip, email)) {
+    localFails.delete(key);
+    await db.prepare(`DELETE FROM login_attempt_counts WHERE id = ?`).bind(key).run();
+    try {
+      await kv.delete(key);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
