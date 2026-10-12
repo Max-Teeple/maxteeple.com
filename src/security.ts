@@ -4,24 +4,96 @@ import { parseIdList, stringifyIdList } from './util';
 export const LOGIN_FAIL_LIMIT = 5;
 const LOGIN_FAIL_WINDOW_SEC = 15 * 60;
 
+const localFails = new Map<string, { count: number; resetAt: number }>();
+
 function loginAttemptKey(ip: string, email: string) {
   return `login-fail:${ip}:${email}`;
 }
 
-export async function loginAttemptCount(kv: KVNamespace, ip: string, email: string): Promise<number> {
-  const raw = await kv.get(loginAttemptKey(ip, email));
-  const count = Number(raw || '0');
-  return Number.isFinite(count) && count > 0 ? count : 0;
+function localCount(key: string): number {
+  const row = localFails.get(key);
+  if (!row || row.resetAt <= Date.now()) return 0;
+  return row.count;
 }
 
-export async function recordFailedLogin(kv: KVNamespace, ip: string, email: string): Promise<number> {
-  const next = (await loginAttemptCount(kv, ip, email)) + 1;
-  await kv.put(loginAttemptKey(ip, email), String(next), { expirationTtl: LOGIN_FAIL_WINDOW_SEC });
+async function ensureAttemptTable(db: D1Database) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS login_attempts (
+        id TEXT PRIMARY KEY,
+        count INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    )
+    .run();
+}
+
+/**
+ * Count is authoritative in D1 so back-to-back failures still add up.
+ * KV is written as a mirror; a KV-only counter stays at 1 under eventual consistency.
+ */
+export async function loginAttemptCount(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
+  const key = loginAttemptKey(ip, email);
+  await ensureAttemptTable(db);
+  const row = await db
+    .prepare(`SELECT count, updated_at FROM login_attempts WHERE id = ?`)
+    .bind(key)
+    .first<{ count: number; updated_at: string }>();
+  let stored = 0;
+  if (row?.updated_at) {
+    const ageSec = (Date.now() - Date.parse(row.updated_at)) / 1000;
+    if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC) stored = Number(row.count) || 0;
+  }
+  let mirrored = 0;
+  try {
+    mirrored = Number(await kv.get(key) || '0') || 0;
+  } catch {
+    mirrored = 0;
+  }
+  return Math.max(stored, mirrored, localCount(key));
+}
+
+export async function recordFailedLogin(db: D1Database, kv: KVNamespace, ip: string, email: string): Promise<number> {
+  const key = loginAttemptKey(ip, email);
+  const now = new Date().toISOString();
+  await ensureAttemptTable(db);
+  const existing = await db
+    .prepare(`SELECT count, updated_at FROM login_attempts WHERE id = ?`)
+    .bind(key)
+    .first<{ count: number; updated_at: string }>();
+  let next = 1;
+  if (existing?.updated_at) {
+    const ageSec = (Date.now() - Date.parse(existing.updated_at)) / 1000;
+    if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC) {
+      next = (Number(existing.count) || 0) + 1;
+    }
+  }
+  await db
+    .prepare(
+      `INSERT INTO login_attempts (id, count, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at`
+    )
+    .bind(key, next, now)
+    .run();
+  localFails.set(key, { count: next, resetAt: Date.now() + LOGIN_FAIL_WINDOW_SEC * 1000 });
+  try {
+    await kv.put(key, String(next), { expirationTtl: LOGIN_FAIL_WINDOW_SEC });
+  } catch {
+    /* The D1 row still enforces the limit when KV is briefly unavailable. */
+  }
   return next;
 }
 
-export async function clearFailedLogins(kv: KVNamespace, ip: string, email: string) {
-  await kv.delete(loginAttemptKey(ip, email));
+export async function clearFailedLogins(db: D1Database, kv: KVNamespace, ip: string, email: string) {
+  const key = loginAttemptKey(ip, email);
+  localFails.delete(key);
+  await ensureAttemptTable(db);
+  await db.prepare(`DELETE FROM login_attempts WHERE id = ?`).bind(key).run();
+  try {
+    await kv.delete(key);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Removed from production. Purged on each boot until the row is gone. */

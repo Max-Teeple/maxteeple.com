@@ -322,20 +322,20 @@ app.post('/login', async (c) => {
   const email = demo ? DEMO_FAN_EMAIL : normalizeEmail(String(body.email || ''));
   const password = demo ? DEMO_PASSWORD : String(body.password || '');
   const ip = clientIp(c);
-  const attempts = await loginAttemptCount(c.env.LIVEVIEW_MEDIA, ip, email);
+  const attempts = await loginAttemptCount(c.env.LIVEVIEW_DB, c.env.LIVEVIEW_MEDIA, ip, email);
   if (attempts >= LOGIN_FAIL_LIMIT) {
     return c.json({ success: false, message: 'Too many login attempts. Try again later.' }, 429);
   }
   const user = await findAccountByEmail(c.env.LIVEVIEW_DB, email);
   const check = user ? await verifyPassword(password, user.password) : { ok: false, legacyBcrypt: false };
   if (!user || !check.ok) {
-    const next = await recordFailedLogin(c.env.LIVEVIEW_MEDIA, ip, email || ip);
+    const next = await recordFailedLogin(c.env.LIVEVIEW_DB, c.env.LIVEVIEW_MEDIA, ip, email || ip);
     if (next >= LOGIN_FAIL_LIMIT) {
       return c.json({ success: false, message: 'Too many login attempts. Try again later.' }, 429);
     }
     return c.json({ success: false, message: 'Invalid email or password' }, 401);
   }
-  await clearFailedLogins(c.env.LIVEVIEW_MEDIA, ip, email);
+  await clearFailedLogins(c.env.LIVEVIEW_DB, c.env.LIVEVIEW_MEDIA, ip, email);
   let account = user;
   if (check.legacyBcrypt) {
     account = await updateAccount(c.env.LIVEVIEW_DB, user.id, { password: await hashPassword(password) });
