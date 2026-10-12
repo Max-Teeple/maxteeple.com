@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Live — LiveView Golf</title>
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="onboarding-styles.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="onboarding-header">
+        <a class="site-root-link" href="https://maxteeple.com/">maxteeple.com</a>
+        <a class="brand" href="index.html">
+            <img src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+            <span>LiveView Golf</span>
+        </a>
+        <a class="btn btn-ghost" href="setup-guide.html">Setup guide</a>
+    </header>
+    <main class="onboarding-shell golive-shell">
+        <p class="eyebrow">Courses: start streaming</p>
+        <h1>Stream your course in 15 minutes</h1>
+        <p class="lead">Create the YouTube Live link now. If you want the camera installed for you, request that on the Install step. We buy, mount, and support the gear. Contact for pricing.</p>
+        <p class="need-help">Need help? <a data-help-mail data-subject="LiveView Go Live help" href="mailto:max.teeple@gmail.com?subject=LiveView%20Go%20Live%20help">Email Max</a></p>
+        <p id="goliveError" class="error-banner" hidden role="alert"></p>
+        <p id="goliveStepLabel" class="step-progress-label">Step 1 of 7</p>
+        <ol id="goliveProgress" class="golive-progress"></ol>
+
+        <section class="step-panel welcome-card" data-golive-step="basics">
+            <h2>Course basics</h2>
+            <p class="lead">Name, city, and state are what fans see on the directory.</p>
+            <form id="basicsForm">
+                <div class="form-grid">
+                    <label>Course name
+                        <input id="courseName" required autocomplete="organization">
+                    </label>
+                    <label>City
+                        <input id="courseCity" required autocomplete="address-level2">
+                    </label>
+                    <label>State
+                        <input id="courseState" required maxlength="32" placeholder="AZ">
+                    </label>
+                </div>
+                <label class="stack-label">Short description
+                    <textarea id="courseDescription" rows="3" placeholder="What viewers will see, and which holes the camera covers."></textarea>
+                </label>
+                <div class="step-actions">
+                    <span></span>
+                    <button class="btn btn-primary" type="submit">Save and continue</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="branding" hidden>
+            <h2>Branding</h2>
+            <p class="lead">Logo and cover show on your course card. You can skip these and add them later.</p>
+            <div class="form-grid">
+                <label>Course logo
+                    <input id="courseLogo" type="file" accept="image/*">
+                </label>
+                <label>Cover image
+                    <input id="courseCover" type="file" accept="image/*">
+                </label>
+            </div>
+            <div class="step-actions">
+                <button class="btn btn-secondary" type="button" data-back="basics">Back</button>
+                <button class="btn btn-primary" type="button" id="brandingNext">Save and continue</button>
+            </div>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="tier" hidden>
+            <h2>We install it for you</h2>
+            <p class="lead">This is the usual path. Max buys, owns, installs, and supports a weatherproof camera that pushes RTMP to your YouTube Live key. There is no PC at the course. Setup fee and monthly fee. <strong>Contact for pricing.</strong></p>
+            <label class="tier-choice">
+                <input type="radio" name="setup_tier" value="managed" checked>
+                <span>Managed install <span class="help-tip"><button type="button" aria-label="What a managed install includes">?</button><span class="help-tip-body">Outdoor IP66/67 PoE camera with native RTMP, PoE power, weatherproof cellular router or a Wi-Fi bridge, NEMA enclosure, mount, surge protection, optional solar, and uptime monitoring.</span></span></span>
+            </label>
+            <div id="managedPanel">
+                <ul class="gear-list">
+                    <li>Outdoor IP66 or IP67 PoE IP camera with native RTMP push</li>
+                    <li>PoE injector or PoE switch</li>
+                    <li>Weatherproof 4G/5G router, or a point-to-point Wi-Fi bridge to the clubhouse</li>
+                    <li>NEMA enclosure, mount, and surge protection</li>
+                    <li>Optional solar where there is no outlet</li>
+                    <li>Uptime monitoring. No on-site computer</li>
+                </ul>
+                <h3>Request an install</h3>
+                <form id="wizardInstallForm" class="install-form">
+                    <div class="form-grid">
+                        <label>Course name <input name="course_name" required></label>
+                        <label>Contact name <input name="contact_name" required></label>
+                        <label>Email <input name="email" type="email" required></label>
+                        <label>Phone <input name="phone" type="tel"></label>
+                    </div>
+                    <label class="stack-label">Preferred camera spot(s)
+                        <textarea name="camera_spots" rows="2" placeholder="1st tee, 18th green, range"></textarea>
+                    </label>
+                    <div class="form-grid">
+                        <label>Power
+                            <select name="power_availability">
+                                <option value="">Select</option>
+                                <option>Outlet near the camera spot</option>
+                                <option>No outlet — solar may be needed</option>
+                                <option>Not sure yet</option>
+                            </select>
+                        </label>
+                        <label>Internet at the spot
+                            <select name="internet_available">
+                                <option value="">Select</option>
+                                <option>Clubhouse Wi-Fi can reach the spot</option>
+                                <option>Cellular only</option>
+                                <option>Starlink or other</option>
+                                <option>Not sure yet</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="stack-label">Notes
+                        <textarea name="notes" rows="3" placeholder="Do not paste a stream key here. We collect that when the install is scheduled."></textarea>
+                    </label>
+                    <button class="btn btn-secondary" type="submit">Request an install</button>
+                    <p id="installStatus" class="status-msg" role="status"></p>
+                </form>
+            </div>
+            <details class="diy-fold" id="diyFold">
+                <summary>Prefer to do it yourself?</summary>
+                <label class="tier-choice"><input type="radio" name="setup_tier" value="starter"> <span>Phone on a tripod, YouTube app or Larix Broadcaster, power bank, weather pouch</span></label>
+                <label class="tier-choice"><input type="radio" name="setup_tier" value="standard"> <span>Weatherproof RTMP camera or a GoPro that can livestream, plus mounted power and a hotspot or Wi-Fi bridge</span></label>
+                <label class="tier-choice"><input type="radio" name="setup_tier" value="pro"> <span>Several cameras into OBS on a laptop, or a hardware encoder, with bonded cellular or Starlink</span></label>
+                <p id="diyPanel" class="lead" hidden>DIY still uses a YouTube, Twitch, Vimeo, or public HLS link. The gear list is in the <a href="setup-guide.html">setup guide</a>. Contact for pricing if you want a recommendation.</p>
+            </details>
+            <div class="step-actions">
+                <button class="btn btn-secondary" type="button" data-back="branding">Back</button>
+                <button class="btn btn-primary" type="button" id="tierNext">Save and continue</button>
+            </div>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="youtube" hidden>
+            <h2>Create the YouTube Live stream</h2>
+            <p class="lead">The camera, whether we install it or you do, pushes to a persistent YouTube stream key. LiveView only embeds the watch link.</p>
+            <ol class="guide-steps">
+                <li>In YouTube Studio, verify the channel and enable live streaming. The first time can take up to 24 hours.</li>
+                <li>Create a persistent stream key <span class="help-tip"><button type="button" aria-label="Persistent stream key">?</button><span class="help-tip-body">A reusable key, not a one-time event key, so the camera can reconnect with the same settings.</span></span>. Do not email the key in the install form.</li>
+                <li>Set visibility to Unlisted or Public. Unlisted is a good start.</li>
+                <li>Turn on DVR <span class="help-tip"><button type="button" aria-label="What DVR does">?</button><span class="help-tip-body">Viewers can rewind the live broadcast instead of only joining at the current moment.</span></span>.</li>
+                <li>Copy the watch URL or the channel live URL (youtube.com/@yourchannel/live).</li>
+            </ol>
+            <p class="lead">Twitch alternative: create a stream key in the Creator Dashboard and copy your twitch.tv channel URL. Vimeo and a public .m3u8 link work the same way on the next step.</p>
+            <fieldset id="youtubeChecks">
+                <legend>Mark these when they are done</legend>
+                <label><input type="checkbox"> Channel verified, or the 24-hour wait has started</label>
+                <label><input type="checkbox"> Persistent stream key created</label>
+                <label><input type="checkbox"> Unlisted or Public, and DVR is on</label>
+                <label><input type="checkbox"> Watch URL or channel live URL copied</label>
+            </fieldset>
+            <div class="step-actions">
+                <button class="btn btn-secondary" type="button" data-back="tier">Back</button>
+                <button class="btn btn-primary" type="button" id="youtubeNext">Continue</button>
+            </div>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="link" hidden>
+            <h2>Paste the link and test it</h2>
+            <label class="stack-label">Watch URL, channel live URL, Twitch channel, Vimeo, or public HLS
+                <input id="streamUrl" type="url" placeholder="https://www.youtube.com/watch?v= or https://youtube.com/@channel/live">
+            </label>
+            <button class="btn btn-secondary" type="button" id="testLinkBtn">Test my link</button>
+            <p id="linkStatus" class="status-msg" role="status"></p>
+            <video id="linkPreview" controls muted playsinline hidden></video>
+            <div class="step-actions">
+                <button class="btn btn-secondary" type="button" data-back="youtube">Back</button>
+                <button class="btn btn-primary" type="button" id="linkNext">Save and continue</button>
+            </div>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="schedule" hidden>
+            <h2>Schedule the first stream</h2>
+            <p class="lead">Fans see this time when the course is offline. You can change it later in the studio.</p>
+            <form id="scheduleForm">
+                <label class="stack-label">First broadcast
+                    <input id="nextStream" type="datetime-local">
+                </label>
+                <div class="step-actions">
+                    <button class="btn btn-secondary" type="button" data-back="link">Back</button>
+                    <button class="btn btn-primary" type="submit">Save and continue</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="step-panel welcome-card" data-golive-step="approval" hidden>
+            <h2>Submit for approval</h2>
+            <p id="pendingBadge" class="approval-badge is-pending" hidden>Pending approval</p>
+            <ul id="approvalChecklist" class="gear-list"></ul>
+            <p id="approvalStatus" class="status-msg" role="status"></p>
+            <div class="step-actions">
+                <button class="btn btn-secondary" type="button" data-back="schedule">Back</button>
+                <button class="btn btn-secondary" type="button" id="requestApprovalBtn">Submit for approval</button>
+                <button class="btn btn-primary" type="button" id="finishBtn">Finish and open studio</button>
+            </div>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="/liveview/config.js"></script>
+    <script src="stream-player.js"></script>
+    <script src="auth-guard.js"></script>
+    <script src="help.js"></script>
+    <script src="golive.js"></script>
+</body>
+</html>

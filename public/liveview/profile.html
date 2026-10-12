@@ -172,7 +172,13 @@
             </section>
 
             <section id="streamStudioPanel" class="profile-panel profile-stream-panel">
-                <h2 class="profile-panel-title">Live stream setup</h2>
+                <h2 class="profile-panel-title">Stream</h2>
+                <p class="profile-hub-note">Most courses use a managed install. We supply and mount the camera. You connect the YouTube Live link. Contact for pricing.</p>
+                <p class="profile-stream-links">
+                    <a class="primary-link" href="golive.html">Open the Go Live wizard</a>
+                    <a class="secondary-link" href="setup-guide.html">Streaming setup guide</a>
+                </p>
+                <p class="need-help">Need help? <a data-help-mail data-subject="LiveView stream studio" href="mailto:max.teeple@gmail.com?subject=LiveView%20stream%20studio">Email Max</a></p>
                 <p id="approvalBadge" class="approval-badge" hidden>Pending approval</p>
                 <div id="streamChecklist" class="setup-checklist"></div>
                 <div id="streamInfo" class="profile-stream-meta"></div>
@@ -185,14 +191,8 @@
                 <p id="linkTestResult" class="profile-hub-note" role="status"></p>
                 <p id="streamStatusMessage" class="profile-hub-note"></p>
                 <div class="hardware-guide">
-                    <h3>Fastest setup path</h3>
-                    <ol>
-                        <li>Use a phone with a stable tripod for a starter setup, or a camera with HDMI out plus a capture card for a cleaner production feed.</li>
-                        <li>Stream to YouTube Live, Twitch, or Vimeo — or publish a public HLS (.m3u8) URL. Cloudflare Stream and RTMP ingest are not on the free plan.</li>
-                        <li>Paste that link into Stream link and save. Optionally generate a webhook key if your encoder will POST live/offline updates.</li>
-                        <li>Request LiveView approval. After approval, use the stream toggle to mark the broadcast live or offline for fans.</li>
-                    </ol>
-                    <p><strong>Recommended hardware:</strong> phone or mirrorless camera, tripod, external battery, microphone if commentary matters, reliable Wi-Fi or wired internet, and shade/weather protection for outdoor setups.</p>
+                    <h3>After the link is approved</h3>
+                    <p>Use Test my link before you save. Approval has to come before fans see the course as live. A webhook key is optional and does not replace the YouTube, Twitch, Vimeo, or HLS address.</p>
                 </div>
                 <p class="profile-stream-warning">Regenerating the webhook key breaks any encoder already posting status updates with the old key. It does not change your YouTube, Twitch, Vimeo, or HLS link.</p>
             </section>
@@ -217,6 +217,7 @@
     <script src="auth-guard.js"></script>
     <script src="script.js"></script>
     <script src="site-chrome.js"></script>
+    <script src="help.js"></script>
     <script src="profile.js"></script>
     <script src="sw-register.js"></script>
 </body>

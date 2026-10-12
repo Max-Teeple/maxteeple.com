@@ -1,5 +1,6 @@
 import schemaSql from '../migrations/0001_init.sql';
 import extraSql from '../migrations/0002_liveview.sql';
+import goliveSql from '../migrations/0003_golive.sql';
 
 function statements(sql: string): string[] {
   const stripped = sql
@@ -39,21 +40,27 @@ export async function ensureSchema(db: D1Database): Promise<void> {
     )
     .run();
 
+  await applyMigration(db, '0002_liveview', extraSql);
+  await applyMigration(db, '0003_golive', goliveSql);
+}
+
+async function applyMigration(db: D1Database, id: string, sql: string) {
   const applied = await db
-    .prepare(`SELECT id FROM schema_migrations WHERE id = '0002_liveview'`)
+    .prepare(`SELECT id FROM schema_migrations WHERE id = ?`)
+    .bind(id)
     .first<{ id: string }>();
   if (applied) return;
 
-  for (const statement of statements(extraSql)) {
+  for (const statement of statements(sql)) {
     try {
       await db.prepare(statement).run();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate column/i.test(message)) throw error;
+      if (!/duplicate column|already exists/i.test(message)) throw error;
     }
   }
   await db
-    .prepare(`INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES ('0002_liveview', ?)`)
-    .bind(new Date().toISOString())
+    .prepare(`INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)`)
+    .bind(id, new Date().toISOString())
     .run();
 }

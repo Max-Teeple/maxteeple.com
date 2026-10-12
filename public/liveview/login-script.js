@@ -38,7 +38,7 @@ async function redirectForRole(user) {
     }
 
     if (!isOnboardingComplete(user)) {
-        window.location.replace('onboarding.html');
+        window.location.replace(user.role === 'course_owner' ? 'golive.html' : 'onboarding.html');
         return;
     }
     if (user.role === 'course_owner') {
@@ -109,6 +109,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         await redirectForRole(existingUser);
         return;
     }
+
+    if (new URLSearchParams(window.location.search).get('start') === 'course') {
+        showPanel('golfCourseForm');
+    }
+    document.getElementById('startCourseCta')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        showPanel('golfCourseForm');
+        history.replaceState(null, '', 'login.html?start=course');
+    });
 
     document.querySelectorAll('[data-target]').forEach((trigger) => {
         trigger.addEventListener('click', (event) => {

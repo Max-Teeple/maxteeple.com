@@ -35,7 +35,7 @@ import {
 } from './db';
 import { geocodeAddress } from './geo';
 import { MAX_UPLOAD_BYTES, readImage, saveImage } from './media';
-import { clearFailedLogins, enforceAccountPolicy, LOGIN_FAIL_LIMIT, loginAttemptCount, recordFailedLogin } from './security';
+import { clearFailedLogins, deleteAccount, enforceAccountPolicy, LOGIN_FAIL_LIMIT, loginAttemptCount, recordFailedLogin } from './security';
 import { ensureSchema } from './schema';
 import { DEMO_FAN_EMAIL, DEMO_PASSWORD, ensureDemoCatalog, seedDemoData } from './seed';
 import type { AppEnv } from './types';
@@ -169,6 +169,32 @@ async function locate(city: string, state: string, street: string | null) {
     if (geocoded) return geocoded;
   }
   return coordsForCity(city, state);
+}
+
+const SETUP_TIERS = new Set(['managed', 'starter', 'standard', 'pro']);
+const GOLIVE_STEPS = new Set(['basics', 'branding', 'tier', 'youtube', 'link', 'schedule', 'approval', 'done']);
+
+function applyOwnerSetup(updates: Partial<AccountRow>, body: Record<string, unknown>, isOwner: boolean) {
+  if (!isOwner) return;
+  if (body.next_stream_at !== undefined) {
+    const raw = String(body.next_stream_at || '').trim();
+    if (!raw) updates.next_stream_at = null;
+    else {
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) throw new HttpError(400, 'Schedule a valid date and time');
+      updates.next_stream_at = parsed.toISOString();
+    }
+  }
+  if (body.setup_tier !== undefined) {
+    const tier = String(body.setup_tier || '').trim();
+    if (tier && !SETUP_TIERS.has(tier)) throw new HttpError(400, 'Unknown setup tier');
+    updates.setup_tier = tier || null;
+  }
+  if (body.golive_step !== undefined) {
+    const step = String(body.golive_step || '').trim();
+    if (step && !GOLIVE_STEPS.has(step)) throw new HttpError(400, 'Unknown wizard step');
+    updates.golive_step = step || null;
+  }
 }
 
 function clientIp(c: { req: { header: (name: string) => string | undefined } }) {
@@ -387,10 +413,14 @@ app.put('/profile/:id', authenticate, requireSelf, async (c) => {
     }
   }
   const isOwner = (user.role || 'course_owner') === 'course_owner';
+  applyOwnerSetup(updates, body, isOwner);
   if (!isOwner) {
     delete updates.description;
     delete updates.stream_url;
     delete updates.street_address;
+    delete updates.next_stream_at;
+    delete updates.setup_tier;
+    delete updates.golive_step;
   }
   if (isOwner && (updates.street_address !== undefined || updates.city !== undefined || updates.state !== undefined)) {
     const coords = await locate(
@@ -436,9 +466,11 @@ app.put('/profile/:id/onboarding', authenticate, requireSelf, async (c) => {
   }
   if (body.city !== undefined) updates.city = String(body.city || '').trim();
   if (body.state !== undefined) updates.state = abbreviateState(String(body.state || ''));
-  if ((account.role || 'course_owner') === 'course_owner') {
+  const ownerAccount = (account.role || 'course_owner') === 'course_owner';
+  if (ownerAccount) {
     if (body.description !== undefined) updates.description = String(body.description || '').trim() || null;
     if (body.stream_url !== undefined) updates.stream_url = String(body.stream_url || '').trim() || null;
+    applyOwnerSetup(updates, body, true);
   }
   const effectiveName = updates.name || account.name;
   const effectiveCity = updates.city ?? account.city;
@@ -932,6 +964,70 @@ app.post('/admin/courses/:id/approval', async (c) => {
     stream_approval_note: body.note || null
   });
   return c.json({ success: true, course: publicAccount(saved, true, originOf(c)) });
+});
+
+app.post('/install-requests', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const courseName = String(body.course_name || body.courseName || '').trim();
+  const contactName = String(body.contact_name || body.contactName || '').trim();
+  const email = normalizeEmail(String(body.email || ''));
+  const phone = normalizePhone(String(body.phone || '')) || null;
+  const cameraSpots = String(body.camera_spots || body.cameraSpots || '').trim();
+  const power = String(body.power_availability || body.power || '').trim();
+  const internet = String(body.internet_available || body.internet || '').trim();
+  const notes = String(body.notes || '').trim();
+  if (!courseName || !contactName || !email) {
+    throw new HttpError(400, 'Course name, contact name, and email are required');
+  }
+  if (courseName.length > 120 || contactName.length > 120 || notes.length > 2000 || cameraSpots.length > 500) {
+    throw new HttpError(400, 'One of the fields is too long');
+  }
+  let accountId: number | null = null;
+  const header = c.req.header('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (token) {
+    const payload = await verifyJwt(token, await jwtSecret(c.env));
+    if (payload?.id) accountId = Number(payload.id);
+  }
+  const inserted = await qRun(
+    c.env.LIVEVIEW_DB,
+    `INSERT INTO install_requests (
+      course_name, contact_name, email, phone, camera_spots, power_availability, internet_available, notes, account_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    courseName,
+    contactName,
+    email,
+    phone,
+    cameraSpots || null,
+    power || null,
+    internet || null,
+    notes || null,
+    accountId,
+    nowIso()
+  );
+  return c.json({
+    success: true,
+    id: Number(inserted.meta.last_row_id),
+    message: 'Install request received. We will email you about timing and pricing.'
+  }, 201);
+});
+
+app.get('/admin/install-requests', async (c) => {
+  await assertAdmin(c);
+  const rows = await qAll<Record<string, unknown>>(
+    c.env.LIVEVIEW_DB,
+    `SELECT * FROM install_requests ORDER BY created_at DESC LIMIT 100`
+  );
+  return c.json({ success: true, requests: rows });
+});
+
+app.delete('/profile/:id', authenticate, requireSelf, async (c) => {
+  const account = c.get('account');
+  if (boolish(account.is_demo) || account.email.endsWith('@liveview.demo')) {
+    throw new HttpError(403, 'Demo accounts stay in the directory.');
+  }
+  await deleteAccount(c.env.LIVEVIEW_DB, account.id, account.email);
+  return c.json({ success: true, message: 'Account deleted' });
 });
 
 app.post('/admin/seed-demo', async (c) => {

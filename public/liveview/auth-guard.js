@@ -42,9 +42,17 @@
         return data.user;
     }
 
+    function setupDestination(user) {
+        if (!isOnboardingComplete(user)) {
+            return user?.role === 'course_owner' ? 'golive.html' : 'onboarding.html';
+        }
+        return user?.role === 'course_owner' ? `profile.html?id=${user.id}` : 'index.html#streams';
+    }
+
     async function enforceAuthRules() {
         const path = window.liveviewPage ? window.liveviewPage() : ((window.location.pathname || '').split('/').pop() || 'index.html');
         const onOnboarding = path === 'onboarding.html';
+        const onGoLive = path === 'golive.html';
         const onLogin = path === 'login.html';
         const { token, user } = getSession();
 
@@ -52,14 +60,8 @@
             if (token && user) {
                 const fresh = await fetchMe();
                 const active = fresh || user;
-                if (active && !isOnboardingComplete(active)) {
-                    window.location.replace('onboarding.html');
-                    return null;
-                }
-                if (active && isOnboardingComplete(active)) {
-                    window.location.replace(active.role === 'course_owner'
-                        ? `profile.html?id=${active.id}`
-                        : 'index.html#streams');
+                if (active) {
+                    window.location.replace(setupDestination(active));
                     return null;
                 }
             }
@@ -67,9 +69,7 @@
         }
 
         if (!token || !user) {
-            if (onOnboarding) {
-                window.location.replace('login.html');
-            }
+            if (onOnboarding || onGoLive) window.location.replace('login.html?start=course');
             return null;
         }
 
@@ -83,15 +83,21 @@
             return null;
         }
 
-        if (!isOnboardingComplete(active) && !onOnboarding) {
-            window.location.replace('onboarding.html');
+        const owner = active.role === 'course_owner';
+        if (onGoLive && !owner) {
+            window.location.replace(isOnboardingComplete(active) ? 'index.html#streams' : 'onboarding.html');
             return null;
         }
-
+        if (onOnboarding && owner && !isOnboardingComplete(active)) {
+            window.location.replace('golive.html');
+            return null;
+        }
+        if (!isOnboardingComplete(active) && !onOnboarding && !onGoLive) {
+            window.location.replace(setupDestination(active));
+            return null;
+        }
         if (isOnboardingComplete(active) && onOnboarding) {
-            window.location.replace(active.role === 'course_owner'
-                ? `profile.html?id=${active.id}`
-                : 'index.html?welcome=1#streams');
+            window.location.replace(owner ? `profile.html?id=${active.id}` : 'index.html?welcome=1#streams');
             return null;
         }
 

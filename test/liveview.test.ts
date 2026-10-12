@@ -23,7 +23,9 @@ describe('LiveView on maxteeple.com', () => {
       ['/projects/liveview/', 'Open LiveView'],
       ['/projects/liveview/demo/', 'Invented courses'],
       ['/resume/', 'Résumé'],
-      ['/liveview/', 'LiveView Golf'],
+      ['/liveview/', 'Stream your course in 15 minutes'],
+      ['/liveview/setup-guide.html', 'We install it for you'],
+      ['/liveview/golive.html', 'Request an install'],
       ['/liveview/explore.html', 'explore'],
       ['/liveview/course.html', 'course'],
       ['/liveview/messages.html', 'message'],
@@ -322,5 +324,92 @@ describe('LiveView on maxteeple.com', () => {
       headers: { 'x-admin-token': 'demo1234' }
     });
     expect(queue.response.status).toBe(403);
+  });
+
+  it('stores a managed install request and lets the new course delete itself', async () => {
+    const guide = await api('/liveview/setup-guide.html');
+    expect(guide.status).toBe(200);
+    const guideHtml = await guide.text();
+    expect(guideHtml).toContain('Contact for pricing');
+    expect(guideHtml).toContain('Prefer to do it yourself');
+    expect(guideHtml).not.toMatch(/\$\s?\d/);
+    expect(guideHtml.toLowerCase()).not.toContain('scoreboard');
+
+    const email = `install-${crypto.randomUUID()}@example.com`;
+    const signup = await json('/liveview/register-golf-course', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Verification Hills',
+        city: 'Phoenix',
+        email,
+        password: 'correct-horse'
+      })
+    });
+    expect(signup.response.status).toBe(201);
+    const token = signup.body.token as string;
+    const id = signup.body.user.id as number;
+
+    const saved = await json(`/liveview/profile/${id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        state: 'AZ',
+        setup_tier: 'managed',
+        golive_step: 'youtube',
+        stream_url: 'https://www.youtube.com/@verificationhills/live',
+        next_stream_at: '2026-11-01T15:00:00.000Z'
+      })
+    });
+    expect(saved.response.status).toBe(200);
+    expect(saved.body.user.setup_tier).toBe('managed');
+    expect(saved.body.user.golive_step).toBe('youtube');
+    expect(saved.body.user.next_stream_at).toContain('2026-11-01');
+
+    const request = await json('/liveview/install-requests', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        course_name: 'Verification Hills',
+        contact_name: 'Case Tester',
+        email,
+        phone: '555-0100',
+        camera_spots: '1st tee',
+        power_availability: 'Outlet near the camera spot',
+        internet_available: 'Cellular only',
+        notes: 'verification only'
+      })
+    });
+    expect(request.response.status).toBe(201);
+
+    const admin = await json('/liveview/admin/install-requests', {
+      headers: { 'x-admin-token': 'demo-admin' }
+    });
+    expect(admin.response.status).toBe(200);
+    expect(admin.body.requests.some((row: { email: string }) => row.email === email)).toBe(true);
+
+    const removed = await json(`/liveview/profile/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(removed.response.status).toBe(200);
+
+    const again = await json('/liveview/admin/install-requests', {
+      headers: { 'x-admin-token': 'demo-admin' }
+    });
+    expect(again.body.requests.some((row: { email: string }) => row.email === email)).toBe(false);
+
+    const login = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'correct-horse' })
+    });
+    expect(login.response.status).toBe(401);
   });
 });

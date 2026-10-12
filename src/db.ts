@@ -43,6 +43,8 @@ export type AccountRow = {
   push_subscription: string | null;
   is_demo: number;
   next_stream_at: string | null;
+  setup_tier: string | null;
+  golive_step: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -66,7 +68,7 @@ const ACCOUNT_COLUMNS = [
   'favorite_course_ids', 'followed_course_ids', 'friend_ids', 'is_live', 'hls_url', 'phone', 'bio',
   'interests', 'onboarding_completed', 'slug', 'latitude', 'longitude', 'follower_count', 'handicap',
   'home_course', 'rounds_played', 'profile_visibility', 'push_subscription', 'is_demo',
-  'next_stream_at'
+  'next_stream_at', 'setup_tier', 'golive_step'
 ] as const;
 
 type AccountColumn = typeof ACCOUNT_COLUMNS[number];
@@ -299,6 +301,8 @@ export function publicAccount(row: AccountRow, includePrivate: boolean, origin: 
     safe.bio = row.bio;
     safe.interests = row.interests;
     safe.onboarding_completed = boolish(row.onboarding_completed);
+    safe.setup_tier = row.setup_tier || null;
+    safe.golive_step = row.golive_step || null;
     safe.handicap = row.handicap;
     safe.home_course = row.home_course;
     safe.rounds_played = row.rounds_played;

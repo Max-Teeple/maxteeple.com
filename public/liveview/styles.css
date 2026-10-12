@@ -199,6 +199,74 @@ textarea {
     padding: 0 12px;
 }
 
+.help-tip {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+}
+
+.help-tip > button {
+    width: 1.3rem;
+    height: 1.3rem;
+    margin-left: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.help-tip-body {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    left: 0;
+    top: 1.7rem;
+    width: min(280px, 70vw);
+    padding: 0.75rem 0.85rem;
+    border-radius: 12px;
+    background: #1b1e24;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.help-tip.is-open .help-tip-body,
+.help-tip:focus-within .help-tip-body {
+    display: block;
+}
+
+.need-help { color: var(--muted); }
+
+.guide h2 { margin-top: 2rem; }
+.guide-grid, .install-form .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+.guide label, .install-form label { display: grid; gap: 6px; margin: 10px 0; }
+.guide input, .guide textarea, .guide select,
+.install-form input, .install-form textarea, .install-form select {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: #111318;
+    color: var(--text);
+}
+.faq dt { font-weight: 800; margin-top: 1rem; }
+.faq dd { margin: 0.25rem 0 0; color: var(--muted); }
+.profile-stream-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.golive-progress { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; list-style: none; }
+.golive-progress button { background: transparent; color: inherit; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.golive-progress .is-current button { background: #ff4d18; color: #140700; border-color: #ff4d18; }
+.golive-progress .is-done button { border-color: #40c27a; }
+.tier-choice { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; }
+.gear-list { padding-left: 1.1rem; }
+#linkPreview, .golive-shell video { width: 100%; max-height: 320px; background: #000; border-radius: 12px; margin-top: 12px; }
+
 .site-root-link {
     color: var(--muted);
     font-size: 0.78rem;

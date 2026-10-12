@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streaming setup guide — LiveView Golf</title>
+    <meta name="description" content="LiveView installs a weatherproof camera that streams to YouTube Live. Contact for pricing, or read the do-it-yourself options.">
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="sticky-header">
+        <div class="top-bar">
+            <a class="site-root-link" href="https://maxteeple.com/">maxteeple.com</a>
+            <a class="brand" href="index.html" aria-label="LiveView Golf home">
+                <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
+                <span class="company-name brand-wordmark">LiveView Golf</span>
+            </a>
+            <nav class="desktop-nav" aria-label="Primary">
+                <a href="index.html">Streams</a>
+                <a href="login.html?start=course">Start streaming</a>
+            </nav>
+        </div>
+    </header>
+    <main class="page-shell guide">
+        <p class="eyebrow">Courses: start streaming</p>
+        <h1>Streaming setup guide</h1>
+        <p class="lede-copy">LiveView embeds a YouTube Live, Twitch, Vimeo, or public HLS link. It does not run its own video host. Most courses use a managed install.</p>
+        <p class="need-help">Need help? <a data-help-mail data-subject="LiveView setup guide" href="mailto:max.teeple@gmail.com?subject=LiveView%20setup%20guide">Email Max</a></p>
+        <p><a class="primary-link" href="login.html?start=course">Stream your course in 15 minutes</a></p>
+
+        <section id="managed">
+            <h2>We install it for you</h2>
+            <p>Max buys, owns, installs, and supports the kit. There is a setup fee and a monthly fee. <strong>Contact for pricing.</strong> There is no computer left at the course. The camera pushes RTMP <span class="help-tip"><button type="button" aria-label="What RTMP means">?</button><span class="help-tip-body">The protocol the camera uses to send video to YouTube. You paste YouTube’s watch link into LiveView. You do not paste the stream key on this form.</span></span> straight to a YouTube Live persistent key.</p>
+            <h3>What goes on site</h3>
+            <ul>
+                <li>Outdoor IP66 or IP67 PoE IP camera with native RTMP</li>
+                <li>PoE injector or PoE switch <span class="help-tip"><button type="button" aria-label="What PoE means">?</button><span class="help-tip-body">Power over Ethernet. One cable carries power and the network connection to the camera.</span></span></li>
+                <li>Weatherproof 4G/5G router, or a point-to-point Wi-Fi bridge back to the clubhouse</li>
+                <li>NEMA enclosure, camera mount, and surge protection</li>
+                <li>Optional solar where there is no outlet</li>
+                <li>Uptime monitoring, so a dark camera gets attention without someone walking the tee</li>
+            </ul>
+            <h3>Request an install</h3>
+            <form id="installForm" class="install-form guide-form">
+                <div class="guide-grid">
+                    <label>Course name <input name="course_name" required></label>
+                    <label>Contact name <input name="contact_name" required></label>
+                    <label>Email <input name="email" type="email" required></label>
+                    <label>Phone <input name="phone" type="tel"></label>
+                </div>
+                <label>Preferred camera spot(s)
+                    <textarea name="camera_spots" rows="2" placeholder="1st tee, 18th green, range"></textarea>
+                </label>
+                <div class="guide-grid">
+                    <label>Power
+                        <select name="power_availability">
+                            <option value="">Select</option>
+                            <option>Outlet near the camera spot</option>
+                            <option>No outlet — solar may be needed</option>
+                            <option>Not sure yet</option>
+                        </select>
+                    </label>
+                    <label>Internet at the spot
+                        <select name="internet_available">
+                            <option value="">Select</option>
+                            <option>Clubhouse Wi-Fi can reach the spot</option>
+                            <option>Cellular only</option>
+                            <option>Starlink or other</option>
+                            <option>Not sure yet</option>
+                        </select>
+                    </label>
+                </div>
+                <label>Notes
+                    <textarea name="notes" rows="3" placeholder="Do not paste a stream key here."></textarea>
+                </label>
+                <button class="primary-link" type="submit">Request an install</button>
+                <p id="guideInstallStatus" class="for-you-status" role="status"></p>
+            </form>
+        </section>
+
+        <section id="internet">
+            <h2>Internet at the camera</h2>
+            <p>Plan on at least 5–10 Mbps of upload for 1080p, or 3–4 Mbps for 720p. Run a speed test standing where the camera will sit, not only in the clubhouse. <a href="https://speed.cloudflare.com/">Cloudflare’s speed test</a> or a phone speed-test app is enough.</p>
+            <ul>
+                <li>Clubhouse Wi-Fi plus an outdoor access point or a point-to-point bridge aimed at the tee</li>
+                <li>A cellular hotspot or weatherproof 4G/5G router at the camera</li>
+                <li>Starlink, when the course has no usable wired or cellular path</li>
+            </ul>
+        </section>
+
+        <section id="placement">
+            <h2>Where to point it</h2>
+            <p>The usual first spots are the 1st tee, the 18th green, and the range. Face the camera so the sun is behind it in the hours you care about. A privacy sign at the tee that says the hole is on a public or unlisted live stream is worth putting up before the first broadcast.</p>
+            <p>YouTube can be set to a scheduled premiere, and a managed camera can be left powered so it reconnects to the same stream key. All-day operation needs continuous power (outlet, PoE, or solar) and shade or a light-colored enclosure so the camera does not shut down from heat.</p>
+        </section>
+
+        <section id="youtube">
+            <h2>YouTube Live link</h2>
+            <ol>
+                <li>Verify the channel and enable live streaming. The first approval can take up to 24 hours.</li>
+                <li>Create a persistent stream key, not a one-time key.</li>
+                <li>Set the stream to Unlisted or Public, and turn on DVR.</li>
+                <li>Copy the watch URL or the channel live URL and paste it in the <a href="golive.html">Go Live wizard</a>.</li>
+            </ol>
+            <p>Twitch alternative: use the Creator Dashboard stream key and paste your twitch.tv channel URL instead. Vimeo and a public HLS address also embed.</p>
+        </section>
+
+        <section id="diy">
+            <h2>Prefer to do it yourself?</h2>
+            <p>These are optional. The managed install above is what we set up and support. Contact for pricing if you want help choosing. No specific shop pages are linked here.</p>
+            <h3>Phone</h3>
+            <ul>
+                <li>A spare iPhone or Android phone on a tripod or fence clamp</li>
+                <li>The YouTube app, or Larix Broadcaster</li>
+                <li>Course Wi-Fi or the phone’s 4G/5G</li>
+                <li>A power bank or an outlet, and a weather pouch</li>
+            </ul>
+            <h3>Single camera</h3>
+            <ul>
+                <li>A weatherproof PoE or IP camera that can push RTMP, or a GoPro Hero 10 or newer that can livestream</li>
+                <li>Mounted power</li>
+                <li>A 4G/5G router, a Wi-Fi extender, or a point-to-point bridge to the tee</li>
+            </ul>
+            <h3>Multi-camera</h3>
+            <ul>
+                <li>Several cameras into a laptop or mini PC running OBS, or a hardware encoder</li>
+                <li>A bonded cellular connection or Starlink</li>
+            </ul>
+        </section>
+
+        <section id="faq">
+            <h2>Troubleshooting</h2>
+            <dl class="faq">
+                <dt>YouTube will not let the channel go live</dt>
+                <dd>New channels have to be verified. That wait can be up to 24 hours. The rest of the wizard can be saved and resumed.</dd>
+                <dt>Test my link does nothing</dt>
+                <dd>Paste the watch URL, the channel /live URL, a Twitch channel, a Vimeo video, or a public .m3u8 or .mp4 address. A Studio dashboard URL will not embed.</dd>
+                <dt>The picture freezes at the tee but the clubhouse Wi-Fi is fine</dt>
+                <dd>Test upload speed at the camera. Office Wi-Fi often does not reach the tee box.</dd>
+                <dt>The camera drops out in the afternoon</dt>
+                <dd>Check power, the PoE link, and heat inside the enclosure. A dark enclosure in full sun will shut a camera down.</dd>
+                <dt>The course stays offline on LiveView after the broadcast starts</dt>
+                <dd>The link has to be approved, then marked live in the course studio. Pending approval is a normal step, not an error.</dd>
+            </dl>
+        </section>
+    </main>
+    <script src="/liveview/config.js"></script>
+    <script src="help.js"></script>
+    <script>
+        document.getElementById('installForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const status = document.getElementById('guideInstallStatus');
+            status.textContent = 'Sending…';
+            try {
+                const result = await window.LiveViewInstall.submit(event.currentTarget);
+                status.textContent = result.message;
+                event.currentTarget.reset();
+            } catch (error) {
+                status.textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>
