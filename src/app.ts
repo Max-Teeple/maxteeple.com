@@ -20,6 +20,7 @@ import {
   logActivity,
   logForFollowers,
   playbackUrl,
+  mediaUrl,
   publicAccount,
   publicOrigin,
   qAll,
@@ -34,6 +35,7 @@ import {
   type FriendRequestRow
 } from './db';
 import { geocodeAddress } from './geo';
+import { readOverlay, saveOverlay, setSponsorLogo } from './overlay';
 import { MAX_UPLOAD_BYTES, readImage, saveImage } from './media';
 import { clearFailedLogins, deleteAccount, enforceAccountPolicy, LOGIN_FAIL_LIMIT, loginAttemptCount, recordFailedLogin } from './security';
 import { ensureSchema } from './schema';
@@ -442,8 +444,13 @@ app.put('/profile/:id/images', authenticate, requireSelf, async (c) => {
   const isOwner = (user.role || 'course_owner') === 'course_owner';
   if (isOwner && files.course_logo) updates.course_logo = await saveImage(c.env.LIVEVIEW_MEDIA, files.course_logo);
   if (isOwner && files.stream_preview_photo) updates.stream_preview_photo = await saveImage(c.env.LIVEVIEW_MEDIA, files.stream_preview_photo);
+  if (isOwner && files.sponsor_logo) {
+    const sponsor = await saveImage(c.env.LIVEVIEW_MEDIA, files.sponsor_logo);
+    await setSponsorLogo(c.env.LIVEVIEW_DB, user.id, sponsor);
+  }
   if (files.profile_picture) updates.profile_picture = await saveImage(c.env.LIVEVIEW_MEDIA, files.profile_picture);
   if (!Object.keys(updates).length) {
+    if (files.sponsor_logo) return c.json({ success: true, user: publicAccount(user, true, originOf(c)) });
     throw new HttpError(400, 'No image received. Choose a JPG or PNG file and try again.');
   }
   const saved = await updateAccount(c.env.LIVEVIEW_DB, user.id, updates);
@@ -892,6 +899,42 @@ app.get('/courses/slug/:slug', async (c) => {
   const course = await findCourseBySlug(c.env.LIVEVIEW_DB, c.req.param('slug'));
   if (!course) return c.json({ success: false, message: 'Course not found' }, 404);
   return c.json({ success: true, course: publicAccount(course, false, originOf(c)) });
+});
+
+function presentOverlay(overlay: { sponsor_logo?: unknown; holes?: Array<{ image_url?: unknown }> } | null, origin: string) {
+  if (!overlay) return null;
+  const abs = (value: unknown) => {
+    const raw = typeof value === 'string' ? value : '';
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw) || raw.startsWith('/')) return raw;
+    return mediaUrl(raw, origin);
+  };
+  return {
+    ...overlay,
+    sponsor_logo: abs(overlay.sponsor_logo),
+    holes: (overlay.holes || []).map((hole) => ({ ...hole, image_url: abs(hole.image_url) }))
+  };
+}
+
+app.get('/courses/:id/overlay', async (c) => {
+  const course = await findAccountById(c.env.LIVEVIEW_DB, Number(c.req.param('id')));
+  if (!course || course.role !== 'course_owner') return c.json({ success: false, message: 'Course not found' }, 404);
+  const overlay = presentOverlay(await readOverlay(c.env.LIVEVIEW_DB, course.id), originOf(c));
+  return c.json({
+    success: true,
+    overlay,
+    course: {
+      id: course.id,
+      name: course.name,
+      logo: course.course_logo ? mediaUrl(course.course_logo, originOf(c)) : ''
+    }
+  });
+});
+
+app.put('/profile/:id/overlay', authenticate, requireSelf, requireCourseOwner, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const overlay = presentOverlay(await saveOverlay(c.env.LIVEVIEW_DB, c.get('account').id, body), originOf(c));
+  return c.json({ success: true, overlay });
 });
 
 app.get('/courses/:id/highlights', async (c) => {

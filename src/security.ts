@@ -188,6 +188,8 @@ async function purgeAccount(db: D1Database, id: number, email: string): Promise<
 /** Deletes one non-demo account and rows that point at it, including install requests. */
 export async function deleteAccount(db: D1Database, id: number, email: string): Promise<void> {
   await db.prepare(`DELETE FROM install_requests WHERE account_id = ? OR email = ?`).bind(id, email).run();
+  await db.prepare(`DELETE FROM course_holes WHERE course_id = ?`).bind(id).run();
+  await db.prepare(`DELETE FROM course_overlays WHERE course_id = ?`).bind(id).run();
   await db.prepare(`DELETE FROM watch_party_messages WHERE user_id = ? OR course_id = ?`).bind(id, id).run();
   await db.prepare(`DELETE FROM watch_parties WHERE course_id = ?`).bind(id).run();
   await purgeAccount(db, id, email);

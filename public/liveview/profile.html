@@ -12,6 +12,7 @@
     <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
     <link rel="manifest" href="/liveview/manifest.json">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="overlay.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -197,6 +198,68 @@
                 <p class="profile-stream-warning">Regenerating the webhook key breaks any encoder already posting status updates with the old key. It does not change your YouTube, Twitch, Vimeo, or HLS link.</p>
             </section>
 
+            <section id="overlayEditor" class="profile-panel overlay-editor" hidden>
+                <h2 class="profile-panel-title">On-stream overlay</h2>
+                <p class="profile-hub-note">This layer sits on top of the picture. It is not burned into the video. Viewers can hide it. Templates are a broadcast lower-third or a small corner bug.</p>
+                <div class="overlay-editor-grid">
+                    <div>
+                        <div class="stream-stage" id="overlayStage">
+                            <video id="overlayPreviewVideo" muted loop playsinline controls></video>
+                        </div>
+                        <label>Preview tee
+                            <select id="overlayTee">
+                                <option value="black">Black</option>
+                                <option value="blue">Blue</option>
+                                <option value="white" selected>White</option>
+                                <option value="red">Red</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="overlay-controls">
+                        <label>Template
+                            <select id="overlayTemplate">
+                                <option value="lower-third">Broadcast lower-third</option>
+                                <option value="corner-bug">Minimal corner bug</option>
+                            </select>
+                        </label>
+                        <div class="overlay-checks">
+                            <label><input type="checkbox" data-show="logo" checked> Logo</label>
+                            <label><input type="checkbox" data-show="name" checked> Name</label>
+                            <label><input type="checkbox" data-show="hole" checked> Hole</label>
+                            <label><input type="checkbox" data-show="par" checked> Par</label>
+                            <label><input type="checkbox" data-show="yardage" checked> Yardage</label>
+                            <label><input type="checkbox" data-show="sponsor"> Sponsor</label>
+                            <label><input type="checkbox" data-show="ticker"> Ticker</label>
+                            <label><input type="checkbox" id="overlayViewers" checked> Show to viewers</label>
+                        </div>
+                        <label>Ticker <input id="overlayTicker" maxlength="180" placeholder="Optional message"></label>
+                        <label>Sponsor logo URL <input id="overlaySponsor" placeholder="https:// or upload"></label>
+                        <label>Upload sponsor <input id="overlaySponsorFile" type="file" accept="image/*"></label>
+                        <div class="guide-grid">
+                            <label>Background <input id="overlayBg" type="color" value="#111318"></label>
+                            <label>Text <input id="overlayText" type="color" value="#f7f2ea"></label>
+                            <label>Accent <input id="overlayAccent" type="color" value="#ff4d18"></label>
+                        </div>
+                        <label>Opacity <input id="overlayOpacity" type="range" min="0.35" max="1" step="0.01" value="0.94"></label>
+                        <label>Logo position <select data-pos="logo"><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-center">Bottom center</option><option value="bottom-right">Bottom right</option><option value="custom">Dragged</option></select></label>
+                        <label>Name position <select data-pos="name"><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-center">Bottom center</option><option value="bottom-right">Bottom right</option><option value="custom">Dragged</option></select></label>
+                        <label>Hole position <select data-pos="hole"><option value="top-left">Top left</option><option value="top-right">Top right</option><option value="bottom-left">Bottom left</option><option value="bottom-center">Bottom center</option><option value="bottom-right">Bottom right</option><option value="custom">Dragged</option></select></label>
+                        <label>Current hole <select id="overlayHole"></select></label>
+                        <label>Par <input id="overlayPar" type="number" min="3" max="6"></label>
+                        <div class="guide-grid">
+                            <label>Black <input id="yards-black" type="number" min="50" max="800"></label>
+                            <label>Blue <input id="yards-blue" type="number" min="50" max="800"></label>
+                            <label>White <input id="yards-white" type="number" min="50" max="800"></label>
+                            <label>Red <input id="yards-red" type="number" min="50" max="800"></label>
+                        </div>
+                        <label>Hole image URL <input id="overlayHoleImage" placeholder="Optional"></label>
+                        <button type="button" id="applyOverlayTemplate" class="secondary-link">Apply template to all holes</button>
+                        <button type="button" id="saveOverlay" class="primary-link">Save overlay</button>
+                        <p id="overlayStatus" class="profile-hub-note" role="status"></p>
+                    </div>
+                </div>
+            </section>
+
             <section id="streamPreviewPanel" class="profile-panel stream-preview-section">
                 <h2 class="profile-panel-title">Live stream preview</h2>
                 <video id="liveStreamPreview" controls autoplay muted playsinline></video>
@@ -212,6 +275,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
     <script src="stream-player.js"></script>
+    <script src="overlay.js"></script>
+    <script src="overlay-editor.js"></script>
     <script src="config.js"></script>
     <script src="liveview-core.js"></script>
     <script src="auth-guard.js"></script>

@@ -114,6 +114,36 @@ describe('LiveView on maxteeple.com', () => {
     }
     expect(courses.body.courses.some((course: { playback_url?: string }) => String(course.playback_url || '').endsWith('.mp4'))).toBe(true);
 
+    const overlay = await json(`/liveview/courses/${courses.body.courses[0].id}/overlay`);
+    expect(overlay.response.status).toBe(200);
+    expect(overlay.body.overlay.holes.length).toBe(18);
+    expect(['lower-third', 'corner-bug']).toContain(overlay.body.overlay.template);
+    expect(JSON.stringify(overlay.body)).not.toContain('scoreboard');
+
+    const owner = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: seeded.body.exampleCourseLogin, password: 'demo1234' })
+    });
+    expect(owner.response.status).toBe(200);
+    const ownOverlay = await json(`/liveview/courses/${owner.body.user.id}/overlay`);
+    const switched = await json(`/liveview/profile/${owner.body.user.id}/overlay`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${owner.body.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...ownOverlay.body.overlay,
+        template: 'corner-bug',
+        current_hole: 4
+      })
+    });
+    expect(switched.response.status).toBe(200);
+    expect(switched.body.overlay.template).toBe('corner-bug');
+    expect(switched.body.overlay.current_hole).toBe(4);
+    expect(switched.body.overlay.holes.every((hole: { template: string }) => hole.template === 'lower-third' || hole.template === 'corner-bug')).toBe(true);
+
     const map = await json('/liveview/courses/map');
     expect(map.body.courses.length).toBeGreaterThan(10);
     expect(map.body.courses.some((course: { latitude: number }) => Number.isFinite(course.latitude))).toBe(true);
@@ -125,6 +155,8 @@ describe('LiveView on maxteeple.com', () => {
     expect(coursePage.status).toBe(200);
     const courseHtml = await coursePage.text();
     expect(courseHtml.toLowerCase()).toContain('stream');
+    expect(courseHtml).toContain('overlay.js');
+    expect(courseHtml).toContain('Hide overlay');
 
     const user = await json('/liveview/login', {
       method: 'POST',

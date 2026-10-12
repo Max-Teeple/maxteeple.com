@@ -1,6 +1,7 @@
 import schemaSql from '../migrations/0001_init.sql';
 import extraSql from '../migrations/0002_liveview.sql';
 import goliveSql from '../migrations/0003_golive.sql';
+import overlaySql from '../migrations/0004_overlays.sql';
 
 function statements(sql: string): string[] {
   const stripped = sql
@@ -42,6 +43,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
 
   await applyMigration(db, '0002_liveview', extraSql);
   await applyMigration(db, '0003_golive', goliveSql);
+  await applyMigration(db, '0004_overlays', overlaySql);
 }
 
 async function applyMigration(db: D1Database, id: string, sql: string) {

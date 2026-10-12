@@ -161,7 +161,7 @@ async function loadHighlights(id) {
             <strong>${escapeHtml(h.title || 'Replay')}</strong>
             ${label}
             <time>${when}</time>
-            ${h.hls_url ? `<a href="${escapeHtml(h.hls_url)}" target="_blank" rel="noopener">Open replay</a>` : ''}
+            ${h.hls_url ? `<div class="stream-stage highlight-stage"><video class="highlight-video" data-src="${escapeHtml(h.hls_url)}" controls muted playsinline preload="metadata"></video><div class="lv-overlay-root" hidden></div></div>` : ''}
         </article>`;
     }).join('');
     document.getElementById('highlightsSection')?.removeAttribute('hidden');
@@ -206,6 +206,7 @@ async function fetchCourse() {
         const replay = highlights?.find((item) => item.hls_url);
         const started = replay ? window.LiveViewPlayer?.show(video, replay.hls_url, () => renderOfflineMessage(activeCourse, false)) : false;
         renderOfflineMessage(activeCourse, Boolean(started));
+        await mountCourseOverlay(resolvedId);
         return;
     }
 
@@ -215,6 +216,55 @@ async function fetchCourse() {
     noStreamMsg.style.display = 'none';
     const started = window.LiveViewPlayer?.show(video, source, () => renderOfflineMessage(activeCourse, false));
     if (!started) renderOfflineMessage(activeCourse, false);
+    await mountCourseOverlay(resolvedId);
+}
+
+async function mountCourseOverlay(courseId) {
+    const response = await fetch(`${apiBaseUrl}/courses/${courseId}/overlay`);
+    const data = await response.json().catch(() => ({}));
+    if (!data.success || !data.overlay || data.overlay.viewer_enabled === false) return;
+    const payload = Object.assign({}, data.overlay, {
+        courseName: data.course?.name || activeCourse?.name || '',
+        courseLogo: data.course?.logo || ''
+    });
+    const hiddenKey = `lv-overlay-off:${courseId}`;
+    let hidden = localStorage.getItem(hiddenKey) === '1';
+    const stages = [document.getElementById('streamStage'), ...document.querySelectorAll('.highlight-stage')];
+    const handles = [];
+    stages.forEach((stage) => {
+        if (!stage) return;
+        const video = stage.querySelector('video');
+        const src = video?.dataset.src;
+        if (src && window.LiveViewPlayer) window.LiveViewPlayer.show(video, src);
+        handles.push(window.LiveViewOverlay.mount(stage, payload, { tee: 'white' }));
+    });
+    const toggle = document.getElementById('overlayToggle');
+    const teeLabel = document.getElementById('overlayTeeLabel');
+    const teeSelect = document.getElementById('overlayTee');
+    function applyHidden() {
+        stages.forEach((stage) => stage?.querySelector('.lv-overlay-root')?.classList.toggle('is-off', hidden));
+        if (toggle) toggle.textContent = hidden ? 'Show overlay' : 'Hide overlay';
+    }
+    document.querySelectorAll('.lv-overlay-root.is-off').forEach(() => {});
+    if (toggle) {
+        toggle.hidden = false;
+        toggle.onclick = () => {
+            hidden = !hidden;
+            localStorage.setItem(hiddenKey, hidden ? '1' : '0');
+            applyHidden();
+        };
+    }
+    if (teeLabel && teeSelect) {
+        teeLabel.hidden = false;
+        teeSelect.onchange = () => handles.forEach((item) => item.setTee(teeSelect.value));
+    }
+    applyHidden();
+    window.setInterval(async () => {
+        const fresh = await fetch(`${apiBaseUrl}/courses/${courseId}/overlay`).then((res) => res.json()).catch(() => null);
+        if (!fresh?.overlay) return;
+        const next = Object.assign({}, fresh.overlay, { courseName: payload.courseName, courseLogo: payload.courseLogo });
+        handles.forEach((item) => item.update(next));
+    }, 15000);
 }
 
 document.addEventListener('DOMContentLoaded', async function () {

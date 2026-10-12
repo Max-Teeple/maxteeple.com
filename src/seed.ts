@@ -15,7 +15,7 @@ export const DEMO_PASSWORD = 'demo1234';
 export const DEMO_PASSWORD_HASH = 'pbkdf2$8000$EJmhoxmizfCYMqM1ph-bcw$c0Au8749fgt_McShC09QBYfm7gWkAnD-LMCKk5X2uIk';
 export const DEMO_FAN_EMAIL = 'demo-user-001@liveview.demo';
 /** Bump this when demo courses, clips, or follows should be rebuilt in production. */
-export const DEMO_SEED_VERSION = 'fictional-50-mp4-v1';
+export const DEMO_SEED_VERSION = 'fictional-50-overlays-v1';
 
 const CLIPS = [
   '/liveview/demo-streams/tee-shot.mp4',
@@ -152,6 +152,13 @@ async function purgeDemoCourses(db: D1Database) {
   if (!ids.length) return ids;
 
   await deleteByIds(db, 'stream_highlights', 'course_id', ids);
+  const overlays = await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'course_overlays'`)
+    .first<{ name: string }>();
+  if (overlays) {
+    await deleteByIds(db, 'course_holes', 'course_id', ids);
+    await deleteByIds(db, 'course_overlays', 'course_id', ids);
+  }
   const watchMessages = await db
     .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'watch_party_messages'`)
     .first<{ name: string }>();
@@ -270,6 +277,7 @@ export async function seedDemoData(db: D1Database) {
     }
   });
   await batch(db, highlightStatements);
+  await seedDemoOverlays(db, courseRows, now);
 
   const userStatements: D1PreparedStatement[] = [];
   for (let i = 0; i < 80; i++) {
@@ -352,6 +360,54 @@ export async function seedDemoData(db: D1Database) {
     exampleCourseLogin: 'demo-course-01@liveview.demo',
     exampleUserLogin: DEMO_FAN_EMAIL
   };
+}
+
+async function seedDemoOverlays(db: D1Database, courses: { id: number; name: string }[], now: string) {
+  const statements: D1PreparedStatement[] = [];
+  courses.forEach((course, index) => {
+    const template = index % 2 === 0 ? 'lower-third' : 'corner-bug';
+    const positions = template === 'lower-third'
+      ? { logo: { preset: 'bottom-left', x: 3, y: 72 }, name: { preset: 'bottom-left', x: 16, y: 70 }, hole: { preset: 'bottom-left', x: 16, y: 82 }, sponsor: { preset: 'bottom-right', x: 68, y: 72 }, ticker: { preset: 'bottom-center', x: 3, y: 92 } }
+      : { logo: { preset: 'top-left', x: 3, y: 4 }, name: { preset: 'top-left', x: 14, y: 5 }, hole: { preset: 'top-left', x: 3, y: 16 }, sponsor: { preset: 'top-right', x: 68, y: 4 }, ticker: { preset: 'bottom-center', x: 3, y: 90 } };
+    const theme = { background: '#111318', text: '#f7f2ea', accent: index % 2 === 0 ? '#ff4d18' : '#9dffcf' };
+    statements.push(db.prepare(
+      `INSERT INTO course_overlays (
+        course_id, template, theme_json, positions_json, show_logo, show_name, show_hole, show_par,
+        show_yardage, show_sponsor, show_ticker, opacity, sponsor_logo, ticker_text, current_hole, viewer_enabled, updated_at
+      ) VALUES (?, ?, ?, ?, 1, ?, 1, 1, 1, 0, ?, 0.94, NULL, ?, ?, 1, ?)`
+    ).bind(
+      course.id,
+      template,
+      JSON.stringify(theme),
+      JSON.stringify(positions),
+      template === 'lower-third' ? 1 : 0,
+      template === 'lower-third' ? 1 : 0,
+      template === 'lower-third' ? `${course.name} live` : '',
+      (index % 18) + 1,
+      now
+    ));
+    for (let hole = 1; hole <= 18; hole++) {
+      const par = [4, 4, 3, 5, 4, 4, 3, 4, 5][(hole + index) % 9];
+      const base = par === 3 ? 168 : par === 5 ? 520 : 398;
+      const shift = (hole * 7 + index) % 28;
+      statements.push(db.prepare(
+        `INSERT INTO course_holes (course_id, hole_number, par, yardage_json, image_url, template)
+         VALUES (?, ?, ?, ?, NULL, ?)`
+      ).bind(
+        course.id,
+        hole,
+        par,
+        JSON.stringify({
+          black: base + 18 - shift,
+          blue: base - shift,
+          white: base - 24 - shift,
+          red: base - 52 - shift
+        }),
+        template
+      ));
+    }
+  });
+  await batch(db, statements);
 }
 
 export async function ensureDemoCatalog(db: D1Database) {

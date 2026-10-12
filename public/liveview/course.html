@@ -15,6 +15,7 @@
     <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
     <link rel="manifest" href="/liveview/manifest.json">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="overlay.css">
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -82,7 +83,21 @@
                 </div>
             </div>
             <div style="margin-top:32px;text-align:center;">
-                <video id="courseStreamPlayer" controls autoplay playsinline style="width:100%;max-width:700px;background:#000;"></video>
+                <div class="stream-stage" id="streamStage">
+                    <video id="courseStreamPlayer" controls autoplay playsinline></video>
+                    <div class="lv-overlay-root" id="streamOverlay" hidden></div>
+                </div>
+                <div class="overlay-tools">
+                    <button type="button" id="overlayToggle" class="overlay-toggle" hidden>Hide overlay</button>
+                    <label class="overlay-tee" id="overlayTeeLabel" hidden>Tee
+                        <select id="overlayTee">
+                            <option value="black">Black</option>
+                            <option value="blue">Blue</option>
+                            <option value="white" selected>White</option>
+                            <option value="red">Red</option>
+                        </select>
+                    </label>
+                </div>
                 <div id="noStreamMsg" style="color:#aaa;margin-top:8px;display:none;">Stream currently not live.</div>
             </div>
             <section id="watchParty" class="watch-party" hidden>
@@ -110,6 +125,7 @@
     <script src="script.js"></script>
     <script src="site-chrome.js"></script>
     <script src="stream-player.js"></script>
+    <script src="overlay.js"></script>
     <script src="course.js"></script>
     <script src="sw-register.js"></script>
 </body>
