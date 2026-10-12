@@ -19,9 +19,9 @@ function localCount(key: string): number {
 async function ensureAttemptTable(db: D1Database) {
   await db
     .prepare(
-      `CREATE TABLE IF NOT EXISTS login_attempts (
+      `CREATE TABLE IF NOT EXISTS login_attempt_counts (
         id TEXT PRIMARY KEY,
-        count INTEGER NOT NULL,
+        attempt_count INTEGER NOT NULL,
         updated_at TEXT NOT NULL
       )`
     )
@@ -36,13 +36,13 @@ export async function loginAttemptCount(db: D1Database, kv: KVNamespace, ip: str
   const key = loginAttemptKey(ip, email);
   await ensureAttemptTable(db);
   const row = await db
-    .prepare(`SELECT count, updated_at FROM login_attempts WHERE id = ?`)
+    .prepare(`SELECT attempt_count, updated_at FROM login_attempt_counts WHERE id = ?`)
     .bind(key)
-    .first<{ count: number; updated_at: string }>();
+    .first<{ attempt_count: number; updated_at: string }>();
   let stored = 0;
   if (row?.updated_at) {
     const ageSec = (Date.now() - Date.parse(row.updated_at)) / 1000;
-    if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC) stored = Number(row.count) || 0;
+    if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC) stored = Number(row.attempt_count) || 0;
   }
   let mirrored = 0;
   try {
@@ -58,20 +58,20 @@ export async function recordFailedLogin(db: D1Database, kv: KVNamespace, ip: str
   const now = new Date().toISOString();
   await ensureAttemptTable(db);
   const existing = await db
-    .prepare(`SELECT count, updated_at FROM login_attempts WHERE id = ?`)
+    .prepare(`SELECT attempt_count, updated_at FROM login_attempt_counts WHERE id = ?`)
     .bind(key)
-    .first<{ count: number; updated_at: string }>();
+    .first<{ attempt_count: number; updated_at: string }>();
   let next = 1;
   if (existing?.updated_at) {
     const ageSec = (Date.now() - Date.parse(existing.updated_at)) / 1000;
-    if (Number.isFinite(ageSec) && ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC) {
-      next = (Number(existing.count) || 0) + 1;
+    if (!Number.isFinite(ageSec) || (ageSec >= 0 && ageSec < LOGIN_FAIL_WINDOW_SEC)) {
+      next = (Number(existing.attempt_count) || 0) + 1;
     }
   }
   await db
     .prepare(
-      `INSERT INTO login_attempts (id, count, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at`
+      `INSERT INTO login_attempt_counts (id, attempt_count, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET attempt_count = excluded.attempt_count, updated_at = excluded.updated_at`
     )
     .bind(key, next, now)
     .run();
@@ -88,7 +88,7 @@ export async function clearFailedLogins(db: D1Database, kv: KVNamespace, ip: str
   const key = loginAttemptKey(ip, email);
   localFails.delete(key);
   await ensureAttemptTable(db);
-  await db.prepare(`DELETE FROM login_attempts WHERE id = ?`).bind(key).run();
+  await db.prepare(`DELETE FROM login_attempt_counts WHERE id = ?`).bind(key).run();
   try {
     await kv.delete(key);
   } catch {
