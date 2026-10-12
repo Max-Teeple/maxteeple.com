@@ -17,6 +17,7 @@
     <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
     <link rel="manifest" href="/liveview/manifest.json">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="overlay.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="">
@@ -70,23 +71,39 @@
         </div>
     </header>
 
-    <section id="home" class="hero">
-        <div class="header-bg" aria-hidden="true"></div>
+    <section id="home" class="hero-broadcast">
+        <div class="hero-stage">
+            <video src="/liveview/demo-streams/tee-shot.mp4" muted loop autoplay playsinline poster="/liveview/images/courses/covers/01.svg"></video>
+            <div class="lv-plate lv-lower hero-demo" aria-hidden="true">
+                <div class="lv-plate-row">
+                    <span class="lv-logo-badge"><img src="/liveview/images/courses/logos/01.svg" alt=""></span>
+                    <div class="lv-plate-copy">
+                        <p class="lv-course-name">Lantern Hollow Links</p>
+                        <p class="lv-hole-meta">Hole 7  ·  Par 4  ·  412 white</p>
+                    </div>
+                    <span class="lv-live-pill"><span class="lv-live-dot"></span>LIVE</span>
+                </div>
+            </div>
+        </div>
         <div class="hero-content">
             <p class="eyebrow">Live golf, course-owned</p>
             <h1>Stream the first tee like prime time.</h1>
-            <p>LiveView gives golf courses a rugged, modern broadcast hub and gives fans a fast way to find live course content.</p>
+            <p>A broadcast look for the course, and a clean way for fans to find what is on.</p>
             <div class="hero-actions">
                 <a class="primary-link" href="#streams">Watch streams</a>
                 <a class="secondary-link" href="explore.html">Explore courses</a>
                 <a class="primary-link" href="login.html?start=course">Stream your course in 15 minutes</a>
             </div>
         </div>
-        <aside class="hero-card" aria-label="Platform stats">
-            <img class="hero-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf logo">
-            <span>Owner studio</span>
-            <strong>YouTube, Twitch, Vimeo, or HLS — approved by the course, watched by fans.</strong>
-        </aside>
+    </section>
+    <section class="for-courses" aria-labelledby="forCoursesTitle">
+        <p class="eyebrow">For courses</p>
+        <h2 id="forCoursesTitle">What buyers get</h2>
+        <div class="feature-grid">
+            <article class="feature-card"><h3>Installed for you</h3><p>Weatherproof camera, power, and a link back to the clubhouse or cellular. Contact for pricing.</p></article>
+            <article class="feature-card"><h3>Broadcast graphics</h3><p>Lower-third or corner bug with hole, par, and yardage. Fans can hide it.</p></article>
+            <article class="feature-card"><h3>On the air in minutes</h3><p>Create the YouTube Live link, request the install, and submit the course for approval.</p></article>
+        </div>
     </section>
 
     <main>

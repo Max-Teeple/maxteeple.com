@@ -65,14 +65,23 @@ window.LiveViewOverlay = (function () {
     function place(node, position) {
         const x = Number(position?.x);
         const y = Number(position?.y);
-        node.style.left = `${Number.isFinite(x) ? x : 3}%`;
-        node.style.top = `${Number.isFinite(y) ? y : 4}%`;
+        const left = Number.isFinite(x) ? x : 3;
+        const top = Number.isFinite(y) ? y : 72;
+        node.style.left = `max(16px, ${left}%)`;
+        if (top >= 55) {
+            node.style.top = 'auto';
+            node.style.bottom = `max(16px, ${Math.max(0, 100 - top)}%)`;
+        } else {
+            node.style.bottom = 'auto';
+            node.style.top = `max(16px, ${top}%)`;
+        }
     }
 
     function mount(stage, payload, options) {
         const opts = options || {};
         let tee = opts.tee || 'white';
         let overlay = payload;
+        let lastHole = null;
         const root = stage.querySelector('.lv-overlay-root') || document.createElement('div');
         root.className = 'lv-overlay-root';
         if (!root.parentElement) stage.appendChild(root);
@@ -87,58 +96,83 @@ window.LiveViewOverlay = (function () {
             const layout = layoutFor(overlay);
             const hole = currentHole(overlay);
             const yards = hole?.yardage?.[tee];
+            const theme = layout.theme;
+            root.style.setProperty('--lv-plate', theme.background || '#111318');
+            root.style.setProperty('--lv-ink', theme.text || '#f7f2ea');
+            root.style.setProperty('--lv-accent', theme.accent || '#ff4d18');
             root.style.opacity = String(overlay.opacity || 0.94);
             root.dataset.template = layout.templateId;
-            const theme = layout.theme;
 
-            function chip(key, node) {
-                if (!layout.shows[key]) return;
-                node.classList.add('lv-overlay-chip', `lv-overlay-${key}`);
-                node.style.background = theme.background;
-                node.style.color = theme.text;
-                node.style.borderColor = theme.accent;
-                place(node, layout.positions[key] || {});
-                if (opts.editor) {
-                    node.dataset.element = key;
-                    node.classList.add('is-draggable');
-                }
-                root.appendChild(node);
+            const plate = document.createElement('div');
+            plate.className = layout.templateId === 'corner-bug' ? 'lv-plate lv-bug' : 'lv-plate lv-lower';
+            const anchor = layout.templateId === 'corner-bug' ? layout.positions.logo : layout.positions.hole;
+            place(plate, anchor || {});
+            if (opts.editor) {
+                plate.dataset.element = layout.templateId === 'corner-bug' ? 'logo' : 'hole';
+                plate.classList.add('is-draggable');
             }
 
-            if (overlay.courseLogo || payload.courseLogo) {
+            const row = document.createElement('div');
+            row.className = 'lv-plate-row';
+
+            if (layout.shows.logo && (overlay.courseLogo || payload.courseLogo)) {
+                const badge = document.createElement('span');
+                badge.className = 'lv-logo-badge';
                 const logo = document.createElement('img');
                 logo.alt = '';
                 logo.src = overlay.courseLogo || payload.courseLogo;
-                chip('logo', logo);
+                badge.appendChild(logo);
+                row.appendChild(badge);
             }
-            const name = document.createElement('div');
-            name.appendChild(text(overlay.courseName || ''));
-            chip('name', name);
 
-            const holeLine = document.createElement('div');
+            const copy = document.createElement('div');
+            copy.className = 'lv-plate-copy';
+            if (layout.shows.name && layout.templateId !== 'corner-bug') {
+                const name = document.createElement('p');
+                name.className = 'lv-course-name';
+                name.appendChild(text(overlay.courseName || ''));
+                copy.appendChild(name);
+            }
+            const meta = document.createElement('p');
+            meta.className = 'lv-hole-meta';
             const bits = [];
             if (layout.shows.hole && hole) bits.push(`Hole ${hole.hole_number}`);
             if (layout.shows.par && hole?.par) bits.push(`Par ${hole.par}`);
             if (layout.shows.yardage && yards) bits.push(`${yards} ${tee}`);
-            holeLine.appendChild(text(bits.join(' · ') || 'Hole'));
-            if (hole?.image_url) {
-                const img = document.createElement('img');
-                img.alt = '';
-                img.src = hole.image_url;
-                img.className = 'lv-hole-thumb';
-                holeLine.appendChild(img);
+            meta.appendChild(text(bits.join('  ·  ')));
+            if (lastHole !== null && hole && Number(lastHole) !== Number(hole.hole_number)) {
+                meta.classList.add('lv-slide');
             }
-            chip('hole', holeLine);
+            lastHole = hole ? hole.hole_number : null;
+            copy.appendChild(meta);
+            row.appendChild(copy);
 
-            if (overlay.sponsor_logo) {
+            if (overlay.isLive !== false) {
+                const live = document.createElement('span');
+                live.className = 'lv-live-pill';
+                const dot = document.createElement('span');
+                dot.className = 'lv-live-dot';
+                live.appendChild(dot);
+                live.appendChild(text('LIVE'));
+                row.appendChild(live);
+            }
+
+            if (layout.shows.sponsor && overlay.sponsor_logo) {
                 const sponsor = document.createElement('img');
+                sponsor.className = 'lv-sponsor';
                 sponsor.alt = 'Sponsor';
                 sponsor.src = overlay.sponsor_logo;
-                chip('sponsor', sponsor);
+                row.appendChild(sponsor);
             }
-            const ticker = document.createElement('div');
-            ticker.appendChild(text(overlay.ticker_text || ''));
-            chip('ticker', ticker);
+
+            plate.appendChild(row);
+            if (layout.shows.ticker && overlay.ticker_text && layout.templateId !== 'corner-bug') {
+                const ticker = document.createElement('p');
+                ticker.className = 'lv-ticker';
+                ticker.appendChild(text(overlay.ticker_text));
+                plate.appendChild(ticker);
+            }
+            root.appendChild(plate);
         }
 
         function onPointerDown(event) {
@@ -149,8 +183,10 @@ window.LiveViewOverlay = (function () {
             function move(ev) {
                 const x = Math.min(92, Math.max(0, ((ev.clientX - rect.left) / rect.width) * 100));
                 const y = Math.min(92, Math.max(0, ((ev.clientY - rect.top) / rect.height) * 100));
-                chip.style.left = `${x}%`;
-                chip.style.top = `${y}%`;
+                chip.style.left = `max(16px, ${x}%)`;
+                chip.style.top = `max(16px, ${y}%)`;
+                chip.style.bottom = 'auto';
+                chip.style.right = 'auto';
                 if (opts.onMove) opts.onMove(chip.dataset.element, { preset: 'custom', x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
             }
             function up() {

@@ -65,58 +65,55 @@
             </div>
         </div>
     </header>
-    <main>
-        <div class="course-stream-container" style="max-width:900px;margin:80px auto 0 auto;background:#222;border-radius:16px;padding:32px 24px;box-shadow:0 4px 24px rgba(0,0,0,0.2);">
-            <div style="display:flex;align-items:center;gap:32px;">
-                <img id="courseLogo" src="" alt="Course Logo" style="width:180px;height:180px;border-radius:12px;object-fit:cover;display:none;">
+    <main class="broadcast">
+        <section class="broadcast-hero">
+            <div class="stream-stage broadcast-player" id="streamStage">
+                <video id="courseStreamPlayer" controls autoplay playsinline></video>
+                <div class="lv-overlay-root" id="streamOverlay" hidden></div>
+            </div>
+            <div class="broadcast-meta">
+                <img id="courseLogo" class="broadcast-logo" alt="" hidden>
                 <div>
-                    <h1 id="courseName" style="margin-bottom:8px;"></h1>
-                    <div id="courseLocation" style="color:#aaa;margin-bottom:8px;"></div>
-                    <div id="courseDescription" style="color:#fff;"></div>
-                    <div id="courseStreamStatus" class="live-badge" style="margin-top:14px;">Loading stream status...</div>
-                    <p id="nextStreamLine" class="next-stream-line" hidden></p>
-                    <div id="consumerCourseActions" style="display:none;margin-top:16px;gap:10px;flex-wrap:wrap;">
-                        <button type="button" id="favoriteCourseBtn">Favorite Course</button>
-                        <button type="button" id="followCourseBtn">Follow Course</button>
+                    <p id="courseStreamStatus" class="broadcast-kicker">Loading</p>
+                    <h1 id="courseName"></h1>
+                    <p id="courseLocation" class="broadcast-loc"></p>
+                    <p id="courseDescription" class="broadcast-desc"></p>
+                    <p id="nextStreamLine" class="broadcast-loc" hidden></p>
+                    <div id="consumerCourseActions" class="broadcast-actions" hidden>
+                        <button type="button" id="favoriteCourseBtn">Favorite</button>
+                        <button type="button" id="followCourseBtn">Follow</button>
                         <button type="button" id="notifyCourseBtn">Notify me</button>
+                    </div>
+                    <div class="broadcast-tools">
+                        <button type="button" id="overlayToggle" class="overlay-toggle" hidden>Hide overlay</button>
+                        <div class="seg" id="overlayTeeLabel" role="radiogroup" aria-label="Tee yardage" hidden>
+                            <button type="button" role="radio" data-tee="black" aria-checked="false">Black</button>
+                            <button type="button" role="radio" data-tee="blue" aria-checked="false">Blue</button>
+                            <button type="button" role="radio" data-tee="white" aria-checked="true">White</button>
+                            <button type="button" role="radio" data-tee="red" aria-checked="false">Red</button>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div style="margin-top:32px;text-align:center;">
-                <div class="stream-stage" id="streamStage">
-                    <video id="courseStreamPlayer" controls autoplay playsinline></video>
-                    <div class="lv-overlay-root" id="streamOverlay" hidden></div>
-                </div>
-                <div class="overlay-tools">
-                    <button type="button" id="overlayToggle" class="overlay-toggle" hidden>Hide overlay</button>
-                    <label class="overlay-tee" id="overlayTeeLabel" hidden>Tee
-                        <select id="overlayTee">
-                            <option value="black">Black</option>
-                            <option value="blue">Blue</option>
-                            <option value="white" selected>White</option>
-                            <option value="red">Red</option>
-                        </select>
-                    </label>
-                </div>
-                <div id="noStreamMsg" style="color:#aaa;margin-top:8px;display:none;">Stream currently not live.</div>
-            </div>
-            <section id="watchParty" class="watch-party" hidden>
+            <p id="noStreamMsg" class="broadcast-loc" hidden>Stream currently not live.</p>
+        </section>
+        <div class="broadcast-body">
+            <section id="highlightsSection" class="highlights-section" hidden>
+                <h2>Replays</h2>
+                <div id="highlightsList" class="discover-grid"></div>
+            </section>
+            <aside id="watchParty" class="watch-party" hidden>
                 <div class="watch-party-head">
                     <h2>Watch party</h2>
-                    <button type="button" id="copyWatchLink" class="secondary-link">Copy invite link</button>
+                    <button type="button" id="copyWatchLink" class="secondary-link">Copy invite</button>
                 </div>
-                <p id="watchHint" class="watch-hint">Chat with everyone watching this course.</p>
+                <p id="watchHint" class="watch-hint">Chat with everyone on this stream.</p>
                 <div id="watchMessages" class="watch-messages" aria-live="polite"></div>
                 <form id="watchForm" class="watch-form">
                     <input id="watchInput" maxlength="500" placeholder="Say something" autocomplete="off">
                     <button type="submit" class="primary-link">Send</button>
                 </form>
-            </section>
-            <section id="highlightsSection" class="highlights-section" hidden style="margin-top:32px;">
-                <h2>Recent highlights</h2>
-                <p style="color:#aaa;">Replay clips when the course is offline.</p>
-                <div id="highlightsList" class="discover-grid"></div>
-            </section>
+            </aside>
         </div>
     </main>
     <script src="config.js"></script>

@@ -59,6 +59,7 @@ function setCourseActions() {
     const notifyBtn = document.getElementById('notifyCourseBtn');
     if (!actions || !favoriteBtn || !followBtn) return;
     if (!activeCourse || activeCourse.role === 'consumer') return;
+    actions.hidden = false;
     actions.style.display = 'flex';
     if (!viewer || viewer.role !== 'consumer') {
         favoriteBtn.hidden = true;
@@ -193,7 +194,7 @@ async function fetchCourse() {
         || (activeCourse.course_logo ? `${apiBaseUrl}/${activeCourse.course_logo}` : '');
     if (logo && logoSrc) {
         logo.src = logoSrc;
-        logo.style.display = 'inline-block';
+        logo.hidden = false;
     }
 
     const video = document.getElementById('courseStreamPlayer');
@@ -225,7 +226,8 @@ async function mountCourseOverlay(courseId) {
     if (!data.success || !data.overlay || data.overlay.viewer_enabled === false) return;
     const payload = Object.assign({}, data.overlay, {
         courseName: data.course?.name || activeCourse?.name || '',
-        courseLogo: data.course?.logo || ''
+        courseLogo: data.course?.logo || '',
+        isLive: Boolean(activeCourse?.is_live)
     });
     const hiddenKey = `lv-overlay-off:${courseId}`;
     let hidden = localStorage.getItem(hiddenKey) === '1';
@@ -240,12 +242,10 @@ async function mountCourseOverlay(courseId) {
     });
     const toggle = document.getElementById('overlayToggle');
     const teeLabel = document.getElementById('overlayTeeLabel');
-    const teeSelect = document.getElementById('overlayTee');
     function applyHidden() {
         stages.forEach((stage) => stage?.querySelector('.lv-overlay-root')?.classList.toggle('is-off', hidden));
         if (toggle) toggle.textContent = hidden ? 'Show overlay' : 'Hide overlay';
     }
-    document.querySelectorAll('.lv-overlay-root.is-off').forEach(() => {});
     if (toggle) {
         toggle.hidden = false;
         toggle.onclick = () => {
@@ -254,9 +254,16 @@ async function mountCourseOverlay(courseId) {
             applyHidden();
         };
     }
-    if (teeLabel && teeSelect) {
+    if (teeLabel) {
         teeLabel.hidden = false;
-        teeSelect.onchange = () => handles.forEach((item) => item.setTee(teeSelect.value));
+        teeLabel.querySelectorAll('[data-tee]').forEach((button) => {
+            button.addEventListener('click', () => {
+                teeLabel.querySelectorAll('[data-tee]').forEach((peer) => {
+                    peer.setAttribute('aria-checked', peer === button ? 'true' : 'false');
+                });
+                handles.forEach((item) => item.setTee(button.dataset.tee));
+            });
+        });
     }
     applyHidden();
     window.setInterval(async () => {

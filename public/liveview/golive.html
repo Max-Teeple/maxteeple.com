@@ -7,6 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
     <link rel="stylesheet" href="onboarding-styles.css">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="overlay.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -79,6 +80,11 @@
                 <span>Managed install <span class="help-tip"><button type="button" aria-label="What a managed install includes">?</button><span class="help-tip-body">Outdoor IP66/67 PoE camera with native RTMP, PoE power, weatherproof cellular router or a Wi-Fi bridge, NEMA enclosure, mount, surge protection, optional solar, and uptime monitoring.</span></span></span>
             </label>
             <div id="managedPanel">
+                <div class="feature-grid">
+                    <article class="feature-card"><h3>Camera</h3><p>IP66/67 PoE camera, RTMP into your YouTube key.</p></article>
+                    <article class="feature-card"><h3>Install</h3><p>Enclosure, mount, surge protection, power, and a network path.</p></article>
+                    <article class="feature-card"><h3>Support</h3><p>Uptime monitoring. No PC on site. Contact for pricing.</p></article>
+                </div>
                 <ul class="gear-list">
                     <li>Outdoor IP66 or IP67 PoE IP camera with native RTMP push</li>
                     <li>PoE injector or PoE switch</li>
@@ -120,7 +126,7 @@
                     <label class="stack-label">Notes
                         <textarea name="notes" rows="3" placeholder="Do not paste a stream key here. We collect that when the install is scheduled."></textarea>
                     </label>
-                    <button class="btn btn-secondary" type="submit">Request an install</button>
+                    <button class="btn btn-primary" type="submit">Request an install</button>
                     <p id="installStatus" class="status-msg" role="status"></p>
                 </form>
             </div>
