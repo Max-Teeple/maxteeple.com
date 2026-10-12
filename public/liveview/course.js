@@ -190,7 +190,7 @@ async function fetchCourse() {
     document.getElementById('courseStreamStatus').textContent = activeCourse.is_live ? 'Live now' : 'Stream currently not live';
 
     const logo = document.getElementById('courseLogo');
-    const logoSrc = window.LiveViewCore?.coursePreviewImage(activeCourse)
+    const logoSrc = window.LiveViewCore?.accountImage?.(activeCourse, 'course_logo')
         || (activeCourse.course_logo ? `${apiBaseUrl}/${activeCourse.course_logo}` : '');
     if (logo && logoSrc) {
         logo.src = logoSrc;
