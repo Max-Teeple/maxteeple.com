@@ -13,6 +13,7 @@
 </head>
 <body>
     <header class="onboarding-header">
+        <a class="site-root-link" href="https://maxteeple.com/">maxteeple.com</a>
         <a class="brand" href="index.html">
             <img src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
             <span>LiveView Golf</span>
@@ -22,29 +23,34 @@
 
     <main class="onboarding-shell">
         <div id="onboardingError" class="error-banner" hidden role="alert"></div>
-        <p id="stepProgressLabel" class="step-progress-label">Step 1 of 4</p>
+        <p id="stepProgressLabel" class="step-progress-label">Step 1</p>
         <div class="progress-bar" id="progressBar" aria-hidden="true"></div>
 
         <section class="step-panel active" id="step-welcome" data-step="welcome">
             <div class="welcome-card">
                 <p class="eyebrow" id="welcomeEyebrow">Welcome aboard</p>
                 <h1 id="welcomeTitle">Let's build your LiveView profile</h1>
-                <p class="lead" id="welcomeLead">Tell us a bit about yourself so we can recommend streams and golfers near you.</p>
+                <p class="lead" id="welcomeLead">Add a short bio so we can recommend streams and golfers. Your city is already saved from signup.</p>
+                <p id="fanLocationNote" class="lead" hidden></p>
 
                 <form id="profileForm" onsubmit="return false;">
                     <div class="form-grid">
-                        <label>First name
+                        <label id="firstNameLabel">First name
                             <input type="text" id="obFirstName" name="first_name" autocomplete="given-name" required>
                         </label>
-                        <label>Last name
+                        <label id="lastNameLabel">Last name
                             <input type="text" id="obLastName" name="last_name" autocomplete="family-name">
                         </label>
+                    </div>
+                    <div class="form-grid" id="locationFields">
                         <label>City
                             <input type="text" id="obCity" name="city" required>
                         </label>
                         <label>State
                             <input type="text" id="obState" name="state" maxlength="32" placeholder="AZ or Arizona" required>
                         </label>
+                    </div>
+                    <div class="form-grid">
                         <label id="phoneLabel">Phone <span class="hint">(for friend invites)</span>
                             <input type="tel" id="obPhone" name="phone" placeholder="555-123-4567">
                         </label>
@@ -157,21 +163,50 @@
             </div>
         </section>
 
+        <section class="step-panel" id="step-branding" data-step="branding">
+            <div class="welcome-card">
+                <p class="eyebrow">Branding</p>
+                <h1>Logo, cover, and story</h1>
+                <p class="lead">These show up on your course card. You can change them later in the studio.</p>
+                <label class="stack-label">Course description
+                    <textarea id="obDescription" rows="4" placeholder="What should viewers know about this course?"></textarea>
+                </label>
+                <div class="form-grid">
+                    <label>Course logo
+                        <input type="file" id="obLogo" accept="image/*">
+                    </label>
+                    <label>Cover image
+                        <input type="file" id="obCover" accept="image/*">
+                    </label>
+                </div>
+                <div class="step-actions">
+                    <button type="button" class="btn btn-secondary" data-back="welcome">Back</button>
+                    <button type="button" class="btn btn-primary" id="brandingNextBtn">Continue</button>
+                </div>
+            </div>
+        </section>
+
         <section class="step-panel" id="step-stream" data-step="stream">
             <div class="welcome-card">
                 <p class="eyebrow">Course studio</p>
-                <h1>Set up your live broadcast</h1>
-                <p class="lead">Your course profile is ready. Here's how to go live for viewers.</p>
+                <h1>Add your stream link</h1>
+                <p class="lead">Paste a YouTube, Twitch, Vimeo, HLS, or MP4 link and preview it before you finish. Approval happens from your studio.</p>
+                <label class="stack-label">Stream link
+                    <input type="url" id="obStreamUrl" placeholder="https://">
+                </label>
+                <div class="step-actions" style="margin-top:0">
+                    <button type="button" class="btn btn-secondary" id="obTestLinkBtn">Test my link</button>
+                    <span id="obLinkStatus" class="status-msg"></span>
+                </div>
+                <video id="obStreamPreview" controls muted playsinline style="width:100%;max-height:280px;background:#000;border-radius:12px;margin-top:12px" hidden></video>
                 <ul class="checklist" id="streamChecklist">
-                    <li>Complete your course profile (name, city, branding)</li>
-                    <li>Upload course logo and stream preview photo</li>
-                    <li>Generate your unique stream key in Profile</li>
-                    <li>Request LiveView approval for public streams</li>
-                    <li>Connect your encoder and toggle stream ON</li>
+                    <li>Link valid</li>
+                    <li>Approved</li>
+                    <li>Live</li>
                 </ul>
                 <p class="lead">Manage everything from <strong>Profile → Stream Studio</strong>.</p>
                 <div class="step-actions">
-                    <button type="button" class="btn btn-secondary" data-back="welcome">Back</button>
+                    <button type="button" class="btn btn-secondary" data-back="branding">Back</button>
                     <a class="btn btn-secondary" href="#" id="openProfileBtn" target="_blank" rel="noopener">Open profile studio</a>
                     <button type="button" class="btn btn-primary" id="ownerFinishOnboardingBtn">Enter LiveView</button>
                 </div>
@@ -179,6 +214,8 @@
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="stream-player.js"></script>
     <script src="/liveview/config.js"></script>
     <script src="/liveview/auth-guard.js"></script>
     <script src="onboarding-utils.js"></script>

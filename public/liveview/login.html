@@ -18,6 +18,7 @@
 </head>
 <body>
     <header class="auth-header">
+        <a class="page-home-button" href="https://maxteeple.com/">maxteeple.com</a>
         <a class="page-home-button" href="index.html" aria-label="Go to homepage">Home</a>
         <a class="brand" href="index.html" aria-label="LiveView Golf home">
             <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
@@ -58,6 +59,8 @@
 
                     <button type="submit" class="primary-btn">Log in</button>
                 </form>
+                <button type="button" class="demo-btn" id="tryDemoBtn">Try the demo</button>
+                <p class="switch-copy">One click signs you in as the demo fan.</p>
                 <p class="switch-copy">New here? <a href="#" id="showSignupOptions">Choose your account type</a></p>
             </section>
 
@@ -68,7 +71,7 @@
                     <button id="golfCourseBtn" class="role-card" type="button">
                         <span class="role-label">Golf course owner or rep</span>
                         <strong>Launch a course profile</strong>
-                        <span>Set up branding, stream previews, and live stream keys.</span>
+                        <span>Name and city now. Branding and the stream link come next.</span>
                     </button>
                     <button id="singleUserBtn" class="role-card" type="button">
                         <span class="role-label">Golf fan</span>
@@ -87,14 +90,8 @@
                         <label>Golf course name
                             <input type="text" id="courseName" name="name" autocomplete="organization" required>
                         </label>
-                        <label>Street address
-                            <input type="text" id="courseStreet" name="street_address" autocomplete="street-address" placeholder="123 Fairway Dr">
-                        </label>
                         <label>City
                             <input type="text" id="courseCity" name="city" autocomplete="address-level2" required>
-                        </label>
-                        <label>State
-                            <input type="text" id="courseState" name="state" autocomplete="address-level1" maxlength="32" required>
                         </label>
                         <label>Email
                             <input type="email" id="courseEmail" name="email" autocomplete="email" required>
@@ -102,25 +99,8 @@
                         <label>Password
                             <input type="password" id="coursePassword" name="password" autocomplete="new-password" minlength="8" required>
                         </label>
-                        <label>Stream link
-                            <input type="url" id="streamUrl" name="stream_url" placeholder="YouTube, Twitch, Vimeo, or .m3u8 link">
-                        </label>
                     </div>
-
-                    <label>Course description
-                        <textarea id="courseDescription" name="description" rows="4" placeholder="What makes this course worth tuning into?"></textarea>
-                    </label>
-
-                    <div class="upload-grid">
-                        <label>Course logo
-                            <input type="file" id="courseLogo" name="course_logo" accept="image/*">
-                        </label>
-                        <label>Stream preview photo
-                            <input type="file" id="streamPreviewPhoto" name="stream_preview_photo" accept="image/*">
-                        </label>
-                    </div>
-
-                    <p class="switch-copy" style="margin-bottom:12px">Next you will get a guided tour to set up your course profile and live streams.</p>
+                    <p class="switch-copy" style="margin-bottom:12px">Branding, logo, and the stream link are part of setup after this.</p>
                     <button type="submit" class="primary-btn">Create owner account</button>
                 </form>
                 <button type="button" class="text-btn" data-target="signupOptions">Choose a different account type</button>

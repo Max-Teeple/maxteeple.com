@@ -27,6 +27,10 @@ function requireSession() {
     return true;
 }
 
+function escapeHtml(value = '') {
+    return window.LiveViewCore?.escapeHtml ? window.LiveViewCore.escapeHtml(value) : String(value);
+}
+
 function setMessage(message, type = 'info') {
     const messageEl = document.getElementById('message');
     if (!messageEl) return;
@@ -114,16 +118,27 @@ function setOwnerVisibility(isCourseOwner) {
 }
 
 async function fetchProfile() {
+    const me = await requestJson(`${apiBaseUrl}/me`, { headers: authHeaders() });
     const data = await requestJson(`${apiBaseUrl}/profile/${userId}`, {
         headers: authHeaders()
     });
 
     activeUser = data.user;
-    const isCourseOwner = activeUser.role === 'course_owner';
+    const isCourseOwner = me.user?.role === 'course_owner';
+    activeUser.role = me.user.role;
     setOwnerVisibility(isCourseOwner);
 
-    document.getElementById('first_name').value = activeUser.first_name || activeUser.name?.split(/\s+/)[0] || '';
-    document.getElementById('last_name').value = activeUser.last_name || activeUser.name?.split(/\s+/).slice(1).join(' ') || '';
+    const firstLabel = document.getElementById('first_name')?.closest('label');
+    const lastLabel = document.getElementById('last_name')?.closest('label');
+    if (firstLabel) firstLabel.childNodes[0].textContent = isCourseOwner ? 'Course name' : 'First name';
+    if (lastLabel) lastLabel.hidden = isCourseOwner;
+    if (isCourseOwner) {
+        document.getElementById('first_name').value = activeUser.name || '';
+        document.getElementById('last_name').value = '';
+    } else {
+        document.getElementById('first_name').value = activeUser.first_name || activeUser.name?.split(/\s+/)[0] || '';
+        document.getElementById('last_name').value = activeUser.last_name || activeUser.name?.split(/\s+/).slice(1).join(' ') || '';
+    }
     document.getElementById('city').value = activeUser.city || '';
     document.getElementById('state').value = activeUser.state || '';
     document.getElementById('description').value = activeUser.description || '';
@@ -189,24 +204,50 @@ async function fetchProfile() {
     }
 }
 
+function currentStreamLink() {
+    return document.getElementById('stream_url')?.value.trim() || activeUser?.stream_url || activeUser?.hls_url || '';
+}
+
+function linkIsPlayable(value) {
+    const kind = window.LiveViewPlayer?.classify(value);
+    return Boolean(kind && kind.type !== 'link');
+}
+
 function renderChecklist(user) {
     const checklist = document.getElementById('streamChecklist');
     if (!checklist) return;
-
+    const link = currentStreamLink();
     const steps = [
-        ['Course profile saved', Boolean(user.name && user.city && user.state)],
-        ['Brand assets uploaded', Boolean(user.course_logo || user.stream_preview_photo)],
-        ['Playback link added', Boolean(user.stream_url || user.hls_url)],
-        ['Approval requested', Boolean(user.stream_approval_requested_at || user.stream_approved)],
-        ['Approved by LiveView', Boolean(user.stream_approved)]
+        ['Link valid', linkIsPlayable(link)],
+        ['Approved', Boolean(user.stream_approved)],
+        ['Live', Boolean(user.is_live)]
     ];
 
     checklist.innerHTML = steps.map(([label, done]) => `
         <div class="setup-check ${done ? 'done' : ''}">
             <span>${done ? '[x]' : '[ ]'}</span>
-            <span>${label}</span>
+            <span>${escapeHtml(label)}</span>
         </div>
     `).join('');
+
+    const badge = document.getElementById('approvalBadge');
+    if (!badge) return;
+    if (user.is_live) {
+        badge.hidden = false;
+        badge.className = 'approval-badge is-live';
+        badge.textContent = 'Live';
+    } else if (user.stream_approved) {
+        badge.hidden = false;
+        badge.className = 'approval-badge is-approved';
+        badge.textContent = 'Approved';
+    } else if (user.stream_approval_requested_at) {
+        badge.hidden = false;
+        badge.className = 'approval-badge is-pending';
+        badge.textContent = 'Pending approval';
+    } else {
+        badge.hidden = true;
+        badge.textContent = '';
+    }
 }
 
 function renderStreamInfo(user) {
@@ -224,11 +265,14 @@ function renderStreamInfo(user) {
     const liveStatus = user.is_live ? 'Live' : 'Offline';
     const playback = user.stream_url || user.hls_url || '';
 
+    const playbackHtml = playback
+        ? `<a href="${escapeHtml(playback)}" target="_blank" rel="noopener">${escapeHtml(playback)}</a>`
+        : 'Paste a YouTube, Twitch, Vimeo, HLS, or MP4 link, test it, then save.';
     infoDiv.innerHTML = `
-        <div><b>Approval:</b> ${approvalStatus}</div>
-        <div><b>Viewer status:</b> ${liveStatus}</div>
-        <div><b>Playback link:</b> ${playback ? `<a href="${playback}" target="_blank" rel="noopener">${playback}</a>` : 'Paste a YouTube, Twitch, Vimeo, or .m3u8 link in Stream link, then save.'}</div>
-        ${user.stream_key ? `<div><b>Webhook key:</b> ${user.stream_key}</div>` : '<div>Optional webhook key is not set. Generate one only if an encoder will call the stream-status webhook.</div>'}
+        <div><b>Approval:</b> ${escapeHtml(approvalStatus)}</div>
+        <div><b>Viewer status:</b> ${escapeHtml(liveStatus)}</div>
+        <div><b>Playback link:</b> ${playbackHtml}</div>
+        ${user.stream_key ? `<div><b>Webhook key:</b> ${escapeHtml(user.stream_key)}</div>` : '<div>A webhook key is optional. Generate one only if an encoder will report live or offline.</div>'}
     `;
 
     if (toggleBtn) {
@@ -271,13 +315,14 @@ function renderStreamPreview(user) {
 }
 
 function courseListItem(course, listName) {
+    const href = course.slug ? `course.html?slug=${encodeURIComponent(course.slug)}` : `course.html?id=${encodeURIComponent(course.id)}`;
     return `
         <div class="mini-list-item">
             <div>
-                <a href="${course.slug ? `course.html?slug=${encodeURIComponent(course.slug)}` : `course.html?id=${course.id}`}">${course.name}</a>
-                <span>${course.city || ''}${course.state ? `, ${course.state}` : ''}</span>
+                <a href="${href}">${escapeHtml(course.name)}</a>
+                <span>${escapeHtml(course.city || '')}${course.state ? `, ${escapeHtml(course.state)}` : ''}</span>
             </div>
-            <button type="button" data-course-id="${course.id}" data-list="${listName}" class="remove-course-btn">Remove</button>
+            <button type="button" data-course-id="${escapeHtml(course.id)}" data-list="${escapeHtml(listName)}" class="remove-course-btn">Remove</button>
         </div>
     `;
 }
@@ -297,10 +342,10 @@ function renderFriends(friends) {
         ? friends.map((friend) => `
             <div class="mini-list-item">
                 <div>
-                    <strong>${friend.name}</strong>
-                    <span>${friend.city || ''}${friend.state ? `, ${friend.state}` : ''}</span>
+                    <strong>${escapeHtml(friend.name)}</strong>
+                    <span>${escapeHtml(friend.city || '')}${friend.state ? `, ${escapeHtml(friend.state)}` : ''}</span>
                 </div>
-                <button type="button" data-friend-id="${friend.id}" class="remove-friend-btn">Remove</button>
+                <button type="button" data-friend-id="${escapeHtml(friend.id)}" class="remove-friend-btn">Remove</button>
             </div>
         `).join('')
         : '<div class="mini-list-empty">Send friend requests by email or phone to build your golf circle.</div>';
@@ -315,8 +360,8 @@ function renderFriendRequests(incoming, outgoing) {
         ? `<h4 style="margin:0 0 8px;color:#ff8a3d">Friend requests</h4>` + incoming.map((req) => `
             <div class="mini-list-item">
                 <div>
-                    <strong>${req.from?.name || 'Golfer'}</strong>
-                    <span>${req.from?.city || ''}${req.from?.state ? `, ${req.from.state}` : ''}</span>
+                    <strong>${escapeHtml(req.from?.name || 'Golfer')}</strong>
+                    <span>${escapeHtml(req.from?.city || '')}${req.from?.state ? `, ${escapeHtml(req.from.state)}` : ''}</span>
                 </div>
                 <div style="display:flex;gap:6px">
                     <button type="button" class="accept-request-btn" data-request-id="${req.id}">Accept</button>
@@ -330,7 +375,7 @@ function renderFriendRequests(incoming, outgoing) {
         ? `<h4 style="margin:12px 0 8px;color:#aaa">Pending invites</h4>` + outgoing.map((req) => `
             <div class="mini-list-item">
                 <div>
-                    <strong>${req.to?.name || req.invite_email || req.invite_phone || 'Invite sent'}</strong>
+                    <strong>${escapeHtml(req.to?.name || req.invite_email || req.invite_phone || 'Invite sent')}</strong>
                     <span>Waiting for response</span>
                 </div>
                 <button type="button" class="cancel-request-btn" data-request-id="${req.id}">Cancel</button>
@@ -442,7 +487,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     first_name: document.getElementById('first_name').value,
-                    last_name: document.getElementById('last_name').value,
+                    last_name: activeUser?.role === 'course_owner' ? '' : document.getElementById('last_name').value,
                     city: document.getElementById('city').value,
                     state: document.getElementById('state').value,
                     description: document.getElementById('description').value,
@@ -534,6 +579,34 @@ document.addEventListener('DOMContentLoaded', async function () {
     autoSaveImage('course_logo');
     autoSaveImage('stream_preview_photo');
     autoSaveImage('profile_picture');
+
+    document.getElementById('stream_url')?.addEventListener('input', () => {
+        if (activeUser?.role === 'course_owner') renderChecklist(activeUser);
+    });
+
+    document.getElementById('testStreamLinkBtn')?.addEventListener('click', () => {
+        const link = document.getElementById('stream_url')?.value.trim() || '';
+        const video = document.getElementById('liveStreamPreview');
+        const note = document.getElementById('linkTestResult');
+        const noStreamMsg = document.getElementById('noStreamMsg');
+        const kind = window.LiveViewPlayer?.classify(link);
+        if (!kind || kind.type === 'link') {
+            if (note) note.textContent = 'That link is not ready to preview. Use YouTube, Twitch, Vimeo, HLS, or an MP4.';
+            return;
+        }
+        if (video) {
+            video.hidden = false;
+            video.style.display = 'block';
+        }
+        if (noStreamMsg) noStreamMsg.style.display = 'none';
+        const started = window.LiveViewPlayer.show(video, link, () => {
+            if (note) note.textContent = 'The preview could not start. Check the link and try again.';
+        });
+        if (note) note.textContent = started
+            ? 'Preview is playing from the link in the form. Save changes when it looks right.'
+            : 'The preview did not start.';
+        if (activeUser) renderChecklist({ ...activeUser, stream_url: link });
+    });
 
     document.getElementById('generateStreamKeyBtn')?.addEventListener('click', async function() {
         if (!confirm('Generate a new webhook key? Encoders using the old key will stop updating live status.')) return;

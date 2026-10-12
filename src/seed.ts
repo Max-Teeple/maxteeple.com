@@ -1,5 +1,5 @@
+import { coordsForCity } from './cities';
 import {
-  ensureUniqueSlug,
   findAccountByEmail,
   insertAccount,
   qAll,
@@ -7,68 +7,76 @@ import {
   updateAccount,
   type AccountRow
 } from './db';
-import { coordsForCity } from './cities';
-import { nowIso, slugify } from './util';
+import { nowIso, parseIdList, slugify, stringifyIdList } from './util';
+import demoCourses from './demo-courses.json';
 
 /** Precomputed PBKDF2-SHA256 (8000 iterations) of the demo password `demo1234`. */
 export const DEMO_PASSWORD = 'demo1234';
 export const DEMO_PASSWORD_HASH = 'pbkdf2$8000$EJmhoxmizfCYMqM1ph-bcw$c0Au8749fgt_McShC09QBYfm7gWkAnD-LMCKk5X2uIk';
+export const DEMO_FAN_EMAIL = 'demo-user-001@liveview.demo';
+/** Bump this when demo courses, clips, or follows should be rebuilt in production. */
+export const DEMO_SEED_VERSION = 'fictional-50-mp4-v1';
 
-const YOUTUBE = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
-const HLS = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
-const VIMEO = 'https://vimeo.com/76979871';
+const CLIPS = [
+  '/liveview/demo-streams/tee-shot.mp4',
+  '/liveview/demo-streams/fairway.mp4',
+  '/liveview/demo-streams/green.mp4',
+  '/liveview/demo-streams/swing.mp4',
+  '/liveview/demo-streams/lesson.mp4'
+];
 
-const REAL_GOLF_COURSES = [
-  { name: 'Pebble Beach Golf Links', city: 'Pebble Beach', state: 'CA' },
-  { name: 'Augusta National Golf Club', city: 'Augusta', state: 'GA' },
-  { name: 'TPC Sawgrass', city: 'Ponte Vedra Beach', state: 'FL' },
-  { name: 'Torrey Pines Golf Course', city: 'La Jolla', state: 'CA' },
-  { name: 'Bethpage Black Course', city: 'Farmingdale', state: 'NY' },
-  { name: 'Whistling Straits', city: 'Haven', state: 'WI' },
-  { name: 'Kiawah Island Ocean Course', city: 'Kiawah Island', state: 'SC' },
-  { name: 'Bandon Dunes Golf Resort', city: 'Bandon', state: 'OR' },
-  { name: 'Chambers Bay Golf Course', city: 'University Place', state: 'WA' },
-  { name: 'Oakmont Country Club', city: 'Oakmont', state: 'PA' },
-  { name: 'Winged Foot Golf Club', city: 'Mamaroneck', state: 'NY' },
-  { name: 'Shinnecock Hills Golf Club', city: 'Southampton', state: 'NY' },
-  { name: 'Merion Golf Club', city: 'Ardmore', state: 'PA' },
-  { name: 'Riviera Country Club', city: 'Pacific Palisades', state: 'CA' },
-  { name: 'Muirfield Village Golf Club', city: 'Dublin', state: 'OH' },
-  { name: 'East Lake Golf Club', city: 'Atlanta', state: 'GA' },
-  { name: 'Quail Hollow Club', city: 'Charlotte', state: 'NC' },
-  { name: 'Congressional Country Club', city: 'Bethesda', state: 'MD' },
-  { name: 'Hazeltine National Golf Club', city: 'Chaska', state: 'MN' },
-  { name: 'Southern Hills Country Club', city: 'Tulsa', state: 'OK' },
-  { name: 'Olympia Fields Country Club', city: 'Olympia Fields', state: 'IL' },
-  { name: 'Medinah Country Club', city: 'Medinah', state: 'IL' },
-  { name: 'Baltusrol Golf Club', city: 'Springfield', state: 'NJ' },
-  { name: 'Oak Hill Country Club', city: 'Pittsford', state: 'NY' },
-  { name: 'Pinehurst No. 2', city: 'Pinehurst', state: 'NC' },
-  { name: 'Harbour Town Golf Links', city: 'Hilton Head Island', state: 'SC' },
-  { name: 'Bay Hill Club & Lodge', city: 'Orlando', state: 'FL' },
-  { name: 'Waialae Country Club', city: 'Honolulu', state: 'HI' },
-  { name: 'Kapalua Plantation Course', city: 'Lahaina', state: 'HI' },
-  { name: 'Desert Mountain Golf Club', city: 'Scottsdale', state: 'AZ' },
-  { name: 'TPC Scottsdale Stadium Course', city: 'Scottsdale', state: 'AZ' },
-  { name: 'Firestone Country Club', city: 'Akron', state: 'OH' },
-  { name: 'Colonial Country Club', city: 'Fort Worth', state: 'TX' },
-  { name: 'Valhalla Golf Club', city: 'Louisville', state: 'KY' },
-  { name: 'Erin Hills Golf Course', city: 'Erin', state: 'WI' },
-  { name: 'Liberty National Golf Club', city: 'Jersey City', state: 'NJ' },
-  { name: 'Trump National Doral', city: 'Miami', state: 'FL' },
-  { name: 'Streamsong Resort Red Course', city: 'Bowling Green', state: 'FL' },
-  { name: 'Sand Valley Golf Resort', city: 'Nekoosa', state: 'WI' },
-  { name: 'Prairie Dunes Country Club', city: 'Hutchinson', state: 'KS' },
-  { name: 'Interlachen Country Club', city: 'Edina', state: 'MN' },
-  { name: 'Cherry Hills Country Club', city: 'Cherry Hills Village', state: 'CO' },
-  { name: 'Castle Pines Golf Club', city: 'Castle Rock', state: 'CO' },
-  { name: 'Shadow Creek Golf Course', city: 'North Las Vegas', state: 'NV' },
-  { name: 'Wolf Creek Golf Course', city: 'Mesquite', state: 'NV' },
-  { name: 'Pasatiempo Golf Club', city: 'Santa Cruz', state: 'CA' },
-  { name: 'Spyglass Hill Golf Course', city: 'Pebble Beach', state: 'CA' },
-  { name: 'Cypress Point Club', city: 'Pebble Beach', state: 'CA' },
-  { name: 'Monterey Peninsula Country Club', city: 'Pebble Beach', state: 'CA' },
-  { name: 'Seminole Golf Club', city: 'Juno Beach', state: 'FL' }
+const FAMOUS_COURSE_NAMES = [
+  'pebble beach golf links',
+  'augusta national golf club',
+  'augusta national',
+  'tpc sawgrass',
+  'torrey pines golf course',
+  'bethpage black course',
+  'whistling straits',
+  'kiawah island ocean course',
+  'bandon dunes golf resort',
+  'chambers bay golf course',
+  'oakmont country club',
+  'winged foot golf club',
+  'shinnecock hills golf club',
+  'merion golf club',
+  'riviera country club',
+  'muirfield village golf club',
+  'east lake golf club',
+  'quail hollow club',
+  'congressional country club',
+  'hazeltine national golf club',
+  'southern hills country club',
+  'olympia fields country club',
+  'medinah country club',
+  'baltusrol golf club',
+  'oak hill country club',
+  'pinehurst no. 2',
+  'harbour town golf links',
+  'bay hill club & lodge',
+  'waialae country club',
+  'kapalua plantation course',
+  'desert mountain golf club',
+  'tpc scottsdale stadium course',
+  'firestone country club',
+  'colonial country club',
+  'valhalla golf club',
+  'erin hills golf course',
+  'liberty national golf club',
+  'trump national doral',
+  'streamsong resort red course',
+  'sand valley golf resort',
+  'prairie dunes country club',
+  'interlachen country club',
+  'cherry hills country club',
+  'castle pines golf club',
+  'shadow creek golf course',
+  'wolf creek golf course',
+  'pasatiempo golf club',
+  'spyglass hill golf course',
+  'cypress point club',
+  'monterey peninsula country club',
+  'seminole golf club'
 ];
 
 const FIRST_NAMES = [
@@ -103,15 +111,10 @@ const INTERESTS = [
   'casual rounds,local courses'
 ];
 
-function emailSlug(name: string) {
-  return slugify(name).slice(0, 40);
-}
+type DemoCourse = { name: string; city: string; state: string; logo: string; cover: string };
 
-function demoPlayback(index: number, name: string) {
-  if (index % 15 === 0) return { stream_url: YOUTUBE, hls_url: null as string | null, kind: 'youtube' };
-  if (index % 15 === 5) return { stream_url: HLS, hls_url: HLS, kind: 'hls' };
-  if (index % 15 === 10) return { stream_url: VIMEO, hls_url: null, kind: 'vimeo' };
-  return { stream_url: `https://liveview.demo/streams/${emailSlug(name)}`, hls_url: null, kind: 'placeholder' };
+function clipFor(index: number) {
+  return CLIPS[index % CLIPS.length];
 }
 
 async function batch(db: D1Database, statements: D1PreparedStatement[]) {
@@ -121,84 +124,152 @@ async function batch(db: D1Database, statements: D1PreparedStatement[]) {
   }
 }
 
+async function deleteByIds(db: D1Database, table: string, column: string, ids: number[]) {
+  if (!ids.length) return;
+  const marks = ids.map(() => '?').join(', ');
+  await db.prepare(`DELETE FROM ${table} WHERE ${column} IN (${marks})`).bind(...ids).run();
+}
+
+async function purgeDemoCourses(db: D1Database) {
+  const famousMarks = FAMOUS_COURSE_NAMES.map(() => '?').join(', ');
+  const rows = await qAll<{ id: number }>(
+    db,
+    `SELECT id FROM courses
+     WHERE role = 'course_owner' AND (
+       is_demo = 1
+       OR email LIKE '%@liveview.demo'
+       OR IFNULL(stream_url, '') LIKE '%liveview.demo%'
+       OR IFNULL(stream_url, '') LIKE '%mux.dev%'
+       OR IFNULL(hls_url, '') LIKE '%mux.dev%'
+       OR IFNULL(stream_url, '') LIKE '%aqz-KE-bpKQ%'
+       OR IFNULL(stream_url, '') LIKE '%76979871%'
+       OR IFNULL(hls_url, '') LIKE '%aqz-KE-bpKQ%'
+       OR LOWER(name) IN (${famousMarks})
+     )`,
+    ...FAMOUS_COURSE_NAMES
+  );
+  const ids = rows.map((row) => row.id);
+  if (!ids.length) return ids;
+
+  await deleteByIds(db, 'stream_highlights', 'course_id', ids);
+  const watchMessages = await db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'watch_party_messages'`)
+    .first<{ name: string }>();
+  if (watchMessages) {
+    await deleteByIds(db, 'watch_party_messages', 'course_id', ids);
+    await deleteByIds(db, 'watch_parties', 'course_id', ids);
+  }
+  await deleteByIds(db, 'courses', 'id', ids);
+
+  const removed = new Set(ids);
+  const accounts = await qAll<{ id: number; friend_ids: string; favorite_course_ids: string; followed_course_ids: string }>(
+    db,
+    `SELECT id, friend_ids, favorite_course_ids, followed_course_ids FROM courses`
+  );
+  const scrub: D1PreparedStatement[] = [];
+  for (const account of accounts) {
+    const friends = parseIdList(account.friend_ids).filter((id) => !removed.has(id));
+    const favorites = parseIdList(account.favorite_course_ids).filter((id) => !removed.has(id));
+    const followed = parseIdList(account.followed_course_ids).filter((id) => !removed.has(id));
+    if (
+      friends.length === parseIdList(account.friend_ids).length
+      && favorites.length === parseIdList(account.favorite_course_ids).length
+      && followed.length === parseIdList(account.followed_course_ids).length
+    ) continue;
+    scrub.push(
+      db.prepare(`UPDATE courses SET friend_ids = ?, favorite_course_ids = ?, followed_course_ids = ? WHERE id = ?`).bind(
+        stringifyIdList(friends),
+        stringifyIdList(favorites),
+        stringifyIdList(followed),
+        account.id
+      )
+    );
+  }
+  await batch(db, scrub);
+  return ids;
+}
+
 export async function seedDemoData(db: D1Database) {
-  const existing = await qAll<{ email: string }>(db, `SELECT email FROM courses WHERE email LIKE '%@liveview.demo'`);
-  const existingEmails = new Set(existing.map((row) => row.email));
+  await purgeDemoCourses(db);
   const now = nowIso();
-  let coursesCreated = 0;
-  let coursesUpdated = 0;
-  let accountsCreated = 0;
-  let accountsUpdated = 0;
-  let highlights = 0;
-
+  const courses = demoCourses as DemoCourse[];
   const courseStatements: D1PreparedStatement[] = [];
-  const liveForHighlights: { email: string; title: string; url: string }[] = [];
+  const liveIndexes = new Set<number>();
 
-  for (let i = 0; i < REAL_GOLF_COURSES.length; i++) {
-    const course = REAL_GOLF_COURSES[i];
-    const slug = await ensureUniqueSlug(db, slugify(course.name));
-    const email = `demo-course-${String(i + 1).padStart(2, '0')}-${emailSlug(course.name)}@liveview.demo`;
-    const isLive = i % 5 === 0;
-    const approved = i % 3 !== 1;
-    const playback = demoPlayback(i, course.name);
+  courses.forEach((course, i) => {
+    const email = `demo-course-${String(i + 1).padStart(2, '0')}@liveview.demo`;
+    const clip = clipFor(i);
+    const bucket = i % 5;
+    const approved = bucket !== 1;
+    const enabled = bucket === 0;
+    if (enabled) liveIndexes.add(i);
     const coords = coordsForCity(course.city, course.state);
-    const enabled = isLive && approved;
-    if (existingEmails.has(email)) coursesUpdated += 1;
-    else coursesCreated += 1;
-
+    const nextStream = enabled
+      ? null
+      : new Date(Date.now() + (i + 1) * 60 * 60 * 1000).toISOString();
     courseStatements.push(db.prepare(`
       INSERT INTO courses (
         name, city, state, email, role, password, slug, latitude, longitude, description,
-        stream_url, hls_url, is_live, stream_approved, stream_enabled, stream_approval_requested_at,
-        onboarding_completed, is_demo, follower_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'course_owner', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)
-      ON CONFLICT(email) DO UPDATE SET
-        name = excluded.name,
-        city = excluded.city,
-        state = excluded.state,
-        description = excluded.description,
-        stream_url = excluded.stream_url,
-        hls_url = excluded.hls_url,
-        is_live = excluded.is_live,
-        stream_approved = excluded.stream_approved,
-        stream_enabled = excluded.stream_enabled,
-        stream_approval_requested_at = excluded.stream_approval_requested_at,
-        slug = COALESCE(courses.slug, excluded.slug),
-        latitude = COALESCE(courses.latitude, excluded.latitude),
-        longitude = COALESCE(courses.longitude, excluded.longitude),
-        onboarding_completed = 1,
-        is_demo = 1,
-        updated_at = excluded.updated_at
+        stream_url, hls_url, course_logo, stream_preview_photo, is_live, stream_approved,
+        stream_enabled, stream_approval_requested_at, next_stream_at, onboarding_completed,
+        is_demo, follower_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'course_owner', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, ?, ?)
     `).bind(
       course.name,
       course.city,
       course.state,
       email,
       DEMO_PASSWORD_HASH,
-      slug,
+      slugify(course.name),
       coords.latitude,
       coords.longitude,
-      `${course.name} — Demo data. Sample listing for search, the map, and embedded streams. Not a real broadcast.`,
-      playback.stream_url,
-      enabled ? playback.hls_url : null,
+      `${course.name} is a fictional sample listing in ${course.city}, ${course.state}. The picture is a free-license golf clip, not a live broadcast.`,
+      clip,
+      course.logo,
+      course.cover,
       enabled ? 1 : 0,
       approved ? 1 : 0,
       enabled ? 1 : 0,
       approved ? null : now,
+      nextStream,
       now,
       now
     ));
+  });
+  await batch(db, courseStatements);
 
-    if (enabled && playback.stream_url && playback.kind !== 'placeholder') {
-      liveForHighlights.push({
-        email,
-        title: `Demo replay — ${course.name}`,
-        url: playback.hls_url || playback.stream_url
-      });
-    }
+  const courseRows = await qAll<{ id: number; email: string; name: string }>(
+    db,
+    `SELECT id, email, name FROM courses WHERE email LIKE 'demo-course-%@liveview.demo' AND role = 'course_owner' ORDER BY email`
+  );
+  if (courseRows.length !== courses.length) {
+    throw new Error(`Expected ${courses.length} demo courses, found ${courseRows.length}`);
   }
 
-  await batch(db, courseStatements);
+  const highlightStatements: D1PreparedStatement[] = [];
+  courseRows.forEach((course, i) => {
+    const replay = clipFor(i + 2);
+    const recorded = new Date(Date.now() - (i + 1) * 3600 * 1000).toISOString();
+    highlightStatements.push(db.prepare(
+      `INSERT INTO stream_highlights (course_id, title, hls_url, thumb_url, recorded_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(course.id, `Replay — ${course.name}`, replay, null, recorded, now, now));
+    if (i % 3 === 0) {
+      highlightStatements.push(db.prepare(
+        `INSERT INTO stream_highlights (course_id, title, hls_url, thumb_url, recorded_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        course.id,
+        `Earlier replay — ${course.name}`,
+        clipFor(i + 4),
+        null,
+        new Date(Date.now() - (i + 3) * 86400 * 1000).toISOString(),
+        now,
+        now
+      ));
+    }
+  });
+  await batch(db, highlightStatements);
 
   const userStatements: D1PreparedStatement[] = [];
   for (let i = 0; i < 80; i++) {
@@ -206,13 +277,13 @@ export async function seedDemoData(db: D1Database) {
     const last = LAST_NAMES[Math.floor(i / FIRST_NAMES.length) % LAST_NAMES.length];
     const loc = CONSUMER_LOCATIONS[i % CONSUMER_LOCATIONS.length];
     const email = `demo-user-${String(i + 1).padStart(3, '0')}@liveview.demo`;
-    if (existingEmails.has(email)) accountsUpdated += 1;
-    else accountsCreated += 1;
+    const followed = [0, 1, 2, 3].map((step) => courseRows[(i + step * 7) % courseRows.length].id);
+    const favorites = [courseRows[(i + 2) % courseRows.length].id];
     userStatements.push(db.prepare(`
       INSERT INTO courses (
         name, first_name, last_name, city, state, email, role, password, phone, bio, interests,
-        onboarding_completed, is_demo, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'consumer', ?, ?, ?, ?, 1, 1, ?, ?)
+        followed_course_ids, favorite_course_ids, onboarding_completed, is_demo, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'consumer', ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
       ON CONFLICT(email) DO UPDATE SET
         name = excluded.name,
         first_name = excluded.first_name,
@@ -221,6 +292,8 @@ export async function seedDemoData(db: D1Database) {
         state = excluded.state,
         bio = excluded.bio,
         interests = excluded.interests,
+        followed_course_ids = excluded.followed_course_ids,
+        favorite_course_ids = excluded.favorite_course_ids,
         onboarding_completed = 1,
         is_demo = 1,
         updated_at = excluded.updated_at
@@ -233,38 +306,27 @@ export async function seedDemoData(db: D1Database) {
       email,
       DEMO_PASSWORD_HASH,
       `555-01${String(i).padStart(2, '0')}`,
-      `Demo data. Golf fan from ${loc.city}, ${loc.state}.`,
+      `Golf fan from ${loc.city}, ${loc.state}.`,
       INTERESTS[i % INTERESTS.length],
+      stringifyIdList(followed),
+      stringifyIdList(favorites),
       now,
       now
     ));
   }
   await batch(db, userStatements);
 
-  for (const item of liveForHighlights) {
-    const course = await findAccountByEmail(db, item.email);
-    if (!course) continue;
-    const exists = await qAll<{ id: number }>(
-      db,
-      'SELECT id FROM stream_highlights WHERE course_id = ? AND title = ? LIMIT 1',
-      course.id,
-      item.title
-    );
-    if (exists.length) continue;
-    await qRun(
-      db,
-      `INSERT INTO stream_highlights (course_id, title, hls_url, thumb_url, recorded_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      course.id,
-      item.title,
-      item.url,
-      null,
-      new Date(Date.now() - 86400000).toISOString(),
-      now,
-      now
-    );
-    highlights += 1;
+  const followerCounts = new Map<number, number>();
+  for (let i = 0; i < 80; i++) {
+    for (const step of [0, 1, 2, 3]) {
+      const id = courseRows[(i + step * 7) % courseRows.length].id;
+      followerCounts.set(id, (followerCounts.get(id) || 0) + 1);
+    }
   }
+  const countStatements = courseRows.map((course) => db.prepare(
+    `UPDATE courses SET follower_count = ? WHERE id = ?`
+  ).bind(followerCounts.get(course.id) || 0, course.id));
+  await batch(db, countStatements);
 
   await db
     .prepare(
@@ -275,16 +337,38 @@ export async function seedDemoData(db: D1Database) {
     .bind(now)
     .run();
 
+  await db
+    .prepare(`INSERT INTO app_secrets (id, value) VALUES ('demo_seed_version', ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value`)
+    .bind(DEMO_SEED_VERSION)
+    .run();
+
   return {
     demo: true,
     label: 'Demo data',
     password: DEMO_PASSWORD,
-    courses: { created: coursesCreated, updated: coursesUpdated, total: REAL_GOLF_COURSES.length },
-    accounts: { created: accountsCreated, updated: accountsUpdated, total: 80 },
-    highlights,
-    exampleCourseLogin: 'demo-course-01-pebble-beach-golf-links@liveview.demo',
-    exampleUserLogin: 'demo-user-001@liveview.demo'
+    courses: { created: courses.length, updated: 0, total: courses.length, live: liveIndexes.size },
+    accounts: { created: 0, updated: 0, total: 80 },
+    highlights: highlightStatements.length,
+    exampleCourseLogin: 'demo-course-01@liveview.demo',
+    exampleUserLogin: DEMO_FAN_EMAIL
   };
+}
+
+export async function ensureDemoCatalog(db: D1Database) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS app_secrets (
+        id TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      )`
+    )
+    .run();
+  const row = await db
+    .prepare(`SELECT value FROM app_secrets WHERE id = 'demo_seed_version'`)
+    .first<{ value: string }>();
+  if (row?.value === DEMO_SEED_VERSION) return;
+  await seedDemoData(db);
 }
 
 export async function upsertAccount(db: D1Database, email: string, fields: Partial<AccountRow>) {

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page not found — LiveView Golf</title>
+    <meta name="theme-color" content="#090a0c">
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Schibsted Grotesk", "Inter", system-ui, sans-serif;
+            color: #f4f1ea;
+            background:
+                radial-gradient(circle at 18% 12%, rgba(255, 77, 24, 0.28), transparent 28rem),
+                linear-gradient(160deg, #090a0c 0%, #14181f 55%, #090a0c 100%);
+        }
+        .bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 22px 28px;
+            font-family: "IBM Plex Mono", ui-monospace, monospace;
+            font-size: 0.82rem;
+            letter-spacing: 0.04em;
+        }
+        .bar a { color: #f4f1ea; text-decoration: none; }
+        .bar a:hover { color: #ff8a3d; }
+        main {
+            width: min(720px, calc(100% - 40px));
+            margin: 8vh auto 0;
+        }
+        .kicker {
+            margin: 0 0 12px;
+            color: #ff8a3d;
+            font-family: "IBM Plex Mono", ui-monospace, monospace;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            font-size: 0.78rem;
+        }
+        h1 {
+            margin: 0 0 12px;
+            font-size: clamp(3rem, 8vw, 5.4rem);
+            line-height: 0.9;
+            letter-spacing: -0.04em;
+        }
+        p { color: #c8c2b8; font-size: 1.15rem; line-height: 1.5; max-width: 38rem; }
+        .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+        .actions a {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            padding: 0 16px;
+            border-radius: 999px;
+            text-decoration: none;
+            color: #f4f1ea;
+            border: 1px solid rgba(255,255,255,0.16);
+        }
+        .actions a.primary { background: #ff4d18; border-color: #ff4d18; color: #140700; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <header class="bar">
+        <a href="https://maxteeple.com/">maxteeple.com</a>
+        <a href="/liveview/">LiveView Golf</a>
+    </header>
+    <main>
+        <p class="kicker">404 — LiveView</p>
+        <h1>That page is not on the course.</h1>
+        <p>The link does not match a LiveView page. Head back to the directory, or return to maxteeple.com.</p>
+        <div class="actions">
+            <a class="primary" href="/liveview/">Back to LiveView</a>
+            <a href="https://maxteeple.com/">maxteeple.com</a>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,352 @@
+[
+  {
+    "name": "Lantern Hollow Links",
+    "city": "Phoenix",
+    "state": "AZ",
+    "logo": "images/courses/logos/01.svg",
+    "cover": "images/courses/covers/01.svg"
+  },
+  {
+    "name": "Copper Kettle Municipal",
+    "city": "Scottsdale",
+    "state": "AZ",
+    "logo": "images/courses/logos/02.svg",
+    "cover": "images/courses/covers/02.svg"
+  },
+  {
+    "name": "Red Mesa Fairways",
+    "city": "Los Angeles",
+    "state": "CA",
+    "logo": "images/courses/logos/03.svg",
+    "cover": "images/courses/covers/03.svg"
+  },
+  {
+    "name": "Saltwind Public Links",
+    "city": "San Diego",
+    "state": "CA",
+    "logo": "images/courses/logos/04.svg",
+    "cover": "images/courses/covers/04.svg"
+  },
+  {
+    "name": "Fogline Golf Club",
+    "city": "San Francisco",
+    "state": "CA",
+    "logo": "images/courses/logos/05.svg",
+    "cover": "images/courses/covers/05.svg"
+  },
+  {
+    "name": "Riverbend Municipal",
+    "city": "Sacramento",
+    "state": "CA",
+    "logo": "images/courses/logos/06.svg",
+    "cover": "images/courses/covers/06.svg"
+  },
+  {
+    "name": "Cactus Wren Golf Park",
+    "city": "Austin",
+    "state": "TX",
+    "logo": "images/courses/logos/07.svg",
+    "cover": "images/courses/covers/07.svg"
+  },
+  {
+    "name": "Bluebonnet Range",
+    "city": "Dallas",
+    "state": "TX",
+    "logo": "images/courses/logos/08.svg",
+    "cover": "images/courses/covers/08.svg"
+  },
+  {
+    "name": "Bayou Bend Municipal",
+    "city": "Houston",
+    "state": "TX",
+    "logo": "images/courses/logos/09.svg",
+    "cover": "images/courses/covers/09.svg"
+  },
+  {
+    "name": "Palmetto Pocket Links",
+    "city": "Miami",
+    "state": "FL",
+    "logo": "images/courses/logos/10.svg",
+    "cover": "images/courses/covers/10.svg"
+  },
+  {
+    "name": "Citrus Bend Golf Club",
+    "city": "Orlando",
+    "state": "FL",
+    "logo": "images/courses/logos/11.svg",
+    "cover": "images/courses/covers/11.svg"
+  },
+  {
+    "name": "Gulfbreeze Municipal",
+    "city": "Tampa",
+    "state": "FL",
+    "logo": "images/courses/logos/12.svg",
+    "cover": "images/courses/covers/12.svg"
+  },
+  {
+    "name": "Piedmont Lantern Club",
+    "city": "Atlanta",
+    "state": "GA",
+    "logo": "images/courses/logos/13.svg",
+    "cover": "images/courses/covers/13.svg"
+  },
+  {
+    "name": "Queen City Fairways",
+    "city": "Charlotte",
+    "state": "NC",
+    "logo": "images/courses/logos/14.svg",
+    "cover": "images/courses/covers/14.svg"
+  },
+  {
+    "name": "Lakefront Ironworks",
+    "city": "Chicago",
+    "state": "IL",
+    "logo": "images/courses/logos/15.svg",
+    "cover": "images/courses/covers/15.svg"
+  },
+  {
+    "name": "Front Range Municipal",
+    "city": "Denver",
+    "state": "CO",
+    "logo": "images/courses/logos/16.svg",
+    "cover": "images/courses/covers/16.svg"
+  },
+  {
+    "name": "Soundview Golf Park",
+    "city": "Seattle",
+    "state": "WA",
+    "logo": "images/courses/logos/17.svg",
+    "cover": "images/courses/covers/17.svg"
+  },
+  {
+    "name": "Cedar Rain Links",
+    "city": "Portland",
+    "state": "OR",
+    "logo": "images/courses/logos/18.svg",
+    "cover": "images/courses/covers/18.svg"
+  },
+  {
+    "name": "Redrock Basin Club",
+    "city": "Las Vegas",
+    "state": "NV",
+    "logo": "images/courses/logos/19.svg",
+    "cover": "images/courses/covers/19.svg"
+  },
+  {
+    "name": "Harborlight Municipal",
+    "city": "Boston",
+    "state": "MA",
+    "logo": "images/courses/logos/20.svg",
+    "cover": "images/courses/covers/20.svg"
+  },
+  {
+    "name": "Skyline Tee Club",
+    "city": "New York",
+    "state": "NY",
+    "logo": "images/courses/logos/21.svg",
+    "cover": "images/courses/covers/21.svg"
+  },
+  {
+    "name": "Schuylkill Bend Links",
+    "city": "Philadelphia",
+    "state": "PA",
+    "logo": "images/courses/logos/22.svg",
+    "cover": "images/courses/covers/22.svg"
+  },
+  {
+    "name": "Music Row Fairways",
+    "city": "Nashville",
+    "state": "TN",
+    "logo": "images/courses/logos/23.svg",
+    "cover": "images/courses/covers/23.svg"
+  },
+  {
+    "name": "Mill City Golf Park",
+    "city": "Minneapolis",
+    "state": "MN",
+    "logo": "images/courses/logos/24.svg",
+    "cover": "images/courses/covers/24.svg"
+  },
+  {
+    "name": "Motor City Municipal",
+    "city": "Detroit",
+    "state": "MI",
+    "logo": "images/courses/logos/25.svg",
+    "cover": "images/courses/covers/25.svg"
+  },
+  {
+    "name": "Saguaro Switchback",
+    "city": "Phoenix",
+    "state": "AZ",
+    "logo": "images/courses/logos/26.svg",
+    "cover": "images/courses/covers/26.svg"
+  },
+  {
+    "name": "Granite Wash Links",
+    "city": "Scottsdale",
+    "state": "AZ",
+    "logo": "images/courses/logos/27.svg",
+    "cover": "images/courses/covers/27.svg"
+  },
+  {
+    "name": "Pacific Switchyard",
+    "city": "Los Angeles",
+    "state": "CA",
+    "logo": "images/courses/logos/28.svg",
+    "cover": "images/courses/covers/28.svg"
+  },
+  {
+    "name": "Tidepool Municipal",
+    "city": "San Diego",
+    "state": "CA",
+    "logo": "images/courses/logos/29.svg",
+    "cover": "images/courses/covers/29.svg"
+  },
+  {
+    "name": "Golden Gate Pitch Club",
+    "city": "San Francisco",
+    "state": "CA",
+    "logo": "images/courses/logos/30.svg",
+    "cover": "images/courses/covers/30.svg"
+  },
+  {
+    "name": "Valley Oak Fairways",
+    "city": "Sacramento",
+    "state": "CA",
+    "logo": "images/courses/logos/31.svg",
+    "cover": "images/courses/covers/31.svg"
+  },
+  {
+    "name": "Hill Country Lantern",
+    "city": "Austin",
+    "state": "TX",
+    "logo": "images/courses/logos/32.svg",
+    "cover": "images/courses/covers/32.svg"
+  },
+  {
+    "name": "Trinity Fork Municipal",
+    "city": "Dallas",
+    "state": "TX",
+    "logo": "images/courses/logos/33.svg",
+    "cover": "images/courses/covers/33.svg"
+  },
+  {
+    "name": "Ship Channel Links",
+    "city": "Houston",
+    "state": "TX",
+    "logo": "images/courses/logos/34.svg",
+    "cover": "images/courses/covers/34.svg"
+  },
+  {
+    "name": "Biscayne Pocket Club",
+    "city": "Miami",
+    "state": "FL",
+    "logo": "images/courses/logos/35.svg",
+    "cover": "images/courses/covers/35.svg"
+  },
+  {
+    "name": "Orange Grove Municipal",
+    "city": "Orlando",
+    "state": "FL",
+    "logo": "images/courses/logos/36.svg",
+    "cover": "images/courses/covers/36.svg"
+  },
+  {
+    "name": "Bayshore Iron Club",
+    "city": "Tampa",
+    "state": "FL",
+    "logo": "images/courses/logos/37.svg",
+    "cover": "images/courses/covers/37.svg"
+  },
+  {
+    "name": "Sweetwater Ridge",
+    "city": "Atlanta",
+    "state": "GA",
+    "logo": "images/courses/logos/38.svg",
+    "cover": "images/courses/covers/38.svg"
+  },
+  {
+    "name": "Uptown Parc Links",
+    "city": "Charlotte",
+    "state": "NC",
+    "logo": "images/courses/logos/39.svg",
+    "cover": "images/courses/covers/39.svg"
+  },
+  {
+    "name": "Calumet Fairways",
+    "city": "Chicago",
+    "state": "IL",
+    "logo": "images/courses/logos/40.svg",
+    "cover": "images/courses/covers/40.svg"
+  },
+  {
+    "name": "Platte River Municipal",
+    "city": "Denver",
+    "state": "CO",
+    "logo": "images/courses/logos/41.svg",
+    "cover": "images/courses/covers/41.svg"
+  },
+  {
+    "name": "Elliott Bay Golf Park",
+    "city": "Seattle",
+    "state": "WA",
+    "logo": "images/courses/logos/42.svg",
+    "cover": "images/courses/covers/42.svg"
+  },
+  {
+    "name": "Willamette Switchback",
+    "city": "Portland",
+    "state": "OR",
+    "logo": "images/courses/logos/43.svg",
+    "cover": "images/courses/covers/43.svg"
+  },
+  {
+    "name": "Mojave Tee Club",
+    "city": "Las Vegas",
+    "state": "NV",
+    "logo": "images/courses/logos/44.svg",
+    "cover": "images/courses/covers/44.svg"
+  },
+  {
+    "name": "Charles River Municipal",
+    "city": "Boston",
+    "state": "MA",
+    "logo": "images/courses/logos/45.svg",
+    "cover": "images/courses/covers/45.svg"
+  },
+  {
+    "name": "Hudson Yard Links",
+    "city": "New York",
+    "state": "NY",
+    "logo": "images/courses/logos/46.svg",
+    "cover": "images/courses/covers/46.svg"
+  },
+  {
+    "name": "Wissahickon Fairways",
+    "city": "Philadelphia",
+    "state": "PA",
+    "logo": "images/courses/logos/47.svg",
+    "cover": "images/courses/covers/47.svg"
+  },
+  {
+    "name": "Cumberland Bend Club",
+    "city": "Nashville",
+    "state": "TN",
+    "logo": "images/courses/logos/48.svg",
+    "cover": "images/courses/covers/48.svg"
+  },
+  {
+    "name": "Stone Arch Golf Park",
+    "city": "Minneapolis",
+    "state": "MN",
+    "logo": "images/courses/logos/49.svg",
+    "cover": "images/courses/covers/49.svg"
+  },
+  {
+    "name": "Belle Isle Municipal",
+    "city": "Detroit",
+    "state": "MI",
+    "logo": "images/courses/logos/50.svg",
+    "cover": "images/courses/covers/50.svg"
+  }
+]

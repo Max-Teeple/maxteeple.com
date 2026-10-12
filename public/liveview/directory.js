@@ -25,9 +25,12 @@ window.LiveViewDirectory = (function () {
     function renderCard(card, options = {}) {
         const image = courseImage(card);
         const href = card.slug ? `course.html?slug=${encodeURIComponent(card.slug)}` : `course.html?id=${card.id}`;
-        const preview = card.is_live && card.hls_url && /\.m3u8/i.test(card.hls_url)
-            ? `<video class="card-preview-video" muted loop playsinline preload="none" data-hls="${escapeHtml(card.hls_url)}"></video>`
-            : '';
+        const playback = card.is_live ? (card.playback_url || card.hls_url || '') : '';
+        const preview = /\.(mp4|webm)(\?|$)/i.test(playback)
+            ? `<video class="card-preview-video" src="${escapeHtml(playback)}" muted loop autoplay playsinline preload="metadata"></video>`
+            : (card.is_live && card.hls_url && /\.m3u8/i.test(card.hls_url)
+                ? `<video class="card-preview-video" muted loop playsinline preload="none" data-hls="${escapeHtml(card.hls_url)}"></video>`
+                : '');
         return `
             <article class="card ${card.is_live ? 'card-live' : ''}" data-course-id="${card.id}">
                 <a href="${href}" class="card-link">

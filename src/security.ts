@@ -1,5 +1,29 @@
 import { parseIdList, stringifyIdList } from './util';
 
+/** Failed logins allowed for one IP + email before the API returns 429. */
+export const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_FAIL_WINDOW_SEC = 15 * 60;
+
+function loginAttemptKey(ip: string, email: string) {
+  return `login-fail:${ip}:${email}`;
+}
+
+export async function loginAttemptCount(kv: KVNamespace, ip: string, email: string): Promise<number> {
+  const raw = await kv.get(loginAttemptKey(ip, email));
+  const count = Number(raw || '0');
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+export async function recordFailedLogin(kv: KVNamespace, ip: string, email: string): Promise<number> {
+  const next = (await loginAttemptCount(kv, ip, email)) + 1;
+  await kv.put(loginAttemptKey(ip, email), String(next), { expirationTtl: LOGIN_FAIL_WINDOW_SEC });
+  return next;
+}
+
+export async function clearFailedLogins(kv: KVNamespace, ip: string, email: string) {
+  await kv.delete(loginAttemptKey(ip, email));
+}
+
 /** Removed from production. Purged on each boot until the row is gone. */
 const RETIRED_TEST_EMAIL = 'casey.prod.check@example.com';
 

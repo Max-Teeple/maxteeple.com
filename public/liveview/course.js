@@ -48,13 +48,25 @@ async function loadViewer() {
     }
 }
 
+function escapeHtml(value = '') {
+    return window.LiveViewCore?.escapeHtml ? window.LiveViewCore.escapeHtml(value) : String(value);
+}
+
 function setCourseActions() {
     const actions = document.getElementById('consumerCourseActions');
     const favoriteBtn = document.getElementById('favoriteCourseBtn');
     const followBtn = document.getElementById('followCourseBtn');
-    if (!actions || !favoriteBtn || !followBtn || !viewer || viewer.role !== 'consumer') return;
-
+    const notifyBtn = document.getElementById('notifyCourseBtn');
+    if (!actions || !favoriteBtn || !followBtn) return;
+    if (!activeCourse || activeCourse.role === 'consumer') return;
     actions.style.display = 'flex';
+    if (!viewer || viewer.role !== 'consumer') {
+        favoriteBtn.hidden = true;
+        followBtn.textContent = 'Follow';
+        if (notifyBtn) notifyBtn.textContent = 'Notify me';
+        return;
+    }
+    favoriteBtn.hidden = false;
     const favoriteIds = viewer.favorite_course_ids || [];
     const followedIds = viewer.followed_course_ids || [];
     const cid = activeCourse?.id || courseId;
@@ -79,16 +91,34 @@ async function updateCourseList(list, enabled) {
     setCourseActions();
 }
 
-function renderOfflineMessage(course) {
+function formatWhen(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function renderOfflineMessage(course, replayPlaying) {
     const video = document.getElementById('courseStreamPlayer');
     const noStreamMsg = document.getElementById('noStreamMsg');
+    const nextLine = document.getElementById('nextStreamLine');
     if (!video || !noStreamMsg) return;
 
+    const when = course.next_stream_at ? formatWhen(course.next_stream_at) : '';
+    if (nextLine) {
+        nextLine.hidden = !when;
+        nextLine.textContent = when ? `Next stream ${when}` : '';
+    }
+    if (replayPlaying) {
+        video.style.display = 'block';
+        noStreamMsg.style.display = 'block';
+        noStreamMsg.textContent = 'Latest replay is playing. Follow this course to catch the next broadcast.';
+        return;
+    }
     video.style.display = 'none';
     noStreamMsg.style.display = 'block';
     noStreamMsg.textContent = course.stream_approved
-        ? 'Stream currently not live. Follow this course to find it quickly when it goes live.'
-        : 'This course stream is being set up and is awaiting LiveView approval.';
+        ? 'This course is offline right now. Follow it and we will surface it when the next broadcast starts.'
+        : 'This course is getting ready to broadcast.';
 }
 
 function setPageMeta(course) {
@@ -122,22 +152,20 @@ async function loadHighlights(id) {
     const res = await fetch(`${apiBaseUrl}/courses/${id}/highlights`);
     const data = await res.json();
     const wrap = document.getElementById('highlightsList');
-    if (!wrap || !data.success || !data.highlights?.length) return;
+    if (!wrap || !data.success || !data.highlights?.length) return data.highlights || [];
     wrap.innerHTML = data.highlights.map((h) => {
-        const kind = window.LiveViewPlayer?.classify(h.hls_url);
-        const player = kind?.type === 'iframe'
-            ? `<iframe class="course-embed" src="${kind.src}" title="${h.title}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
-            : (h.hls_url ? `<a href="${h.hls_url}" target="_blank" rel="noopener">Watch replay</a>` : '');
-        const label = h.demo_label ? `<span class="live-badge">${h.demo_label}</span>` : '';
+        const label = h.demo_label ? `<span class="live-badge">${escapeHtml(h.demo_label)}</span>` : '';
+        const when = h.recorded_at ? escapeHtml(new Date(h.recorded_at).toLocaleDateString()) : '';
         return `
         <article class="for-you-card">
-            <strong>${h.title}</strong>
+            <strong>${escapeHtml(h.title || 'Replay')}</strong>
             ${label}
-            <time>${new Date(h.recorded_at).toLocaleDateString()}</time>
-            ${player}
+            <time>${when}</time>
+            ${h.hls_url ? `<a href="${escapeHtml(h.hls_url)}" target="_blank" rel="noopener">Open replay</a>` : ''}
         </article>`;
     }).join('');
     document.getElementById('highlightsSection')?.removeAttribute('hidden');
+    return data.highlights;
 }
 
 async function fetchCourse() {
@@ -172,18 +200,21 @@ async function fetchCourse() {
     const noStreamMsg = document.getElementById('noStreamMsg');
     if (!video || !noStreamMsg) return;
 
-    const source = window.LiveViewPlayer?.playbackSource(activeCourse) || activeCourse.hls_url || activeCourse.stream_url;
+    const highlights = await loadHighlights(resolvedId);
+    const source = window.LiveViewPlayer?.playbackSource(activeCourse) || activeCourse.playback_url || activeCourse.hls_url || activeCourse.stream_url;
     if (!activeCourse.is_live || !source) {
-        renderOfflineMessage(activeCourse);
+        const replay = highlights?.find((item) => item.hls_url);
+        const started = replay ? window.LiveViewPlayer?.show(video, replay.hls_url, () => renderOfflineMessage(activeCourse, false)) : false;
+        renderOfflineMessage(activeCourse, Boolean(started));
         return;
     }
 
+    const nextLine = document.getElementById('nextStreamLine');
+    if (nextLine) nextLine.hidden = true;
     video.style.display = 'block';
     noStreamMsg.style.display = 'none';
-    const started = window.LiveViewPlayer?.show(video, source, () => renderOfflineMessage(activeCourse));
-    if (!started) renderOfflineMessage(activeCourse);
-
-    await loadHighlights(resolvedId);
+    const started = window.LiveViewPlayer?.show(video, source, () => renderOfflineMessage(activeCourse, false));
+    if (!started) renderOfflineMessage(activeCourse, false);
 }
 
 document.addEventListener('DOMContentLoaded', async function () {
@@ -207,9 +238,97 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     document.getElementById('favoriteCourseBtn')?.addEventListener('click', async (event) => {
+        if (!viewer || viewer.role !== 'consumer') {
+            window.location.href = 'login.html';
+            return;
+        }
         await updateCourseList('favorites', event.target.dataset.enabled === 'true');
     });
     document.getElementById('followCourseBtn')?.addEventListener('click', async (event) => {
+        if (!viewer || viewer.role !== 'consumer') {
+            window.location.href = 'login.html';
+            return;
+        }
         await updateCourseList('followed', event.target.dataset.enabled === 'true');
     });
+    document.getElementById('notifyCourseBtn')?.addEventListener('click', async () => {
+        if (!viewer || viewer.role !== 'consumer') {
+            window.location.href = 'login.html';
+            return;
+        }
+        await updateCourseList('followed', true);
+        const note = document.getElementById('noStreamMsg');
+        if (note) {
+            note.style.display = 'block';
+            note.textContent = 'Notifications are on. This course will show up for you when it goes live.';
+        }
+    });
+    startWatchParty();
 });
+
+let watchAfter = 0;
+
+function appendWatchMessages(messages) {
+    const list = document.getElementById('watchMessages');
+    if (!list) return;
+    messages.forEach((message) => {
+        const row = document.createElement('p');
+        const who = document.createElement('strong');
+        who.textContent = message.author || 'Fan';
+        row.appendChild(who);
+        row.appendChild(document.createTextNode(` ${message.body || ''}`));
+        list.appendChild(row);
+        if (Number(message.id) > watchAfter) watchAfter = Number(message.id);
+    });
+}
+
+async function refreshWatchParty() {
+    if (!activeCourse?.id) return null;
+    const response = await fetch(`${apiBaseUrl}/courses/${activeCourse.id}/watch-party?after=${watchAfter}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) return null;
+    appendWatchMessages(data.messages || []);
+    const copy = document.getElementById('copyWatchLink');
+    if (copy && data.shareLink) copy.dataset.link = data.shareLink;
+    return data;
+}
+
+function startWatchParty() {
+    const panel = document.getElementById('watchParty');
+    if (!panel || !activeCourse?.id) return;
+    panel.hidden = false;
+    if (!viewer) {
+        const hint = document.getElementById('watchHint');
+        if (hint) hint.textContent = 'Log in to send a message. Anyone with the invite link can follow the chat.';
+        const form = document.getElementById('watchForm');
+        if (form) form.hidden = true;
+    }
+    refreshWatchParty();
+    window.setInterval(refreshWatchParty, 4000);
+    document.getElementById('copyWatchLink')?.addEventListener('click', async (event) => {
+        const link = event.currentTarget.dataset.link || window.location.href;
+        try {
+            await navigator.clipboard.writeText(link);
+            event.currentTarget.textContent = 'Link copied';
+        } catch (error) {
+            window.prompt('Copy this invite link', link);
+        }
+    });
+    document.getElementById('watchForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!viewer) {
+            window.location.href = 'login.html';
+            return;
+        }
+        const input = document.getElementById('watchInput');
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        await requestJson(`${apiBaseUrl}/courses/${activeCourse.id}/watch-party/messages`, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ body: text })
+        });
+        await refreshWatchParty();
+    });
+}

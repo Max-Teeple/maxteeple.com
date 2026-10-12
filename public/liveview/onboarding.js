@@ -20,7 +20,7 @@ function bindTourLayoutUpdates() {
 }
 
 const CONSUMER_STEPS = ['welcome', 'discover', 'friends'];
-const OWNER_STEPS = ['welcome', 'stream'];
+const OWNER_STEPS = ['welcome', 'branding', 'stream'];
 
 function showError(message) {
     const el = document.getElementById('onboardingError');
@@ -73,18 +73,34 @@ function configureForRole() {
     const isOwner = currentUser.role === 'course_owner';
     stepOrder = isOwner ? OWNER_STEPS : CONSUMER_STEPS;
 
+    const locationFields = document.getElementById('locationFields');
+    const fanNote = document.getElementById('fanLocationNote');
+    const firstLabel = document.getElementById('firstNameLabel');
     if (isOwner) {
         document.getElementById('welcomeTitle').textContent = 'Welcome to your course studio';
         document.getElementById('welcomeLead').textContent =
-            'Confirm your course details. Next we will walk you through going live for viewers.';
+            'Confirm the course name and where it is. Branding and the stream link are the next steps.';
+        if (firstLabel) firstLabel.childNodes[0].textContent = 'Course name ';
+        document.getElementById('lastNameLabel').hidden = true;
+        document.getElementById('phoneLabel').hidden = true;
+        document.getElementById('profilePicLabel').hidden = true;
+        if (locationFields) locationFields.hidden = false;
+        if (fanNote) fanNote.hidden = true;
         const bioLabel = document.getElementById('bioLabel');
-        if (bioLabel) {
-            bioLabel.childNodes[0].textContent = 'Course story ';
-            bioLabel.querySelector('textarea').placeholder =
-                'Describe your course, signature holes, and what viewers can expect on stream.';
-        }
+        if (bioLabel) bioLabel.hidden = true;
         document.getElementById('interestsBlock').style.display = 'none';
         document.getElementById('openProfileBtn').href = `profile.html?id=${currentUser.id}`;
+        document.getElementById('obFirstName').value = currentUser.name || document.getElementById('obFirstName').value;
+        if (currentUser.description) document.getElementById('obDescription').value = currentUser.description;
+        if (currentUser.stream_url) document.getElementById('obStreamUrl').value = currentUser.stream_url;
+    } else if (currentUser.city && currentUser.state) {
+        if (locationFields) locationFields.hidden = true;
+        document.getElementById('obCity').required = false;
+        document.getElementById('obState').required = false;
+        if (fanNote) {
+            fanNote.hidden = false;
+            fanNote.textContent = `You're set in ${currentUser.city}, ${currentUser.state}.`;
+        }
     }
 
     buildProgressBar();
@@ -162,8 +178,8 @@ function renderHomeMock(focus) {
         </div>
         <div class="mock-search" data-tour-spot="search" style="${focus === 'search' ? '' : 'visibility:hidden;height:0;margin:0;padding:0;overflow:hidden'}">Search by city or golf course</div>
         <div class="mock-grid">
-            <div class="mock-card" data-tour-spot="card">Pebble Beach · LIVE</div>
-            <div class="mock-card">Augusta National</div>
+            <div class="mock-card" data-tour-spot="card">Lantern Hollow · LIVE</div>
+            <div class="mock-card">Fogline Golf Club</div>
         </div>
     `;
 }
@@ -298,18 +314,26 @@ async function saveProfile() {
         throw new Error('Session expired. Please log in again.');
     }
 
+    const isOwner = currentUser.role === 'course_owner';
+    const locationHidden = document.getElementById('locationFields')?.hidden;
     const payload = {
         first_name: document.getElementById('obFirstName').value.trim(),
-        last_name: document.getElementById('obLastName').value.trim(),
-        city: document.getElementById('obCity').value.trim(),
-        state: document.getElementById('obState').value.trim(),
+        last_name: isOwner ? '' : document.getElementById('obLastName').value.trim(),
+        city: locationHidden ? (currentUser.city || '') : document.getElementById('obCity').value.trim(),
+        state: locationHidden ? (currentUser.state || '') : document.getElementById('obState').value.trim(),
         phone: document.getElementById('obPhone').value.trim(),
         bio: document.getElementById('obBio').value.trim(),
-        interests: Array.from(selectedInterests).join(', ')
+        interests: isOwner ? '' : Array.from(selectedInterests).join(', ')
     };
 
-    if (!payload.first_name || !payload.city || !payload.state) {
-        throw new Error('Please fill in your first name, city, and state.');
+    if (isOwner && (!payload.first_name || !payload.city || !payload.state)) {
+        throw new Error('Course name, city, and state are required.');
+    }
+    if (!isOwner && !payload.first_name) {
+        throw new Error('Please add your first name.');
+    }
+    if (!payload.city || !payload.state) {
+        throw new Error('City and state are required.');
     }
 
     const data = await apiRequest(`${apiBaseUrl}/profile/${userId}/onboarding`, {
@@ -493,6 +517,69 @@ async function handleAddFriend(button) {
     }
 }
 
+async function saveBranding() {
+    const description = document.getElementById('obDescription').value.trim();
+    await apiRequest(`${apiBaseUrl}/profile/${currentUser.id}/onboarding`, {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            name: currentUser.name,
+            city: currentUser.city,
+            state: currentUser.state,
+            description
+        })
+    });
+    const formData = new FormData();
+    const logo = document.getElementById('obLogo').files[0];
+    const cover = document.getElementById('obCover').files[0];
+    if (logo) formData.append('course_logo', logo);
+    if (cover) formData.append('stream_preview_photo', cover);
+    if (logo || cover) {
+        await apiRequest(`${apiBaseUrl}/profile/${currentUser.id}/images`, {
+            method: 'PUT',
+            headers: authHeaders(),
+            body: formData
+        });
+    }
+}
+
+async function saveStreamLink() {
+    const streamUrl = document.getElementById('obStreamUrl').value.trim();
+    if (!streamUrl) return;
+    await apiRequest(`${apiBaseUrl}/profile/${currentUser.id}/onboarding`, {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            name: currentUser.name,
+            city: currentUser.city,
+            state: currentUser.state,
+            stream_url: streamUrl
+        })
+    });
+}
+
+function testOnboardingLink() {
+    const url = document.getElementById('obStreamUrl').value.trim();
+    const status = document.getElementById('obLinkStatus');
+    const video = document.getElementById('obStreamPreview');
+    const kind = window.LiveViewPlayer?.classify(url);
+    const valid = kind && kind.type !== 'link';
+    if (!valid) {
+        status.textContent = 'That link cannot be previewed yet. Use YouTube, Twitch, Vimeo, HLS, or an MP4.';
+        status.className = 'status-msg error';
+        if (video) video.hidden = true;
+        return false;
+    }
+    video.hidden = false;
+    const started = window.LiveViewPlayer.show(video, url, () => {
+        status.textContent = 'The preview could not start.';
+        status.className = 'status-msg error';
+    });
+    status.textContent = started ? 'Link looks valid. Nothing is saved until you continue.' : 'Preview did not start.';
+    status.className = started ? 'status-msg success' : 'status-msg error';
+    return started;
+}
+
 async function completeOnboarding() {
     const data = await apiRequest(`${apiBaseUrl}/profile/${currentUser.id}/complete-onboarding`, {
         method: 'POST',
@@ -532,7 +619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             await saveProfile();
             showError('');
-            showStep(currentUser.role === 'course_owner' ? 'stream' : 'discover');
+            showStep(currentUser.role === 'course_owner' ? 'branding' : 'discover');
         } catch (error) {
             showError(error.message);
         } finally {
@@ -610,8 +697,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('finishOnboardingSkipBtn')?.addEventListener('click', (event) => {
         finishOnboardingFromStep(event.currentTarget);
     });
-    document.getElementById('ownerFinishOnboardingBtn')?.addEventListener('click', (event) => {
-        finishOnboardingFromStep(event.currentTarget);
+    document.getElementById('brandingNextBtn')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        showError('');
+        try {
+            await saveBranding();
+            showStep('stream');
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    document.getElementById('obTestLinkBtn')?.addEventListener('click', () => {
+        testOnboardingLink();
+    });
+
+    document.getElementById('ownerFinishOnboardingBtn')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            await saveStreamLink();
+            await completeOnboarding();
+        } catch (error) {
+            showError(error.message);
+            button.disabled = false;
+        }
     });
 
     document.getElementById('skipAllBtn').addEventListener('click', async () => {

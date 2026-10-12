@@ -35,9 +35,9 @@ import {
 } from './db';
 import { geocodeAddress } from './geo';
 import { MAX_UPLOAD_BYTES, readImage, saveImage } from './media';
-import { enforceAccountPolicy } from './security';
+import { clearFailedLogins, enforceAccountPolicy, LOGIN_FAIL_LIMIT, loginAttemptCount, recordFailedLogin } from './security';
 import { ensureSchema } from './schema';
-import { seedDemoData } from './seed';
+import { DEMO_FAN_EMAIL, DEMO_PASSWORD, ensureDemoCatalog, seedDemoData } from './seed';
 import type { AppEnv } from './types';
 import {
   HttpError,
@@ -66,6 +66,7 @@ app.use('*', cors({
 app.use('*', async (c, next) => {
   await ensureSchema(c.env.LIVEVIEW_DB);
   await enforceAccountPolicy(c.env.LIVEVIEW_DB);
+  await ensureDemoCatalog(c.env.LIVEVIEW_DB);
   await next();
 });
 
@@ -168,6 +169,11 @@ async function locate(city: string, state: string, street: string | null) {
     if (geocoded) return geocoded;
   }
   return coordsForCity(city, state);
+}
+
+function clientIp(c: { req: { header: (name: string) => string | undefined } }) {
+  const forwarded = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '';
+  return forwarded.split(',')[0].trim() || 'unknown';
 }
 
 function smsConfigured(env: AppEnv['Bindings']) {
@@ -280,18 +286,17 @@ app.post('/register-user', async (c) => {
 });
 
 app.post('/register-golf-course', async (c) => {
-  const { body, files } = await readFields(c);
+  const { body } = await readFields(c);
   const email = normalizeEmail(String(body.email || ''));
   const nameParts = parseNameParts(body.first_name, body.last_name, body.name);
   const city = String(body.city || '').trim();
   const state = String(body.state || '').trim();
   const password = String(body.password || '');
-  if (!email || !password || !nameParts.name || !city || !state) {
-    throw new HttpError(400, 'Name, city, state, email, and password are required');
+  if (!email || !password || !nameParts.name || !city) {
+    throw new HttpError(400, 'Name, city, email, and password are required');
   }
   if (await findAccountByEmail(c.env.LIVEVIEW_DB, email)) throw new HttpError(409, 'Email already exists');
-  const street = String(body.street_address || body.streetAddress || '').trim() || null;
-  const coords = await locate(city, state, street);
+  const coords = await locate(city, state, null);
   const slug = await ensureUniqueSlug(c.env.LIVEVIEW_DB, slugify(nameParts.name));
   const course = await insertAccount(c.env.LIVEVIEW_DB, {
     name: nameParts.name,
@@ -299,17 +304,12 @@ app.post('/register-golf-course', async (c) => {
     last_name: nameParts.last_name,
     city,
     state,
-    street_address: street,
     email,
     role: 'course_owner',
     password: await hashPassword(password),
     slug,
     latitude: coords.latitude,
     longitude: coords.longitude,
-    stream_url: String(body.stream_url || body.streamUrl || '').trim() || null,
-    description: String(body.description || '').trim() || null,
-    course_logo: files.course_logo ? await saveImage(c.env.LIVEVIEW_MEDIA, files.course_logo) : null,
-    stream_preview_photo: files.stream_preview_photo ? await saveImage(c.env.LIVEVIEW_MEDIA, files.stream_preview_photo) : null,
     onboarding_completed: 0
   });
   await attachPendingInvites(c.env.LIVEVIEW_DB, course);
@@ -318,12 +318,24 @@ app.post('/register-golf-course', async (c) => {
 
 app.post('/login', async (c) => {
   const { body } = await readFields(c);
-  const email = normalizeEmail(String(body.email || ''));
-  const password = String(body.password || '');
+  const demo = body.demo === true || body.demo === 'true' || body.demo === 1 || body.demo === '1';
+  const email = demo ? DEMO_FAN_EMAIL : normalizeEmail(String(body.email || ''));
+  const password = demo ? DEMO_PASSWORD : String(body.password || '');
+  const ip = clientIp(c);
+  const attempts = await loginAttemptCount(c.env.LIVEVIEW_MEDIA, ip, email);
+  if (attempts >= LOGIN_FAIL_LIMIT) {
+    return c.json({ success: false, message: 'Too many login attempts. Try again later.' }, 429);
+  }
   const user = await findAccountByEmail(c.env.LIVEVIEW_DB, email);
-  if (!user) return c.json({ success: false, message: 'Invalid email or password' }, 401);
-  const check = await verifyPassword(password, user.password);
-  if (!check.ok) return c.json({ success: false, message: 'Invalid email or password' }, 401);
+  const check = user ? await verifyPassword(password, user.password) : { ok: false, legacyBcrypt: false };
+  if (!user || !check.ok) {
+    const next = await recordFailedLogin(c.env.LIVEVIEW_MEDIA, ip, email || ip);
+    if (next >= LOGIN_FAIL_LIMIT) {
+      return c.json({ success: false, message: 'Too many login attempts. Try again later.' }, 429);
+    }
+    return c.json({ success: false, message: 'Invalid email or password' }, 401);
+  }
+  await clearFailedLogins(c.env.LIVEVIEW_MEDIA, ip, email);
   let account = user;
   if (check.legacyBcrypt) {
     account = await updateAccount(c.env.LIVEVIEW_DB, user.id, { password: await hashPassword(password) });
@@ -423,11 +435,20 @@ app.put('/profile/:id/onboarding', authenticate, requireSelf, async (c) => {
   }
   if (body.city !== undefined) updates.city = String(body.city || '').trim();
   if (body.state !== undefined) updates.state = abbreviateState(String(body.state || ''));
+  if ((account.role || 'course_owner') === 'course_owner') {
+    if (body.description !== undefined) updates.description = String(body.description || '').trim() || null;
+    if (body.stream_url !== undefined) updates.stream_url = String(body.stream_url || '').trim() || null;
+  }
   const effectiveName = updates.name || account.name;
   const effectiveCity = updates.city ?? account.city;
   const effectiveState = updates.state ?? account.state;
   if (!effectiveName || !effectiveCity || !effectiveState) {
-    throw new HttpError(400, 'First name, city, and state are required');
+    throw new HttpError(400, 'Name, city, and state are required');
+  }
+  if ((account.role || 'course_owner') === 'course_owner') {
+    const coords = await locate(effectiveCity, effectiveState, account.street_address);
+    updates.latitude = coords.latitude;
+    updates.longitude = coords.longitude;
   }
   const saved = await updateAccount(c.env.LIVEVIEW_DB, account.id, updates);
   return c.json({ success: true, user: publicAccount(saved, true, originOf(c)) });
@@ -684,7 +705,7 @@ async function createFriendRequest(c: { env: AppEnv['Bindings']; req: { url: str
     success: true,
     message: target
       ? 'Friend request sent. They can accept it when they sign in.'
-      : 'Invite saved. Share the link — text and email send only when those services are configured.',
+      : 'Invite saved. Share the link so they can create an account and connect.',
     request: await serializeFriendRequest(db, request, originOf(c)),
     smsSent,
     emailSent,
@@ -779,7 +800,7 @@ app.delete('/profile/:id/friends/:friendId', authenticate, requireSelf, requireC
 
 app.get('/courses', async (c) => {
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10) || 1);
-  const limit = Math.min(48, Math.max(6, parseInt(c.req.query('limit') || '24', 10) || 24));
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10) || 50));
   const q = String(c.req.query('q') || '').trim().toLowerCase();
   const state = String(c.req.query('state') || '').trim();
   const liveOnly = c.req.query('live') === '1' || c.req.query('live') === 'true';
@@ -846,9 +867,13 @@ app.get('/courses/:id/highlights', async (c) => {
     'SELECT * FROM stream_highlights WHERE course_id = ? ORDER BY recorded_at DESC LIMIT 12',
     Number(c.req.param('id'))
   );
+  const course = await findAccountById(c.env.LIVEVIEW_DB, Number(c.req.param('id')));
   return c.json({
     success: true,
-    highlights: rows.map((row) => ({ ...row, demo_label: String(row.title || '').startsWith('Demo replay') ? 'Demo data' : null }))
+    highlights: rows.map((row) => ({
+      ...row,
+      demo_label: course && boolish(course.is_demo) ? 'Sample replay' : (String(row.title || '').startsWith('Demo replay') ? 'Demo data' : null)
+    }))
   });
 });
 
@@ -1105,18 +1130,110 @@ app.post('/groups/:id/watch-party', authenticate, async (c) => {
   return c.json({ success: true, link });
 });
 
+async function ensureWatchParty(db: D1Database, courseId: number) {
+  const existing = await qOne<{ id: number; course_id: number; invite_code: string }>(
+    db,
+    'SELECT id, course_id, invite_code FROM watch_parties WHERE course_id = ?',
+    courseId
+  );
+  if (existing) return existing;
+  const now = nowIso();
+  const code = randomHex(4);
+  await qRun(
+    db,
+    `INSERT INTO watch_parties (course_id, invite_code, created_at, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(course_id) DO NOTHING`,
+    courseId,
+    code,
+    now,
+    now
+  );
+  const row = await qOne<{ id: number; course_id: number; invite_code: string }>(
+    db,
+    'SELECT id, course_id, invite_code FROM watch_parties WHERE course_id = ?',
+    courseId
+  );
+  if (!row) throw new Error('Could not open watch party');
+  return row;
+}
+
+app.get('/courses/:id/watch-party', async (c) => {
+  const course = await findAccountById(c.env.LIVEVIEW_DB, Number(c.req.param('id')));
+  if (!course || course.role !== 'course_owner') return c.json({ success: false, message: 'Course not found' }, 404);
+  const party = await ensureWatchParty(c.env.LIVEVIEW_DB, course.id);
+  const after = Math.max(0, parseInt(c.req.query('after') || '0', 10) || 0);
+  const messages = await qAll<{ id: number; author_name: string; body: string; created_at: string; user_id: number | null }>(
+    c.env.LIVEVIEW_DB,
+    `SELECT id, author_name, body, created_at, user_id FROM watch_party_messages
+     WHERE course_id = ? AND id > ? ORDER BY id ASC LIMIT 80`,
+    course.id,
+    after
+  );
+  const slug = course.slug ? `slug=${encodeURIComponent(course.slug)}` : `id=${course.id}`;
+  return c.json({
+    success: true,
+    courseId: course.id,
+    inviteCode: party.invite_code,
+    shareLink: `${baseOf(c)}/course.html?${slug}&party=${party.invite_code}`,
+    messages: messages.map((row) => ({
+      id: row.id,
+      author: row.author_name,
+      body: row.body,
+      createdAt: row.created_at
+    }))
+  });
+});
+
+app.post('/courses/:id/watch-party/messages', authenticate, async (c) => {
+  const course = await findAccountById(c.env.LIVEVIEW_DB, Number(c.req.param('id')));
+  if (!course || course.role !== 'course_owner') return c.json({ success: false, message: 'Course not found' }, 404);
+  const body = await c.req.json().catch(() => ({})) as { body?: string };
+  const text = String(body.body || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (!text) throw new HttpError(400, 'Message required');
+  await ensureWatchParty(c.env.LIVEVIEW_DB, course.id);
+  const account = c.get('account');
+  const now = nowIso();
+  const inserted = await qRun(
+    c.env.LIVEVIEW_DB,
+    `INSERT INTO watch_party_messages (course_id, user_id, author_name, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+    course.id,
+    account.id,
+    account.name,
+    text,
+    now
+  );
+  return c.json({
+    success: true,
+    message: {
+      id: Number(inserted.meta.last_row_id),
+      author: account.name,
+      body: text,
+      createdAt: now
+    }
+  }, 201);
+});
+
 app.notFound(async (c) => {
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
     return c.json({ success: false, message: 'Not found' }, 404);
   }
   const response = await c.env.ASSETS.fetch(c.req.raw);
   const path = new URL(c.req.url).pathname;
-  if (path.endsWith('.html') || path === '/liveview' || path === '/liveview/') {
-    const headers = new Headers(response.headers);
-    headers.set('Cache-Control', 'no-cache');
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  if (response.ok || response.status === 304) {
+    if (path.endsWith('.html') || path === '/liveview' || path === '/liveview/') {
+      const headers = new Headers(response.headers);
+      headers.set('Cache-Control', 'no-cache');
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    }
+    return response;
   }
-  return response;
+  const pageUrl = new URL(c.req.url);
+  pageUrl.pathname = '/liveview/404.html';
+  const page = await c.env.ASSETS.fetch(new Request(pageUrl.toString(), c.req.raw));
+  const headers = new Headers(page.headers);
+  headers.set('Content-Type', 'text/html; charset=utf-8');
+  headers.set('Cache-Control', 'no-cache');
+  return new Response(page.body, { status: 404, headers });
 });
 
 export { app };

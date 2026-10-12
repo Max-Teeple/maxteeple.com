@@ -97,14 +97,20 @@ describe('LiveView on maxteeple.com', () => {
     });
     expect(seeded.response.status).toBe(200);
     expect(seeded.body.success).toBe(true);
-    expect(seeded.body.courses.total).toBeGreaterThan(10);
+    expect(seeded.body.courses.total).toBe(50);
     expect(seeded.body.exampleAdminLogin).toBeUndefined();
     expect(seeded.body.password).toBe('demo1234');
     expect(JSON.stringify(seeded.body)).not.toContain('admin_approval_token');
 
-    const courses = await json('/liveview/courses?limit=48');
+    const courses = await json('/liveview/courses');
     expect(courses.response.status).toBe(200);
-    expect(courses.body.total).toBeGreaterThan(10);
+    expect(courses.body.total).toBe(50);
+    expect(courses.body.courses.length).toBe(50);
+    const catalog = JSON.stringify(courses.body).toLowerCase();
+    for (const banned of ['bunny', 'mux.dev', 'liveview.demo', 'augusta', 'cypress point', 'east lake', 'baltusrol', 'pebble beach']) {
+      expect(catalog, banned).not.toContain(banned);
+    }
+    expect(courses.body.courses.some((course: { playback_url?: string }) => String(course.playback_url || '').endsWith('.mp4'))).toBe(true);
 
     const map = await json('/liveview/courses/map');
     expect(map.body.courses.length).toBeGreaterThan(10);
@@ -166,6 +172,21 @@ describe('LiveView on maxteeple.com', () => {
     expect(party.response.status).toBe(200);
     expect(String(party.body.link)).toContain('party=');
 
+    const partyRoom = await json(`/liveview/courses/${live!.id}/watch-party`);
+    expect(partyRoom.response.status).toBe(200);
+    expect(String(partyRoom.body.shareLink)).toContain('party=');
+    const chat = await json(`/liveview/courses/${live!.id}/watch-party/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user.body.token}`
+      },
+      body: JSON.stringify({ body: 'Fore from the party' })
+    });
+    expect(chat.response.status).toBe(201);
+    const partyAgain = await json(`/liveview/courses/${live!.id}/watch-party?after=0`);
+    expect(partyAgain.body.messages.some((message: { body: string }) => message.body === 'Fore from the party')).toBe(true);
+
     const fanQueue = await json('/liveview/admin/stream-queue', {
       headers: { Authorization: `Bearer ${user.body.token}` }
     });
@@ -177,11 +198,54 @@ describe('LiveView on maxteeple.com', () => {
     expect(tokenQueue.response.status).toBe(200);
     expect(tokenQueue.body.success).toBe(true);
 
+    await env.LIVEVIEW_DB.prepare(
+      `INSERT INTO courses (name, city, state, email, role, password, is_demo)
+       VALUES ('Real Fan', 'Phoenix', 'AZ', 'real.fan@example.com', 'consumer', 'x', 0)`
+    ).run();
     const reseed = await json('/liveview/admin/seed-demo', {
       method: 'POST',
       headers: { 'x-admin-token': 'demo-admin' }
     });
     expect(reseed.response.status).toBe(200);
+    expect(reseed.body.courses.total).toBe(50);
+    const preserved = await env.LIVEVIEW_DB.prepare(
+      `SELECT id, role FROM courses WHERE email = 'real.fan@example.com'`
+    ).first<{ id: number; role: string }>();
+    expect(preserved?.role).toBe('consumer');
+
+    const demoLogin = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ demo: true })
+    });
+    expect(demoLogin.response.status).toBe(200);
+    expect(demoLogin.body.user.role).toBe('consumer');
+
+    const clip = await api('/liveview/demo-streams/tee-shot.mp4');
+    expect(clip.status).toBe(200);
+    expect(clip.headers.get('content-type') || '').toContain('video/mp4');
+
+    const missing = await api('/liveview/this-page-is-missing.html');
+    expect(missing.status).toBe(404);
+    const missingHtml = (await missing.text()).toLowerCase();
+    expect(missingHtml).toContain('maxteeple.com');
+    expect(missingHtml).toContain('liveview');
+
+    const badEmail = `locked-${crypto.randomUUID()}@example.com`;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const denied = await json('/liveview/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: badEmail, password: 'not-the-password' })
+      });
+      expect(denied.response.status).toBe(401);
+    }
+    const limited = await json('/liveview/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: badEmail, password: 'not-the-password' })
+    });
+    expect(limited.response.status).toBe(429);
 
     const reset = await json('/liveview/admin/reset-password', {
       method: 'POST',

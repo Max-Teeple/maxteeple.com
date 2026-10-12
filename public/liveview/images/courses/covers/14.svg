@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Queen City Fairways">
+<rect width="1280" height="720" fill="#10231a"/>
+<path d="M0 460 C180 400 280 520 460 470 C680 400 760 540 980 480 C1120 440 1200 500 1280 470 L1280 720 L0 720 Z" fill="#1f6b45"/>
+<path d="M0 540 C220 500 340 600 560 550 C820 490 900 620 1280 560 L1280 720 L0 720 Z" fill="#154832"/>
+<circle cx="1040" cy="160" r="70" fill="#ffb088" opacity="0.9"/>
+<text x="72" y="220" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#f7f2ea">Queen City Fairways</text>
+<text x="72" y="290" font-family="Arial, sans-serif" font-size="36" fill="#d9d3c8">Charlotte, NC</text>
+</svg>

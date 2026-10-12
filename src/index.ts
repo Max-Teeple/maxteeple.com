@@ -34,6 +34,13 @@ export default {
     if (url.pathname !== '/liveview' && !url.pathname.startsWith('/liveview/')) {
       return fetchSiteAsset(request, env);
     }
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname.startsWith('/liveview/demo-streams/') && url.pathname.endsWith('.mp4')) {
+      const asset = await env.ASSETS.fetch(request);
+      const headers = new Headers(asset.headers);
+      if (asset.ok || asset.status === 304) headers.set('Content-Type', 'video/mp4');
+      headers.set('Cache-Control', 'public, max-age=86400');
+      return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
+    }
     if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/liveview' || url.pathname === '/liveview/')) {
       const indexUrl = new URL(request.url);
       indexUrl.pathname = '/liveview/index.html';

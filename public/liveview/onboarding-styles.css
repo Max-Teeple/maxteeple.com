@@ -131,6 +131,10 @@ body {
     margin: 0 0 24px;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

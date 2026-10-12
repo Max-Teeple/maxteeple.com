@@ -19,6 +19,8 @@
 <body class="page-profile" data-nav-page="profile">
     <header class="sticky-header">
         <div class="top-bar">
+            <a class="site-root-link" href="https://maxteeple.com/">maxteeple.com</a>
+
             <a class="brand" href="index.html" aria-label="LiveView Golf home">
                 <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
                 <span class="company-name brand-wordmark">LiveView Golf</span>
@@ -149,7 +151,7 @@
                         <p class="profile-hub-note">Send an email or text invite. They can join LiveView and accept your request.</p>
                         <form id="friendForm" class="profile-form profile-form-modern">
                             <label>Email<input type="email" id="friendEmail" placeholder="friend@example.com"></label>
-                            <label>Phone <span class="hint">(optional — texts only if Twilio is configured; otherwise you get a share link)</span><input type="tel" id="friendPhone" placeholder="555-123-4567"></label>
+                            <label>Phone <span class="hint">(optional — we will give you a link to share)</span><input type="tel" id="friendPhone" placeholder="555-123-4567"></label>
                             <button type="submit" class="primary-link profile-save-btn">Send friend request</button>
                         </form>
                     </article>
@@ -171,13 +173,16 @@
 
             <section id="streamStudioPanel" class="profile-panel profile-stream-panel">
                 <h2 class="profile-panel-title">Live stream setup</h2>
+                <p id="approvalBadge" class="approval-badge" hidden>Pending approval</p>
                 <div id="streamChecklist" class="setup-checklist"></div>
                 <div id="streamInfo" class="profile-stream-meta"></div>
                 <div class="profile-stream-actions">
+                    <button type="button" id="testStreamLinkBtn" class="secondary-link profile-ghost-btn">Test my link</button>
                     <button type="button" id="generateStreamKeyBtn" class="secondary-link profile-ghost-btn">Generate webhook key</button>
                     <button type="button" id="requestApprovalBtn" class="secondary-link profile-ghost-btn">Request stream approval</button>
                     <button type="button" id="toggleStreamBtn" class="primary-link profile-save-btn">Turn stream on</button>
                 </div>
+                <p id="linkTestResult" class="profile-hub-note" role="status"></p>
                 <p id="streamStatusMessage" class="profile-hub-note"></p>
                 <div class="hardware-guide">
                     <h3>Fastest setup path</h3>
@@ -205,7 +210,7 @@
         <img class="modal-content" id="modalImg" alt="">
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
     <script src="stream-player.js"></script>
     <script src="config.js"></script>
     <script src="liveview-core.js"></script>

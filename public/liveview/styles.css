@@ -14,6 +14,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 html {
     scroll-behavior: smooth;
 }
@@ -125,6 +129,87 @@ textarea {
 .desktop-nav {
     gap: 22px;
 }
+
+.approval-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    margin: 0 0 12px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+}
+
+.approval-badge.is-pending {
+    color: #1a1208;
+    background: #ffb020;
+}
+
+.approval-badge.is-approved {
+    color: #062114;
+    background: #40c27a;
+}
+
+.approval-badge.is-live {
+    color: #fff;
+    background: #ff4d18;
+}
+
+.next-stream-line,
+.watch-hint {
+    color: var(--muted);
+}
+
+.watch-party {
+    margin-top: 28px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.watch-party-head,
+.watch-form {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.watch-messages {
+    max-height: 240px;
+    overflow: auto;
+    margin: 12px 0;
+    display: grid;
+    gap: 8px;
+}
+
+.watch-messages p { margin: 0; }
+
+.watch-form input {
+    flex: 1;
+    min-width: 180px;
+    min-height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: #111318;
+    color: var(--text);
+    padding: 0 12px;
+}
+
+.site-root-link {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    text-transform: lowercase;
+    white-space: nowrap;
+}
+
+.site-root-link:hover { color: var(--orange-2); }
 
 .page-home-button {
     display: inline-flex;

@@ -3,9 +3,12 @@ window.LiveViewPlayer = (function () {
     if (!raw) return null;
     let url;
     try {
-      url = new URL(String(raw).trim());
+      url = new URL(String(raw).trim(), window.location.origin);
     } catch (error) {
       return null;
+    }
+    if (/\.(mp4|webm)(\?|$)/i.test(url.pathname)) {
+      return { type: 'file', src: url.href, loop: true };
     }
     const host = url.hostname.replace(/^www\./, '');
     if (host === 'youtu.be' || host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
@@ -64,6 +67,17 @@ window.LiveViewPlayer = (function () {
     if (frame) {
       frame.style.display = 'none';
       frame.removeAttribute('src');
+    }
+    if (kind.type === 'file') {
+      video.style.display = 'block';
+      video.loop = true;
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.src = kind.src;
+      const play = video.play();
+      if (play && play.catch) play.catch(function () { /* autoplay can wait for a tap */ });
+      return true;
     }
     if (kind.type === 'hls') {
       video.style.display = 'block';

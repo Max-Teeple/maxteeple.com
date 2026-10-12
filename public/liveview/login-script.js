@@ -74,11 +74,11 @@ function showPanel(targetId) {
     });
 }
 
-async function login(email, password) {
+async function login(email, password, demo = false) {
     const response = await fetch(`${getApiBaseUrl()}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify(demo ? { demo: true } : { email, password })
     });
     return parseResponse(response);
 }
@@ -128,6 +128,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     document.getElementById('singleUserBtn').addEventListener('click', function () {
         showPanel('singleUserForm');
+    });
+
+    document.getElementById('tryDemoBtn')?.addEventListener('click', async function () {
+        this.disabled = true;
+        showStatus('Opening the demo fan account...', 'info');
+        try {
+            const payload = await login('', '', true);
+            persistSession(payload);
+            showStatus('Demo ready. Taking you in...', 'success');
+            await redirectForRole(payload.user);
+        } catch (error) {
+            showStatus(error.message, 'error');
+            this.disabled = false;
+        }
     });
 
     document.getElementById('loginForm').addEventListener('submit', async function (event) {

@@ -42,6 +42,7 @@ export type AccountRow = {
   profile_visibility: string | null;
   push_subscription: string | null;
   is_demo: number;
+  next_stream_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -64,7 +65,8 @@ const ACCOUNT_COLUMNS = [
   'stream_approved', 'stream_enabled', 'stream_approval_requested_at', 'stream_approval_note',
   'favorite_course_ids', 'followed_course_ids', 'friend_ids', 'is_live', 'hls_url', 'phone', 'bio',
   'interests', 'onboarding_completed', 'slug', 'latitude', 'longitude', 'follower_count', 'handicap',
-  'home_course', 'rounds_played', 'profile_visibility', 'push_subscription', 'is_demo'
+  'home_course', 'rounds_played', 'profile_visibility', 'push_subscription', 'is_demo',
+  'next_stream_at'
 ] as const;
 
 type AccountColumn = typeof ACCOUNT_COLUMNS[number];
@@ -262,6 +264,8 @@ export function publicAccount(row: AccountRow, includePrivate: boolean, origin: 
     stream_enabled: boolish(row.stream_enabled),
     is_live: live,
     hls_url: live && row.hls_url && isHlsUrl(row.hls_url) ? row.hls_url : null,
+    playback_url: live ? playbackUrl(row) : null,
+    next_stream_at: row.next_stream_at || null,
     slug: row.slug,
     follower_count: row.follower_count || 0,
     street_address: row.street_address,

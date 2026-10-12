@@ -15,7 +15,7 @@
     <link rel="apple-touch-icon" href="/liveview/images/liveview-logo.svg">
     <link rel="manifest" href="/liveview/manifest.json">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=New+Amsterdam&family=Teko:wght@300..700&display=swap" rel="stylesheet">
@@ -24,6 +24,8 @@
 <body data-nav-page="course">
     <header class="sticky-header">
         <div class="top-bar">
+            <a class="site-root-link" href="https://maxteeple.com/">maxteeple.com</a>
+
             <a class="brand" href="index.html" aria-label="LiveView Golf home">
                 <img class="brand-logo" src="/liveview/images/liveview-logo.svg" alt="LiveView Golf">
                 <span class="company-name brand-wordmark">LiveView Golf</span>
@@ -71,9 +73,11 @@
                     <div id="courseLocation" style="color:#aaa;margin-bottom:8px;"></div>
                     <div id="courseDescription" style="color:#fff;"></div>
                     <div id="courseStreamStatus" class="live-badge" style="margin-top:14px;">Loading stream status...</div>
+                    <p id="nextStreamLine" class="next-stream-line" hidden></p>
                     <div id="consumerCourseActions" style="display:none;margin-top:16px;gap:10px;flex-wrap:wrap;">
                         <button type="button" id="favoriteCourseBtn">Favorite Course</button>
                         <button type="button" id="followCourseBtn">Follow Course</button>
+                        <button type="button" id="notifyCourseBtn">Notify me</button>
                     </div>
                 </div>
             </div>
@@ -81,6 +85,18 @@
                 <video id="courseStreamPlayer" controls autoplay playsinline style="width:100%;max-width:700px;background:#000;"></video>
                 <div id="noStreamMsg" style="color:#aaa;margin-top:8px;display:none;">Stream currently not live.</div>
             </div>
+            <section id="watchParty" class="watch-party" hidden>
+                <div class="watch-party-head">
+                    <h2>Watch party</h2>
+                    <button type="button" id="copyWatchLink" class="secondary-link">Copy invite link</button>
+                </div>
+                <p id="watchHint" class="watch-hint">Chat with everyone watching this course.</p>
+                <div id="watchMessages" class="watch-messages" aria-live="polite"></div>
+                <form id="watchForm" class="watch-form">
+                    <input id="watchInput" maxlength="500" placeholder="Say something" autocomplete="off">
+                    <button type="submit" class="primary-link">Send</button>
+                </form>
+            </section>
             <section id="highlightsSection" class="highlights-section" hidden style="margin-top:32px;">
                 <h2>Recent highlights</h2>
                 <p style="color:#aaa;">Replay clips when the course is offline.</p>
