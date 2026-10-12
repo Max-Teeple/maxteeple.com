@@ -62,18 +62,19 @@ window.LiveViewOverlay = (function () {
         };
     }
 
-    function place(node, position) {
+    function place(node, position, edge) {
+        const gutter = edge || '16px';
         const x = Number(position?.x);
         const y = Number(position?.y);
         const left = Number.isFinite(x) ? x : 3;
         const top = Number.isFinite(y) ? y : 72;
-        node.style.left = `max(16px, ${left}%)`;
+        node.style.left = `max(${gutter}, ${left}%)`;
         if (top >= 55) {
             node.style.top = 'auto';
-            node.style.bottom = `max(16px, ${Math.max(0, 100 - top)}%)`;
+            node.style.bottom = `max(${gutter}, ${Math.max(0, 100 - top)}%)`;
         } else {
             node.style.bottom = 'auto';
-            node.style.top = `max(16px, ${top}%)`;
+            node.style.top = `max(${gutter}, ${top}%)`;
         }
     }
 
@@ -85,6 +86,7 @@ window.LiveViewOverlay = (function () {
         const root = stage.querySelector('.lv-overlay-root') || document.createElement('div');
         root.className = 'lv-overlay-root';
         if (!root.parentElement) stage.appendChild(root);
+        ensureBrand(stage, opts.tv);
 
         function draw() {
             root.replaceChildren();
@@ -106,7 +108,7 @@ window.LiveViewOverlay = (function () {
             const plate = document.createElement('div');
             plate.className = layout.templateId === 'corner-bug' ? 'lv-plate lv-bug' : 'lv-plate lv-lower';
             const anchor = layout.templateId === 'corner-bug' ? layout.positions.logo : layout.positions.hole;
-            place(plate, anchor || {});
+            place(plate, anchor || {}, opts.tv ? '4vw' : '16px');
             if (opts.editor) {
                 plate.dataset.element = layout.templateId === 'corner-bug' ? 'logo' : 'hole';
                 plate.classList.add('is-draggable');
@@ -215,5 +217,21 @@ window.LiveViewOverlay = (function () {
         };
     }
 
-    return { TEMPLATES, PRESETS, mount, currentHole };
+    function ensureBrand(stage, tv) {
+        if (!stage) return;
+        let bug = stage.querySelector(':scope > .lv-brand');
+        if (!bug) {
+            bug = document.createElement('div');
+            bug.className = 'lv-brand';
+            bug.setAttribute('aria-hidden', 'true');
+            const img = document.createElement('img');
+            img.src = '/liveview/images/liveview-logo.svg';
+            img.alt = '';
+            bug.appendChild(img);
+            stage.appendChild(bug);
+        }
+        bug.classList.toggle('lv-brand-tv', Boolean(tv));
+    }
+
+    return { TEMPLATES, PRESETS, mount, currentHole, ensureBrand };
 })();

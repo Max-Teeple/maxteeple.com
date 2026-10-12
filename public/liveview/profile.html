@@ -196,6 +196,16 @@
                     <p>Use Test my link before you save. Approval has to come before fans see the course as live. A webhook key is optional and does not replace the YouTube, Twitch, Vimeo, or HLS address.</p>
                 </div>
                 <p class="profile-stream-warning">Regenerating the webhook key breaks any encoder already posting status updates with the old key. It does not change your YouTube, Twitch, Vimeo, or HLS link.</p>
+                <div id="clubhouseTv" class="clubhouse-tv" hidden>
+                    <div>
+                        <h3>Clubhouse TV link</h3>
+                        <p class="profile-hub-note">Open this on the TV in the clubhouse. It is full screen, with no menus or chat, and it reconnects if the picture drops.</p>
+                        <p><a id="clubhouseTvLink" href="tv.html"></a></p>
+                        <button type="button" id="copyTvLink" class="secondary-link profile-ghost-btn">Copy link</button>
+                        <p id="tvCopyStatus" class="profile-hub-note" role="status"></p>
+                    </div>
+                    <canvas id="clubhouseTvQr" width="168" height="168" aria-label="QR code for the Clubhouse TV link"></canvas>
+                </div>
             </section>
 
             <section id="overlayEditor" class="profile-panel overlay-editor" hidden>
@@ -262,7 +272,9 @@
 
             <section id="streamPreviewPanel" class="profile-panel stream-preview-section">
                 <h2 class="profile-panel-title">Live stream preview</h2>
-                <video id="liveStreamPreview" controls autoplay muted playsinline></video>
+                <div class="stream-stage" id="studioPreviewStage">
+                    <video id="liveStreamPreview" controls autoplay muted playsinline></video>
+                </div>
                 <p id="noStreamMsg" class="profile-hub-note" hidden>No live stream available.</p>
             </section>
         </div>
@@ -274,6 +286,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
     <script src="stream-player.js"></script>
     <script src="overlay.js"></script>
     <script src="overlay-editor.js"></script>

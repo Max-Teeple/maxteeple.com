@@ -74,6 +74,7 @@
     <section id="home" class="hero-broadcast">
         <div class="hero-stage">
             <video src="/liveview/demo-streams/tee-shot.mp4" muted loop autoplay playsinline poster="/liveview/images/courses/covers/01.svg"></video>
+            <div class="lv-brand" aria-hidden="true"><img src="/liveview/images/liveview-logo.svg" alt=""></div>
             <div class="lv-plate lv-lower hero-demo" aria-hidden="true">
                 <div class="lv-plate-row">
                     <span class="lv-logo-badge"><img src="/liveview/images/courses/logos/01.svg" alt=""></span>
@@ -210,7 +211,10 @@
 
     <div id="streamModal" class="modal" style="display:none;">
         <span class="modal-close" onclick="closeStreamModal()">&times;</span>
-        <video id="modalVideoPlayer" controls autoplay></video>
+        <div class="modal-stage stream-stage">
+            <video id="modalVideoPlayer" controls autoplay></video>
+            <div class="lv-brand" aria-hidden="true"><img src="/liveview/images/liveview-logo.svg" alt=""></div>
+        </div>
     </div>
 
     <div id="notifPanel" class="notif-panel" hidden>

@@ -53,6 +53,7 @@
         const path = window.liveviewPage ? window.liveviewPage() : ((window.location.pathname || '').split('/').pop() || 'index.html');
         const onOnboarding = path === 'onboarding.html';
         const onGoLive = path === 'golive.html';
+        const onTv = path === 'tv.html';
         const onLogin = path === 'login.html';
         const { token, user } = getSession();
 
@@ -92,7 +93,7 @@
             window.location.replace('golive.html');
             return null;
         }
-        if (!isOnboardingComplete(active) && !onOnboarding && !onGoLive) {
+        if (!isOnboardingComplete(active) && !onOnboarding && !onGoLive && !onTv) {
             window.location.replace(setupDestination(active));
             return null;
         }

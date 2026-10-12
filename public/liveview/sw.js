@@ -1,4 +1,4 @@
-const CACHE = 'liveview-v4';
+const CACHE = 'liveview-v5';
 const STATIC_ASSETS = [
     '/liveview/styles.css',
     '/liveview/liveview-core.js',

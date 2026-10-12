@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" class="tv-mode">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#050506">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveView TV">
+    <meta http-equiv="refresh" content="1320">
+    <title>Clubhouse TV — LiveView Golf</title>
+    <meta name="description" content="Full-screen LiveView for a clubhouse TV. No menus, no chat.">
+    <link rel="icon" type="image/svg+xml" href="/liveview/images/liveview-logo.svg">
+    <link rel="stylesheet" href="overlay.css">
+    <link rel="stylesheet" href="tv.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="tv-mode">
+    <main id="tvStage" class="tv-stage stream-stage">
+        <video id="tvPlayer" muted autoplay playsinline webkit-playsinline></video>
+        <section id="offlineSlide" class="tv-offline" aria-live="polite">
+            <img class="tv-mark" src="/liveview/images/liveview-logo.svg" alt="">
+            <p id="tvStatus" class="tv-kicker">Back soon</p>
+            <h1 id="tvCourseName">LiveView</h1>
+            <p id="tvNext" class="tv-next"></p>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="overlay.js"></script>
+    <script src="stream-player.js"></script>
+    <script src="tv.js"></script>
+</body>
+</html>

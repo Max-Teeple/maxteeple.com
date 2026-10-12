@@ -23,6 +23,116 @@
 
 .lv-overlay-root.is-off { visibility: hidden; }
 
+.lv-brand {
+    position: absolute;
+    z-index: 5;
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    opacity: 0.78;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.55));
+}
+
+.lv-brand img { width: 100%; height: 100%; display: block; }
+
+.lv-brand-tv {
+    top: 28px;
+    right: 28px;
+    width: clamp(56px, 4.4vw, 88px);
+    height: clamp(56px, 4.4vw, 88px);
+    opacity: 0.9;
+}
+
+.hero-stage > .lv-brand { top: 12px; right: 12px; width: 32px; height: 32px; }
+
+.card-media > .lv-brand,
+.modal-stage > .lv-brand {
+    z-index: 3;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+}
+
+.modal-stage {
+    position: relative;
+    width: min(900px, 100%);
+    margin: 0 auto;
+}
+
+.modal-stage video {
+    max-width: none;
+}
+
+body.tv-mode .lv-course-name { font-size: clamp(40px, 4.2vw, 84px); white-space: normal; }
+
+body.tv-mode .lv-hole-meta { font-size: clamp(28px, 2.8vw, 52px); margin-top: 8px; }
+
+body.tv-mode .lv-bug .lv-hole-meta { font-size: clamp(26px, 2.4vw, 44px); }
+
+body.tv-mode .lv-logo-badge,
+body.tv-mode .lv-bug .lv-logo-badge {
+    width: clamp(84px, 7vw, 128px);
+    height: clamp(84px, 7vw, 128px);
+    border-radius: 22px;
+}
+
+body.tv-mode .lv-live-pill {
+    min-height: 56px;
+    padding: 0 18px;
+    gap: 12px;
+    font-size: clamp(20px, 1.8vw, 34px);
+}
+
+body.tv-mode .lv-live-dot { width: 16px; height: 16px; }
+
+body.tv-mode .lv-plate {
+    padding: 22px 26px;
+    border-radius: 28px;
+    max-width: min(1400px, calc(100% - 10vw));
+}
+
+body.tv-mode .lv-bug { max-width: min(720px, calc(100% - 18vw)); }
+
+body.tv-mode .lv-ticker { font-size: clamp(22px, 2vw, 36px); }
+
+body.tv-mode .lv-sponsor { width: 84px; height: 84px; }
+
+body.tv-mode .lv-plate-row { gap: 18px; }
+
+.clubhouse-tv {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px 20px;
+    align-items: center;
+    margin-top: 18px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.clubhouse-tv[hidden] { display: none; }
+
+.clubhouse-tv h3 { margin: 0 0 6px; }
+
+.clubhouse-tv p { margin: 0 0 8px; }
+
+.clubhouse-tv a { word-break: break-all; }
+
+.clubhouse-tv canvas {
+    width: 168px;
+    height: 168px;
+    border-radius: 12px;
+    background: #f7f2ea;
+}
+
+@media (max-width: 720px) {
+    .clubhouse-tv { grid-template-columns: 1fr; }
+}
+
 .lv-plate {
     position: absolute;
     max-width: min(920px, calc(100% - 32px));

@@ -223,6 +223,8 @@ async function fetchCourse() {
 async function mountCourseOverlay(courseId) {
     const response = await fetch(`${apiBaseUrl}/courses/${courseId}/overlay`);
     const data = await response.json().catch(() => ({}));
+    const stages = [document.getElementById('streamStage'), ...document.querySelectorAll('.highlight-stage')];
+    stages.forEach((stage) => window.LiveViewOverlay?.ensureBrand(stage, false));
     if (!data.success || !data.overlay || data.overlay.viewer_enabled === false) return;
     const payload = Object.assign({}, data.overlay, {
         courseName: data.course?.name || activeCourse?.name || '',
@@ -231,7 +233,6 @@ async function mountCourseOverlay(courseId) {
     });
     const hiddenKey = `lv-overlay-off:${courseId}`;
     let hidden = localStorage.getItem(hiddenKey) === '1';
-    const stages = [document.getElementById('streamStage'), ...document.querySelectorAll('.highlight-stage')];
     const handles = [];
     stages.forEach((stage) => {
         if (!stage) return;

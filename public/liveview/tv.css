@@ -1,0 +1,95 @@
+html.tv-mode,
+body.tv-mode {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #050506;
+    overflow: hidden;
+    cursor: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+html.tv-mode,
+html.tv-mode * {
+    cursor: none !important;
+}
+
+.tv-stage {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    overflow: hidden;
+}
+
+.tv-stage video,
+.tv-stage iframe.course-embed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    object-fit: cover;
+    background: #000;
+    pointer-events: none;
+}
+
+.tv-offline {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6vh;
+    padding: 8vh 8vw;
+    text-align: center;
+    color: #f7f2ea;
+    background:
+        radial-gradient(ellipse at center, rgba(255, 77, 24, 0.22), transparent 58%),
+        linear-gradient(180deg, #14161c 0%, #050506 100%);
+}
+
+.tv-offline[hidden] {
+    display: none !important;
+}
+
+.tv-mark {
+    width: clamp(96px, 10vw, 168px);
+    height: auto;
+    margin-bottom: 1.5vh;
+    filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.45));
+}
+
+.tv-kicker,
+.tv-next,
+.tv-offline h1 {
+    margin: 0;
+    font-family: "Inter", system-ui, sans-serif;
+}
+
+.tv-kicker {
+    font-family: "Bebas Neue", "Inter", sans-serif;
+    font-size: clamp(72px, 9vw, 148px);
+    letter-spacing: 0.04em;
+    line-height: 0.9;
+    color: #ff8a3d;
+}
+
+.tv-offline h1 {
+    max-width: 18ch;
+    font-size: clamp(36px, 4.2vw, 76px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+}
+
+.tv-next {
+    margin-top: 1.2vh;
+    font-size: clamp(24px, 2.5vw, 42px);
+    font-weight: 650;
+    color: rgba(247, 242, 234, 0.82);
+}

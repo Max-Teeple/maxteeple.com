@@ -28,6 +28,8 @@ describe('LiveView on maxteeple.com', () => {
       ['/liveview/golive.html', 'Request an install'],
       ['/liveview/explore.html', 'explore'],
       ['/liveview/course.html', 'course'],
+      ['/liveview/tv.html', 'Back soon'],
+      ['/liveview/profile.html', 'Clubhouse TV link'],
       ['/liveview/messages.html', 'message'],
       ['/liveview/groups.html', 'group'],
       ['/liveview/admin.html', 'wrangler secret put ADMIN_APPROVAL_TOKEN']
@@ -364,6 +366,7 @@ describe('LiveView on maxteeple.com', () => {
     const guideHtml = await guide.text();
     expect(guideHtml).toContain('Contact for pricing');
     expect(guideHtml).toContain('Prefer to do it yourself');
+    expect(guideHtml).toContain('Clubhouse TV setup');
     expect(guideHtml).not.toMatch(/\$\s?\d/);
     expect(guideHtml.toLowerCase()).not.toContain('scoreboard');
 

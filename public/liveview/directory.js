@@ -37,6 +37,7 @@ window.LiveViewDirectory = (function () {
                     <div class="card-media ${image ? '' : 'card-media-fallback'}">
                         ${image ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(card.name)}" loading="lazy" decoding="async">` : `<span>${escapeHtml(initials(card.name))}</span>`}
                         ${preview}
+                        ${preview ? '<div class="lv-brand" aria-hidden="true"><img src="/liveview/images/liveview-logo.svg" alt=""></div>' : ''}
                         <div class="play-button">▶</div>
                     </div>
                     <div class="card-content">

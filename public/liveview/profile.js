@@ -286,6 +286,29 @@ function renderStreamInfo(user) {
     setText('streamStatusMessage', user.stream_approved
         ? 'Approved courses can toggle visibility on and off whenever they are ready to broadcast.'
         : 'Add a YouTube, Twitch, Vimeo, or public HLS link, then request approval before going live.');
+    renderClubhouseTv(user);
+}
+
+function renderClubhouseTv(user) {
+    const panel = document.getElementById('clubhouseTv');
+    const link = document.getElementById('clubhouseTvLink');
+    const canvas = document.getElementById('clubhouseTvQr');
+    if (!panel || !link) return;
+    if (!user?.slug) {
+        panel.hidden = true;
+        return;
+    }
+    const url = `${window.location.origin}/liveview/tv.html?slug=${encodeURIComponent(user.slug)}`;
+    panel.hidden = false;
+    link.href = url;
+    link.textContent = url;
+    if (canvas && window.QRCode?.toCanvas) {
+        window.QRCode.toCanvas(canvas, url, {
+            width: 168,
+            margin: 1,
+            color: { dark: '#141414', light: '#f7f2ea' }
+        }, function () { /* the address above the code still works if drawing fails */ });
+    }
 }
 
 function renderStreamPreview(user) {
@@ -582,6 +605,19 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     document.getElementById('stream_url')?.addEventListener('input', () => {
         if (activeUser?.role === 'course_owner') renderChecklist(activeUser);
+    });
+
+    document.getElementById('copyTvLink')?.addEventListener('click', async () => {
+        const url = document.getElementById('clubhouseTvLink')?.href || '';
+        const status = document.getElementById('tvCopyStatus');
+        if (!url) return;
+        try {
+            await navigator.clipboard.writeText(url);
+            if (status) status.textContent = 'Copied';
+        } catch (error) {
+            window.prompt('Copy the Clubhouse TV link', url);
+            if (status) status.textContent = 'Select the link in the prompt and copy it.';
+        }
     });
 
     document.getElementById('testStreamLinkBtn')?.addEventListener('click', () => {
