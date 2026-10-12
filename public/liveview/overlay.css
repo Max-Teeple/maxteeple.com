@@ -167,10 +167,12 @@
     overflow: hidden;
 }
 
-.broadcast-player video {
+.broadcast-player video,
+#courseStreamPlayer {
     position: absolute;
     inset: 0;
     width: 100%;
+    max-width: none;
     height: 100%;
     border-radius: 0;
     object-fit: cover;
