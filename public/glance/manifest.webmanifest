@@ -1,0 +1,17 @@
+{
+  "name": "Glance",
+  "short_name": "Glance",
+  "start_url": "/glance/",
+  "scope": "/glance/",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    {
+      "src": "/glance/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

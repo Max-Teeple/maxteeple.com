@@ -13,7 +13,7 @@
     // files, so they fall through to the Worker, which serves index.html.
     // Exact files (CSS, images, the ClubSense demo) stay on the asset server.
     "html_handling": "none",
-    "run_worker_first": ["/liveview", "/liveview/*"]
+    "run_worker_first": ["/liveview", "/liveview/*", "/glance", "/glance/*"]
   },
   // No database_id / KV id: wrangler deploy provisions both on the free plan.
   "d1_databases": [

@@ -1,4 +1,5 @@
 import { app } from './app';
+import { handleGlance } from './glance/routes';
 import type { Bindings } from './types';
 
 /**
@@ -31,6 +32,9 @@ async function fetchSiteAsset(request: Request, env: Bindings): Promise<Response
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/glance' || url.pathname.startsWith('/glance/')) {
+      return handleGlance(request, env, ctx);
+    }
     if (url.pathname !== '/liveview' && !url.pathname.startsWith('/liveview/')) {
       return fetchSiteAsset(request, env);
     }
