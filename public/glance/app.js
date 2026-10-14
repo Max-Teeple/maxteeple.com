@@ -640,6 +640,17 @@
         10 + ((maxLat - lat) / (maxLat - minLat)) * 76
       ];
     }
+    (data.places || []).forEach(function (place) {
+      var point = xy(place.lat, place.lon);
+      var mark = document.createElementNS(ns, 'circle');
+      mark.setAttribute('cx', point[0]);
+      mark.setAttribute('cy', point[1]);
+      mark.setAttribute('r', '3.2');
+      mark.setAttribute('fill', 'none');
+      mark.setAttribute('stroke', 'rgba(246,243,236,0.55)');
+      mark.setAttribute('stroke-width', '1.2');
+      svg.appendChild(mark);
+    });
     if (data.home) {
       var home = xy(data.home.lat, data.home.lon);
       var ring = document.createElementNS(ns, 'circle');
@@ -647,8 +658,8 @@
       ring.setAttribute('cy', home[1]);
       ring.setAttribute('r', '6');
       ring.setAttribute('fill', 'none');
-      ring.setAttribute('stroke', 'rgba(246,243,236,0.75)');
-      ring.setAttribute('stroke-width', '1.4');
+      ring.setAttribute('stroke', 'rgba(246,243,236,0.9)');
+      ring.setAttribute('stroke-width', '1.6');
       svg.appendChild(ring);
     }
     (data.people || []).forEach(function (person) {
