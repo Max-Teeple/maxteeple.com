@@ -218,7 +218,7 @@ body.is-dim .dimmer { opacity: 0.45; }
   grid-template-columns: minmax(16rem, 0.9fr) minmax(18rem, 1.15fr) minmax(20rem, 1.15fr);
   gap: 1rem;
   align-items: end;
-  padding-right: 6.5rem;
+  padding-right: 11rem;
 }
 .place { margin: 0 0 0.15rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.78rem; }
 .clock-block { text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45); }
@@ -313,7 +313,7 @@ body.is-dim .dimmer { opacity: 0.45; }
 }
 .day.is-today .setup { font-size: 1.15rem; }
 
-.rail { min-height: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.rail { min-height: 0; display: flex; flex-direction: column; gap: 0.45rem; overflow: auto; }
 .rail-card h3 { margin: 0; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
 .count-title { margin: 0.35rem 0 0; font-size: 1.25rem; line-height: 1.2; }
 .count-when { margin: 0.15rem 0 0; font-size: 2rem; font-weight: 500; letter-spacing: -0.04em; }
