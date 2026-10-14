@@ -388,42 +388,7 @@
       rail.appendChild(next);
       renderCountdown();
     }
-    if (widgets.sun !== false && state.weather && state.weather.sun) {
-      var sun = document.createElement('section');
-      sun.className = 'rail-card';
-      var sh = document.createElement('h3');
-      sh.textContent = 'Sun';
-      var row = document.createElement('div');
-      row.className = 'sun-row';
-      row.append(sunBit('Sunrise', state.weather.sun.sunrise), sunBit('Sunset', state.weather.sun.sunset));
-      sun.append(sh, row);
-      rail.appendChild(sun);
-    }
-    if (widgets.air !== false && state.weather && state.weather.air) {
-      var air = document.createElement('section');
-      air.className = 'rail-card';
-      var ah = document.createElement('h3');
-      ah.textContent = 'Air';
-      var arow = document.createElement('div');
-      arow.className = 'air-row';
-      var value = document.createElement('div');
-      var label = document.createElement('span');
-      label.textContent = 'US AQI';
-      var strong = document.createElement('strong');
-      var aqi = state.weather.air.aqi;
-      strong.textContent = aqi == null ? '—' : String(aqi);
-      strong.className = aqi == null ? '' : aqi <= 50 ? 'aqi-good' : aqi <= 100 ? 'aqi-mid' : 'aqi-bad';
-      value.append(label, strong);
-      var word = document.createElement('div');
-      var wlabel = document.createElement('span');
-      wlabel.textContent = 'Now';
-      var wstrong = document.createElement('strong');
-      wstrong.textContent = state.weather.air.label || '';
-      word.append(wlabel, wstrong);
-      arow.append(value, word);
-      air.append(ah, arow);
-      rail.appendChild(air);
-    }
+    renderDayFacts(rail, widgets);
     var todos = document.createElement('section');
     todos.className = 'rail-card todos-card';
     var th = document.createElement('h3');
@@ -483,7 +448,10 @@
     card.className = 'rail-card lights-card';
     var heading = document.createElement('h3');
     heading.textContent = 'Lights';
-    card.appendChild(heading);
+    var head = document.createElement('div');
+    head.className = 'card-head';
+    head.appendChild(heading);
+    card.appendChild(head);
     var data = state.lights;
     if (!data || data.configured === false) {
       var quiet = document.createElement('p');
@@ -504,19 +472,19 @@
     list.className = 'lights';
     shown.forEach(function (light) { list.appendChild(lightControl(light)); });
     card.appendChild(list);
-    if (!shown.length && !data.message) {
-      var empty = document.createElement('p');
-      empty.className = 'quiet';
-      empty.textContent = 'No plugs selected.';
-      card.appendChild(empty);
-    }
-    if (shown.some(function (light) { return light.on && light.online; })) {
+    if (shown.length) {
       var all = document.createElement('button');
       all.type = 'button';
       all.className = 'text-btn';
       all.textContent = 'All off';
+      all.disabled = !shown.some(function (light) { return light.on && light.online; });
       all.addEventListener('click', allOff);
-      card.appendChild(all);
+      head.appendChild(all);
+    } else if (!data.message) {
+      var empty = document.createElement('p');
+      empty.className = 'quiet';
+      empty.textContent = 'No plugs selected.';
+      card.appendChild(empty);
     }
     rail.appendChild(card);
   }
@@ -524,14 +492,12 @@
   function lightControl(light) {
     var row = document.createElement('div');
     row.className = 'light' + (light.online ? '' : ' is-offline');
-    var copy = document.createElement('div');
-    var name = document.createElement('div');
+    var name = document.createElement('span');
     name.className = 'light-name';
     name.textContent = light.name;
-    var meta = document.createElement('div');
+    var meta = document.createElement('span');
     meta.className = 'light-meta';
     meta.textContent = !light.online ? 'Offline' : light.on ? 'On' : 'Off';
-    copy.append(name, meta);
     var button = document.createElement('button');
     button.type = 'button';
     button.className = 'switch';
@@ -540,7 +506,7 @@
     button.setAttribute('aria-label', (light.on ? 'Turn off ' : 'Turn on ') + light.name);
     button.appendChild(document.createElement('i'));
     button.addEventListener('click', function () { toggleLight(light); });
-    row.append(copy, button);
+    row.append(name, meta, button);
     return row;
   }
 
@@ -590,89 +556,60 @@
       return;
     }
     people.forEach(function (person) {
-      var line = document.createElement('p');
+      var line = document.createElement('div');
       line.className = 'family-line';
       var dot = document.createElement('i');
       dot.style.background = person.color || '#f6f3ec';
-      var text = document.createElement('span');
-      text.textContent = person.phrase;
-      line.append(dot, text);
-      if (person.age) {
-        var age = document.createElement('em');
-        age.textContent = person.age;
-        line.appendChild(age);
-      }
+      var copy = document.createElement('div');
+      var parts = splitPhrase(person.phrase);
+      var status = document.createElement('p');
+      status.className = 'family-status';
+      status.textContent = parts.status;
+      var meta = document.createElement('p');
+      meta.className = 'family-meta';
+      meta.textContent = [parts.detail, person.age].filter(Boolean).join(' · ');
+      copy.append(status, meta);
+      line.append(dot, copy);
       card.appendChild(line);
     });
-    card.appendChild(familyMap(data));
     rail.appendChild(card);
   }
 
-  function familyMap(data) {
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 200 96');
-    svg.setAttribute('class', 'family-map');
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Family map');
-    var spots = [];
-    if (data.home) spots.push(data.home);
-    (data.places || []).forEach(function (place) { spots.push(place); });
-    (data.people || []).forEach(function (person) {
-      if (person.lat != null && person.lon != null) spots.push(person);
-    });
-    if (!spots.length) return svg;
-    var minLat = spots[0].lat;
-    var maxLat = spots[0].lat;
-    var minLon = spots[0].lon;
-    var maxLon = spots[0].lon;
-    spots.forEach(function (spot) {
-      minLat = Math.min(minLat, spot.lat);
-      maxLat = Math.max(maxLat, spot.lat);
-      minLon = Math.min(minLon, spot.lon);
-      maxLon = Math.max(maxLon, spot.lon);
-    });
-    if (maxLat - minLat < 0.02) { minLat -= 0.01; maxLat += 0.01; }
-    if (maxLon - minLon < 0.02) { minLon -= 0.01; maxLon += 0.01; }
-    function xy(lat, lon) {
-      return [
-        12 + ((lon - minLon) / (maxLon - minLon)) * 176,
-        10 + ((maxLat - lat) / (maxLat - minLat)) * 76
-      ];
+  function splitPhrase(phrase) {
+    var match = String(phrase || '').match(/^(.*?),\s*(\d+\s+min from home)$/);
+    if (match) return { status: match[1], detail: match[2] };
+    return { status: phrase || '', detail: '' };
+  }
+
+  function renderDayFacts(rail, widgets) {
+    var showSun = widgets.sun !== false && state.weather && state.weather.sun;
+    var showAir = widgets.air !== false && state.weather && state.weather.air;
+    if (!showSun && !showAir) return;
+    var card = document.createElement('section');
+    card.className = 'rail-card day-facts';
+    if (showSun) {
+      card.appendChild(factBit('Sunrise', state.weather.sun.sunrise ? formatShort(state.weather.sun.sunrise, state.settings && state.settings.clock24) : '—'));
+      card.appendChild(factBit('Sunset', state.weather.sun.sunset ? formatShort(state.weather.sun.sunset, state.settings && state.settings.clock24) : '—'));
     }
-    (data.places || []).forEach(function (place) {
-      var point = xy(place.lat, place.lon);
-      var mark = document.createElementNS(ns, 'circle');
-      mark.setAttribute('cx', point[0]);
-      mark.setAttribute('cy', point[1]);
-      mark.setAttribute('r', '3.2');
-      mark.setAttribute('fill', 'none');
-      mark.setAttribute('stroke', 'rgba(246,243,236,0.55)');
-      mark.setAttribute('stroke-width', '1.2');
-      svg.appendChild(mark);
-    });
-    if (data.home) {
-      var home = xy(data.home.lat, data.home.lon);
-      var ring = document.createElementNS(ns, 'circle');
-      ring.setAttribute('cx', home[0]);
-      ring.setAttribute('cy', home[1]);
-      ring.setAttribute('r', '6');
-      ring.setAttribute('fill', 'none');
-      ring.setAttribute('stroke', 'rgba(246,243,236,0.9)');
-      ring.setAttribute('stroke-width', '1.6');
-      svg.appendChild(ring);
+    if (showAir) {
+      var aqi = state.weather.air.aqi;
+      var value = (aqi == null ? '—' : String(aqi)) + (state.weather.air.label ? ' ' + state.weather.air.label : '');
+      var air = factBit('Air', value);
+      air.querySelector('strong').className = aqi == null ? '' : aqi <= 50 ? 'aqi-good' : aqi <= 100 ? 'aqi-mid' : 'aqi-bad';
+      card.appendChild(air);
     }
-    (data.people || []).forEach(function (person) {
-      if (person.lat == null || person.lon == null) return;
-      var point = xy(person.lat, person.lon);
-      var dot = document.createElementNS(ns, 'circle');
-      dot.setAttribute('cx', point[0]);
-      dot.setAttribute('cy', point[1]);
-      dot.setAttribute('r', '4.2');
-      dot.setAttribute('fill', person.color || '#f6f3ec');
-      svg.appendChild(dot);
-    });
-    return svg;
+    rail.appendChild(card);
+  }
+
+  function factBit(label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'fact';
+    var span = document.createElement('span');
+    span.textContent = label;
+    var strong = document.createElement('strong');
+    strong.textContent = value;
+    wrap.append(span, strong);
+    return wrap;
   }
 
   function sunBit(label, iso) {
