@@ -1,7 +1,7 @@
 import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth';
-import { birthdayName, dedupeWorkMirrors, eventsFromIcs, titleIsBirthday } from '../src/glance/ics';
+import { birthdayName, dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
@@ -490,9 +490,23 @@ END:VCALENDAR`;
     const kept = dedupeWorkMirrors([
       { title: 'Standup', start: startMs, end: endMs, allDay: false, feedId: 'w', feedLabel: 'Work', color: '#8eb6ff' },
       { title: '[Work] Standup', start: startMs, end: endMs, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' },
-      { title: '[Work] Dentist', start: startMs + 3600000, end: endMs + 3600000, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' }
+      { title: '[Work] Dentist', start: startMs + 3600000, end: endMs + 3600000, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' },
+      { title: 'Family picnic', start: startMs + 7200000, end: endMs + 7200000, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' }
     ]);
-    expect(kept.map((event) => `${event.feedLabel}:${event.title}`)).toEqual(['Work:Standup', 'Personal:Dentist']);
+    expect(kept.map((event) => `${event.feedLabel}:${event.title}`)).toEqual(['Work:Standup', 'Personal:Dentist', 'Personal:Family picnic']);
+    const masked = maskWorkEvents(kept);
+    expect(masked.map((event) => `${event.feedLabel}:${event.title}:${event.color}`)).toEqual([
+      'Work:Max Work Meeting:#8eb6ff',
+      'Work:Max Work Meeting:#8eb6ff',
+      'Personal:Family picnic:#7dcea0'
+    ]);
+    const onlyMirror = maskWorkEvents([
+      { title: '[Work] Planning', start: startMs, end: endMs, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' }
+    ]);
+    expect(onlyMirror[0].title).toBe('Max Work Meeting');
+    expect(onlyMirror[0].feedLabel).toBe('Work');
+    expect(onlyMirror[0].color).toBe('#8eb6ff');
+    expect(JSON.stringify(onlyMirror)).not.toContain('Planning');
   });
 
   it('shapes an Open-Meteo payload', () => {

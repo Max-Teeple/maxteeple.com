@@ -26,6 +26,8 @@ export type AgendaEvent = {
   feedId: string;
   feedLabel: string;
   color: string;
+  /** True when this came from the Work feed or a "[Work]" mirror. Not sent to the browser. */
+  work?: boolean;
 };
 
 const BIRTHDAY_TITLE = /\b(?:birthdays?|b-?days?)\b/i;
@@ -125,24 +127,48 @@ function sameSlot(a: AgendaEvent, b: AgendaEvent): boolean {
   return Math.abs(a.start - b.start) <= 10 * 60 * 1000;
 }
 
+function isWorkFeed(event: AgendaEvent): boolean {
+  return event.feedLabel.trim().toLowerCase() === 'work';
+}
+
+function isWorkCopy(event: AgendaEvent): boolean {
+  return isWorkFeed(event) || event.work === true || WORK_PREFIX.test(event.title);
+}
+
 /**
  * Google mirrors the work calendar with a "[Work] " title prefix.
- * When a Work feed is present, drop those mirrors if the start and title match,
- * and always strip the prefix for display.
+ * When a Work feed is present, drop those mirrors if the start and title match.
+ * Matching uses the real titles. Display masking happens afterwards.
  */
 export function dedupeWorkMirrors(events: AgendaEvent[]): AgendaEvent[] {
-  const work = events.filter((event) => event.feedLabel.trim().toLowerCase() === 'work');
+  const work = events.filter((event) => isWorkFeed(event));
   const kept: AgendaEvent[] = [];
   for (const event of events) {
-    const mirror = event.feedLabel.trim().toLowerCase() !== 'work' && WORK_PREFIX.test(event.title);
+    const mirror = !isWorkFeed(event) && WORK_PREFIX.test(event.title);
     if (mirror) {
       const title = normTitle(event.title);
       const matched = work.some((item) => sameSlot(event, item) && similarTitle(title, normTitle(item.title)));
       if (matched) continue;
     }
-    kept.push({ ...event, title: stripWorkPrefix(event.title) });
+    kept.push({ ...event, title: stripWorkPrefix(event.title), work: isWorkCopy(event) });
   }
   return kept;
+}
+
+/** Replace every work event before it is sent to the browser. */
+export function maskWorkEvents(events: AgendaEvent[]): AgendaEvent[] {
+  const color = events.find((event) => isWorkFeed(event))?.color || '#8eb6ff';
+  return events.map((event) => {
+    if (!isWorkCopy(event)) return event;
+    return {
+      ...event,
+      title: 'Max Work Meeting',
+      feedLabel: 'Work',
+      color,
+      birthday: false,
+      work: true
+    };
+  });
 }
 
 export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, windowEnd: number): AgendaEvent[] {

@@ -14,7 +14,7 @@ import {
   type GlanceLayout,
   type GlanceTheme
 } from './defaults';
-import { dedupeWorkMirrors, eventsFromIcs, type AgendaEvent, type FeedMeta } from './ics';
+import { dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, type AgendaEvent, type FeedMeta } from './ics';
 import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, zonedToUtc } from './time';
 import {
   familyPhrase,
@@ -251,7 +251,7 @@ glance.get('/calendar', async (c) => {
   if (!feeds.length) {
     return c.json(present([], Date.now(), []));
   }
-  const key = `glance:cal:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
+  const key = `glance:cal:v2:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
   const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 180, () => buildCalendar(feeds));
   return c.json(payload);
 });
@@ -522,7 +522,7 @@ async function buildCalendar(feeds: FeedRow[]) {
       }
     })
   );
-  return present(dedupeWorkMirrors(events), now, status);
+  return present(maskWorkEvents(dedupeWorkMirrors(events)), now, status);
 }
 
 function present(events: AgendaEvent[], now: number, feeds: { id: string; label: string; color: string; ok: boolean }[]) {
