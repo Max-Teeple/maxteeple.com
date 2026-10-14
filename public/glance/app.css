@@ -324,6 +324,35 @@ body.is-dim .dimmer { opacity: 0.45; }
 .aqi-mid { color: #f0d59a; }
 .aqi-bad { color: #ffb4a8; }
 
+.lights { display: grid; gap: 0.35rem; margin-top: 0.45rem; }
+.light { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; min-height: 48px; }
+.light-name { font-size: 1.05rem; line-height: 1.2; }
+.light-meta { color: var(--faint); font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.light.is-offline { opacity: 0.55; }
+.switch {
+  width: 52px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  padding: 0;
+}
+.switch i {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f6f3ec;
+  top: 3px;
+  left: 3px;
+}
+.switch[aria-pressed="true"] { background: #d7c08a; }
+.switch[aria-pressed="true"] i { left: 24px; }
+.switch:disabled { opacity: 0.4; }
+.lights-card .text-btn { margin-top: 0.35rem; }
+.light-pref { display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.35rem; align-items: center; margin-bottom: 0.45rem; }
+
 .todos { list-style: none; margin: 0.4rem 0 0; padding: 0; overflow: auto; min-height: 0; }
 .todos li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 0.25rem; align-items: center; min-height: 44px; }
 .todos li.done .todo-title { opacity: 0.45; text-decoration: line-through; }

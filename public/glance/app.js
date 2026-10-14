@@ -15,6 +15,7 @@
     weather: null,
     calendar: null,
     todos: [],
+    lights: null,
     open: false
   };
 
@@ -366,7 +367,8 @@
     var existing = document.getElementById('todo-input');
     if (existing) draft = existing.value;
     rail.replaceChildren();
-    var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true };
+    var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true, lights: true };
+    renderLights(rail, widgets);
     if (widgets.countdown !== false) {
       var next = document.createElement('section');
       next.className = 'rail-card';
@@ -470,6 +472,101 @@
     rail.appendChild(todos);
   }
 
+  function renderLights(rail, widgets) {
+    if (widgets.lights === false) return;
+    var card = document.createElement('section');
+    card.className = 'rail-card lights-card';
+    var heading = document.createElement('h3');
+    heading.textContent = 'Lights';
+    card.appendChild(heading);
+    var data = state.lights;
+    if (!data || data.configured === false) {
+      var quiet = document.createElement('p');
+      quiet.className = 'quiet';
+      quiet.textContent = (data && data.message) || 'Add the Tuya keys in settings.';
+      card.appendChild(quiet);
+      rail.appendChild(card);
+      return;
+    }
+    if (data.message && !(data.lights || []).length) {
+      var note = document.createElement('p');
+      note.className = 'quiet';
+      note.textContent = data.message;
+      card.appendChild(note);
+    }
+    var shown = (data.lights || []).filter(function (light) { return light.enabled !== false; });
+    var list = document.createElement('div');
+    list.className = 'lights';
+    shown.forEach(function (light) { list.appendChild(lightControl(light)); });
+    card.appendChild(list);
+    if (!shown.length && !data.message) {
+      var empty = document.createElement('p');
+      empty.className = 'quiet';
+      empty.textContent = 'No plugs selected.';
+      card.appendChild(empty);
+    }
+    if (shown.some(function (light) { return light.on && light.online; })) {
+      var all = document.createElement('button');
+      all.type = 'button';
+      all.className = 'text-btn';
+      all.textContent = 'All off';
+      all.addEventListener('click', allOff);
+      card.appendChild(all);
+    }
+    rail.appendChild(card);
+  }
+
+  function lightControl(light) {
+    var row = document.createElement('div');
+    row.className = 'light' + (light.online ? '' : ' is-offline');
+    var copy = document.createElement('div');
+    var name = document.createElement('div');
+    name.className = 'light-name';
+    name.textContent = light.name;
+    var meta = document.createElement('div');
+    meta.className = 'light-meta';
+    meta.textContent = !light.online ? 'Offline' : light.on ? 'On' : 'Off';
+    copy.append(name, meta);
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'switch';
+    button.disabled = !light.online || !light.code;
+    button.setAttribute('aria-pressed', light.on ? 'true' : 'false');
+    button.setAttribute('aria-label', (light.on ? 'Turn off ' : 'Turn on ') + light.name);
+    button.appendChild(document.createElement('i'));
+    button.addEventListener('click', function () { toggleLight(light); });
+    row.append(copy, button);
+    return row;
+  }
+
+  async function toggleLight(light) {
+    if (!light.online || !light.code) return;
+    var next = !light.on;
+    light.on = next;
+    renderRail();
+    try {
+      await api('/glance/api/lights/' + encodeURIComponent(light.id), { method: 'POST', body: { on: next } });
+    } catch (err) {
+      light.on = !next;
+      if (state.lights) state.lights.message = err.message || 'That plug did not change.';
+      renderRail();
+    }
+  }
+
+  async function allOff() {
+    var targets = ((state.lights && state.lights.lights) || []).filter(function (light) {
+      return light.enabled !== false && light.on && light.online && light.code;
+    });
+    targets.forEach(function (light) { light.on = false; });
+    renderRail();
+    await Promise.all(targets.map(function (light) {
+      return api('/glance/api/lights/' + encodeURIComponent(light.id), { method: 'POST', body: { on: false } }).catch(function () {
+        light.on = true;
+      });
+    }));
+    renderRail();
+  }
+
   function sunBit(label, iso) {
     var wrap = document.createElement('div');
     var span = document.createElement('span');
@@ -538,11 +635,13 @@
     var results = await Promise.all([
       api('/glance/api/weather'),
       api('/glance/api/calendar'),
-      api('/glance/api/todos')
+      api('/glance/api/todos'),
+      api('/glance/api/lights')
     ]);
     state.weather = results[0];
     state.calendar = results[1];
     state.todos = results[2].todos || [];
+    state.lights = results[3];
     renderAll();
   }
 
@@ -571,6 +670,15 @@
     document.getElementById('w-count').checked = settings.widgets.countdown !== false;
     document.getElementById('w-sun').checked = settings.widgets.sun !== false;
     document.getElementById('w-air').checked = settings.widgets.air !== false;
+    document.getElementById('w-lights').checked = settings.widgets.lights !== false;
+    var tuya = settings.tuya || {};
+    var accessId = document.getElementById('tuya-id');
+    var accessSecret = document.getElementById('tuya-secret');
+    accessId.value = '';
+    accessSecret.value = '';
+    accessId.placeholder = tuya.accessIdSaved ? 'Saved on the server' : 'Access ID';
+    accessSecret.placeholder = tuya.accessSecretSaved ? 'Saved on the server' : 'Access secret';
+    renderLightPrefs();
     var themes = document.getElementById('themes');
     themes.replaceChildren();
     THEMES.forEach(function (entry) {
@@ -734,9 +842,13 @@
             summary: document.getElementById('w-summary').checked,
             countdown: document.getElementById('w-count').checked,
             sun: document.getElementById('w-sun').checked,
-            air: document.getElementById('w-air').checked
+            air: document.getElementById('w-air').checked,
+            lights: document.getElementById('w-lights').checked
           },
-          feeds: collectFeeds()
+          feeds: collectFeeds(),
+          tuyaAccessId: document.getElementById('tuya-id').value,
+          tuyaAccessSecret: document.getElementById('tuya-secret').value,
+          lights: collectLightPrefs()
         }
       });
       state.settings = saved;
@@ -813,6 +925,69 @@
   setInterval(function () {
     if (!board.hidden) refresh().catch(function () {});
   }, 5 * 60 * 1000);
+  setInterval(function () {
+    if (board.hidden) return;
+    api('/glance/api/lights').then(function (body) {
+      state.lights = body;
+      renderRail();
+    }).catch(function () {});
+  }, 30000);
+
+  function renderLightPrefs() {
+    var list = document.getElementById('light-list');
+    if (!list) return;
+    list.replaceChildren();
+    var lights = (state.lights && state.lights.lights) || [];
+    lights.forEach(function (light, index) {
+      var row = document.createElement('div');
+      row.className = 'light-pref';
+      row.dataset.id = light.id;
+      var enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.className = 'light-enabled';
+      enabled.checked = light.enabled !== false;
+      enabled.setAttribute('aria-label', 'Show ' + light.name);
+      var name = document.createElement('input');
+      name.className = 'feed-label light-label';
+      name.value = light.name || '';
+      name.maxLength = 80;
+      var up = tiny('Move plug up', '↑', function () { moveLightPref(index, -1); });
+      var down = tiny('Move plug down', '↓', function () { moveLightPref(index, 1); });
+      row.append(enabled, name, up, down);
+      list.appendChild(row);
+    });
+    if (!lights.length && state.lights && state.lights.message && state.lights.configured) {
+      var note = document.createElement('p');
+      note.className = 'hint';
+      note.textContent = state.lights.message;
+      list.appendChild(note);
+    }
+  }
+
+  function collectLightPrefs() {
+    return Array.prototype.map.call(document.querySelectorAll('#light-list .light-pref'), function (row) {
+      return {
+        id: row.dataset.id,
+        label: row.querySelector('.light-label').value,
+        enabled: row.querySelector('.light-enabled').checked
+      };
+    });
+  }
+
+  function moveLightPref(index, delta) {
+    var lights = (state.lights && state.lights.lights) || [];
+    var next = index + delta;
+    if (!lights.length || next < 0 || next >= lights.length) return;
+    var current = collectLightPrefs();
+    var moved = current[index];
+    current.splice(index, 1);
+    current.splice(next, 0, moved);
+    state.lights.lights = current.map(function (row, order) {
+      var original = lights.find(function (light) { return light.id === row.id; }) || {};
+      return Object.assign({}, original, { name: row.label, enabled: row.enabled, sortOrder: order });
+    });
+    renderLightPrefs();
+  }
 
   bootApp().catch(function (error) {
     if (!error || error.status !== 401) showLogin();

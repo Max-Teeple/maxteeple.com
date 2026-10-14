@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth';
 import { dedupeWorkMirrors, eventsFromIcs } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
+import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -38,7 +39,7 @@ function withSession(path: string, session: string, init?: RequestInit) {
 
 describe('Glance kitchen board', () => {
   it('requires a login before any data route', async () => {
-    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session'];
+    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights'];
     for (const path of paths) {
       const response = await api(path);
       expect(response.status, path).toBe(401);
@@ -51,6 +52,12 @@ describe('Glance kitchen board', () => {
       body: JSON.stringify({ title: 'Buy milk' })
     });
     expect(created.status).toBe(401);
+    const command = await api('/glance/api/lights/abcdefghij', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on: true })
+    });
+    expect(command.status).toBe(401);
   });
 
   it('serves a chromeless login shell and a quiet site link', async () => {
@@ -208,6 +215,48 @@ describe('Glance kitchen board', () => {
     expect(out.status).toBe(200);
     const after = await api('/glance/api/todos', { headers: { cookie: nextJar } });
     expect(after.status).toBe(401);
+  });
+});
+
+describe('Tuya signing', () => {
+  it('builds the OpenAPI v2 string and keeps cloud keys out of settings', async () => {
+    const path = canonicalPath('/v1.0/token?grant_type=1');
+    const contentSha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    const payload = signPayload({
+      accessId: 'client-example',
+      timestamp: '1583489412345',
+      nonce: 'nonce',
+      method: 'GET',
+      path,
+      contentSha256
+    });
+    expect(payload.startsWith('client-example1583489412345nonceGET\n')).toBe(true);
+    expect(payload).toContain(contentSha256);
+    expect(payload.endsWith('\n\n/v1.0/token?grant_type=1')).toBe(true);
+    const sign = await tuyaSign('example-secret', payload);
+    expect(sign).toMatch(/^[A-F0-9]{64}$/);
+    expect(sign).toBe(await tuyaSign('example-secret', payload));
+    expect(await sha256Hex('')).toBe(contentSha256);
+
+    const session = await signIn();
+    const accessId = 'abc123xyz987';
+    const accessSecret = 'abcdef0123456789abcd';
+    const saved = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tuyaAccessId: accessId, tuyaAccessSecret: accessSecret })
+    });
+    const body = await saved.json() as { tuya?: { accessIdSaved?: boolean; accessSecretSaved?: boolean } };
+    expect(saved.status).toBe(200);
+    expect(body.tuya?.accessIdSaved).toBe(true);
+    expect(body.tuya?.accessSecretSaved).toBe(true);
+    const text = JSON.stringify(body);
+    expect(text).not.toContain(accessId);
+    expect(text).not.toContain(accessSecret);
+    const lights = await withSession('/glance/api/lights', session);
+    const lightsText = await lights.text();
+    expect(lightsText).not.toContain(accessId);
+    expect(lightsText).not.toContain(accessSecret);
   });
 });
 

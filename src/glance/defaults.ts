@@ -11,7 +11,8 @@ export const DEFAULT_WIDGETS = {
   countdown: true,
   sun: true,
   air: true,
-  summary: true
+  summary: true,
+  lights: true
 };
 
 export const THEMES = ['auto', 'aurora', 'desert', 'golf', 'glass'] as const;

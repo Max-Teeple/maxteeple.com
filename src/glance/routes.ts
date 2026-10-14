@@ -14,6 +14,7 @@ import {
 } from './defaults';
 import { dedupeWorkMirrors, eventsFromIcs, type AgendaEvent, type FeedMeta } from './ics';
 import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, zonedToUtc } from './time';
+import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 
 type GlanceEnv = { Bindings: Bindings; Variables: { sessionId: string } };
@@ -28,6 +29,8 @@ type SettingsRow = {
   night_end: number;
   widgets_json: string;
   password_hash: string;
+  tuya_access_id: string;
+  tuya_access_secret: string;
 };
 
 type FeedRow = {
@@ -153,15 +156,34 @@ glance.put('/settings', async (c) => {
   const nightStart = hourOf(body.nightStart ?? current.night_start, 'Night start');
   const nightEnd = hourOf(body.nightEnd ?? current.night_end, 'Night end');
   const widgets = widgetsOf(body.widgets ?? JSON.parse(current.widgets_json || '{}'));
+  const tuyaAccessId = secretField(body.tuyaAccessId, current.tuya_access_id);
+  const tuyaAccessSecret = secretField(body.tuyaAccessSecret, current.tuya_access_secret);
+  if (tuyaAccessId !== current.tuya_access_id || tuyaAccessSecret !== current.tuya_access_secret) {
+    clearTuyaToken(current.tuya_access_id);
+    clearTuyaToken(tuyaAccessId);
+  }
   await db
     .prepare(
       `UPDATE glance_settings
-       SET location_name = ?, lat = ?, lon = ?, theme = ?, clock_24h = ?, night_start = ?, night_end = ?, widgets_json = ?, updated_at = ?
+       SET location_name = ?, lat = ?, lon = ?, theme = ?, clock_24h = ?, night_start = ?, night_end = ?, widgets_json = ?, tuya_access_id = ?, tuya_access_secret = ?, updated_at = ?
        WHERE id = 'default'`
     )
-    .bind(locationName, lat, lon, theme, clock24, nightStart, nightEnd, JSON.stringify(widgets), new Date().toISOString())
+    .bind(
+      locationName,
+      lat,
+      lon,
+      theme,
+      clock24,
+      nightStart,
+      nightEnd,
+      JSON.stringify(widgets),
+      tuyaAccessId,
+      tuyaAccessSecret,
+      new Date().toISOString()
+    )
     .run();
   if (Array.isArray(body.feeds)) await replaceFeeds(db, body.feeds);
+  if (Array.isArray(body.lights) && body.lights.length) await saveLightPrefs(db, body.lights);
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, ...(await publicSettings(db)) });
 });
@@ -215,6 +237,49 @@ glance.get('/calendar', async (c) => {
   const key = `glance:cal:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
   const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 180, () => buildCalendar(feeds));
   return c.json(payload);
+});
+
+glance.get('/lights', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const settings = await loadSettings(c.env.LIVEVIEW_DB);
+  if (!settings.tuya_access_id || !settings.tuya_access_secret) {
+    return c.json({ ok: true, configured: false, lights: [], message: 'Add the Tuya cloud keys in settings.' });
+  }
+  try {
+    const devices = await listLights(
+      { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
+      c.env.LIVEVIEW_MEDIA
+    );
+    const prefs = await lightPrefs(c.env.LIVEVIEW_DB);
+    return c.json({ ok: true, configured: true, lights: mergeLights(devices, prefs) });
+  } catch (error) {
+    console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
+    return c.json({ ok: false, configured: true, lights: [], message: friendlyTuyaMessage(error) });
+  }
+});
+
+glance.post('/lights/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!/^[A-Za-z0-9]{6,40}$/.test(id)) throw new HttpError(400, 'Unknown plug');
+  const body = await readJson(c.req.raw);
+  if (typeof body.on !== 'boolean') throw new HttpError(400, 'Say whether the plug should be on');
+  const settings = await loadSettings(c.env.LIVEVIEW_DB);
+  if (!settings.tuya_access_id || !settings.tuya_access_secret) {
+    throw new HttpError(400, 'Add the Tuya cloud keys in settings.');
+  }
+  try {
+    await setLight(
+      { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
+      c.env.LIVEVIEW_MEDIA,
+      id,
+      body.on
+    );
+  } catch (error) {
+    console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
+    throw new HttpError(502, friendlyTuyaMessage(error));
+  }
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, id, on: body.on });
 });
 
 glance.get('/todos', async (c) => {
@@ -515,6 +580,73 @@ async function replaceFeeds(db: D1Database, incoming: unknown[]) {
   }
 }
 
+type LightPref = { device_id: string; label: string; enabled: number; sort_order: number };
+
+async function lightPrefs(db: D1Database): Promise<LightPref[]> {
+  const rows = await db
+    .prepare(`SELECT device_id, label, enabled, sort_order FROM glance_lights ORDER BY sort_order, device_id`)
+    .all<LightPref>();
+  return rows.results || [];
+}
+
+function mergeLights(
+  devices: { id: string; name: string; online: boolean; on: boolean | null; code: string | null }[],
+  prefs: LightPref[]
+) {
+  const byId = new Map(prefs.map((pref) => [pref.device_id, pref]));
+  return devices
+    .map((device, index) => {
+      const pref = byId.get(device.id);
+      const renamed = pref?.label?.trim() || '';
+      return {
+        id: device.id,
+        name: renamed || device.name,
+        deviceName: device.name,
+        enabled: pref ? !!pref.enabled : true,
+        sortOrder: pref ? pref.sort_order : index,
+        online: device.online,
+        on: device.on,
+        code: device.code
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+
+async function saveLightPrefs(db: D1Database, incoming: unknown[]) {
+  if (incoming.length > 40) throw new HttpError(400, 'That is too many plugs');
+  let order = 0;
+  for (const item of incoming) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const id = String(row.id || '');
+    if (!/^[A-Za-z0-9]{6,40}$/.test(id)) continue;
+    const label = optionalName(row.label ?? row.name);
+    const enabled = row.enabled === undefined ? 1 : boolOf(row.enabled) ? 1 : 0;
+    await db
+      .prepare(
+        `INSERT INTO glance_lights (device_id, label, enabled, sort_order) VALUES (?, ?, ?, ?)
+         ON CONFLICT(device_id) DO UPDATE SET label = excluded.label, enabled = excluded.enabled, sort_order = excluded.sort_order`
+      )
+      .bind(id, label, enabled, order)
+      .run();
+    order++;
+  }
+}
+
+function secretField(incoming: unknown, current: string): string {
+  if (typeof incoming !== 'string') return current || '';
+  const value = incoming.trim();
+  if (!value) return current || '';
+  if (!/^[A-Za-z0-9]{10,64}$/.test(value)) throw new HttpError(400, 'That cloud key does not look right');
+  return value;
+}
+
+function optionalName(value: unknown): string {
+  const name = String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (name.length > 80) throw new HttpError(400, 'Use a shorter name');
+  return name;
+}
+
 async function publicSettings(db: D1Database) {
   const settings = await loadSettings(db);
   const feeds = (
@@ -543,14 +675,19 @@ async function publicSettings(db: D1Database) {
       color: feed.color,
       enabled: !!feed.enabled,
       saved: !!feed.url
-    }))
+    })),
+    tuya: {
+      accessIdSaved: !!settings.tuya_access_id,
+      accessSecretSaved: !!settings.tuya_access_secret
+    }
   };
 }
 
 async function loadSettings(db: D1Database): Promise<SettingsRow> {
   const row = await db
     .prepare(
-      `SELECT location_name, lat, lon, theme, clock_24h, night_start, night_end, widgets_json, password_hash
+      `SELECT location_name, lat, lon, theme, clock_24h, night_start, night_end, widgets_json, password_hash,
+              tuya_access_id, tuya_access_secret
        FROM glance_settings WHERE id = 'default'`
     )
     .first<SettingsRow>();
@@ -711,7 +848,8 @@ function widgetsOf(value: unknown): Widgets {
     countdown: row.countdown === undefined ? true : boolOf(row.countdown),
     sun: row.sun === undefined ? true : boolOf(row.sun),
     air: row.air === undefined ? true : boolOf(row.air),
-    summary: row.summary === undefined ? true : boolOf(row.summary)
+    summary: row.summary === undefined ? true : boolOf(row.summary),
+    lights: row.lights === undefined ? true : boolOf(row.lights)
   };
 }
 
