@@ -593,9 +593,13 @@
     }
     if (showAir) {
       var aqi = state.weather.air.aqi;
-      var value = (aqi == null ? '—' : String(aqi)) + (state.weather.air.label ? ' ' + state.weather.air.label : '');
-      var air = factBit('Air', value);
+      var air = factBit('Air', aqi == null ? '—' : String(aqi));
       air.querySelector('strong').className = aqi == null ? '' : aqi <= 50 ? 'aqi-good' : aqi <= 100 ? 'aqi-mid' : 'aqi-bad';
+      if (state.weather.air.label) {
+        var note = document.createElement('em');
+        note.textContent = state.weather.air.label;
+        air.appendChild(note);
+      }
       card.appendChild(air);
     }
     rail.appendChild(card);
