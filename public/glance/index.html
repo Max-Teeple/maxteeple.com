@@ -73,6 +73,7 @@
     </main>
 
     <div id="board" class="app" hidden>
+      <div id="party" class="party" hidden role="status"></div>
       <header class="top">
         <section class="clock-block">
           <p id="place" class="place">Phoenix</p>
@@ -92,6 +93,9 @@
         <aside id="rail" class="rail"></aside>
       </div>
       <div class="tools">
+        <button id="layout-next" type="button" aria-label="Next layout" title="Next layout">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="4" width="7" height="16" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
         <button id="full" type="button" aria-label="Full screen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
@@ -157,6 +161,10 @@
             <label class="field">Place <input id="set-place" name="locationName" autocomplete="off" /></label>
             <label class="field">Latitude <input id="set-lat" name="lat" inputmode="decimal" /></label>
             <label class="field">Longitude <input id="set-lon" name="lon" inputmode="decimal" /></label>
+          </section>
+          <section>
+            <h3>Layout</h3>
+            <div id="layouts" class="layouts" role="radiogroup" aria-label="Layout"></div>
           </section>
           <section>
             <h3>Scene</h3>

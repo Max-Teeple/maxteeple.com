@@ -5,6 +5,7 @@ import overlaySql from '../migrations/0004_overlays.sql';
 import glanceSql from '../migrations/0005_glance.sql';
 import lightsSql from '../migrations/0006_glance_lights.sql';
 import locationSql from '../migrations/0007_glance_location.sql';
+import layoutSql from '../migrations/0008_glance_layout.sql';
 import { GLANCE_INITIAL_PASSWORD_HASH } from './glance/defaults';
 
 function statements(sql: string): string[] {
@@ -51,6 +52,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   await applyMigration(db, '0005_glance', glanceSql);
   await applyMigration(db, '0006_glance_lights', lightsSql);
   await applyMigration(db, '0007_glance_location', locationSql);
+  await applyMigration(db, '0008_glance_layout', layoutSql);
   await db
     .prepare(
       `INSERT OR IGNORE INTO glance_settings (id, password_hash, updated_at) VALUES ('default', ?, ?)`

@@ -1,7 +1,7 @@
 import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth';
-import { dedupeWorkMirrors, eventsFromIcs } from '../src/glance/ics';
+import { birthdayName, dedupeWorkMirrors, eventsFromIcs, titleIsBirthday } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
@@ -344,6 +344,39 @@ describe('family location', () => {
     const emptyBody = await empty.json() as { people: unknown[]; home: unknown };
     expect(emptyBody.people).toEqual([]);
     expect(emptyBody.home).toBeNull();
+  });
+});
+
+describe('layouts and birthdays', () => {
+  it('stores a layout preset and recognizes birthday titles', async () => {
+    expect(titleIsBirthday("Amy's birthday")).toBe(true);
+    expect(titleIsBirthday('Sam b-day')).toBe(true);
+    expect(birthdayName("Amy's birthday")).toBe('Amy');
+    expect(birthdayName('bday: Nora')).toBe('Nora');
+    expect(titleIsBirthday('Daily JIRA Prep')).toBe(false);
+
+    const session = await signIn();
+    const saved = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout: 'home' })
+    });
+    expect(saved.status).toBe(200);
+    expect((await saved.json() as { layout: string }).layout).toBe('home');
+
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:cake
+SUMMARY:Amy
+DTSTART;VALUE=DATE:20261014
+DTEND;VALUE=DATE:20261015
+CATEGORIES:BIRTHDAY
+END:VEVENT
+END:VCALENDAR`;
+    const start = Date.parse('2026-10-14T00:00:00-07:00');
+    const events = eventsFromIcs(ics, { id: 'p', label: 'Personal', color: '#7dcea0' }, start, start + 86400000);
+    expect(events[0]?.birthday).toBe(true);
+    expect(events[0]?.title).toBe('Amy');
   });
 });
 

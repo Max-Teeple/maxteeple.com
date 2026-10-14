@@ -122,6 +122,7 @@
 
   function applyChrome() {
     document.body.dataset.theme = resolvedTheme();
+    document.body.dataset.layout = (state.settings && state.settings.layout) || 'balanced';
     var parts = phoenixParts(new Date());
     var start = state.settings ? state.settings.nightStart : 21;
     var end = state.settings ? state.settings.nightEnd : 6;
@@ -284,7 +285,9 @@
       return;
     }
     var clock24 = !!(state.settings && state.settings.clock24);
-    (calendar.days || []).forEach(function (day) {
+    var layout = document.body.dataset.layout || 'balanced';
+    var limit = layout === 'today' || layout === 'home' ? 1 : layout === 'threeday' ? 3 : 7;
+    (calendar.days || []).slice(0, limit).forEach(function (day) {
       var col = document.createElement('article');
       col.className = 'day' + (day.label === 'Today' ? ' is-today' : '');
       var head = document.createElement('div');
@@ -722,7 +725,120 @@
     applyChrome();
     renderWeather();
     renderDays();
+    renderParty();
     renderRail();
+  }
+
+  var LAYOUTS = [
+    ['balanced', 'Balanced', 'Clock, weather, week, and the side rail'],
+    ['calendar', 'Calendar', 'A large week, with weather kept small'],
+    ['today', 'Today', 'One day, large weather, lights, and family'],
+    ['threeday', '3-Day', 'Three days and a medium forecast'],
+    ['home', 'Home', 'Lights and family first, calendar tucked aside']
+  ];
+
+  function renderParty() {
+    var banner = document.getElementById('party');
+    var board = document.getElementById('board');
+    var today = ((state.calendar && state.calendar.days) || []).filter(function (day) { return day.label === 'Today'; })[0];
+    var events = (today && today.events) || [];
+    var names = birthdayNames(events);
+    var untitled = events.some(function (event) { return isBirthdayEvent(event) && !birthdayName(event.title); });
+    if (!names.length && !untitled) {
+      banner.hidden = true;
+      banner.replaceChildren();
+      board.classList.remove('has-party');
+      return;
+    }
+    banner.hidden = false;
+    board.classList.add('has-party');
+    banner.replaceChildren();
+    var copy = document.createElement('p');
+    copy.className = 'party-copy';
+    copy.textContent = names.length ? 'Happy birthday, ' + joinNames(names) : 'Happy birthday';
+    var sub = document.createElement('span');
+    sub.textContent = names.length > 1 ? 'A few celebrations today' : 'Today on the calendar';
+    copy.appendChild(sub);
+    ['a', 'b', 'c'].forEach(function (mark) {
+      var balloon = document.createElement('i');
+      balloon.className = 'balloon ' + mark;
+      balloon.setAttribute('aria-hidden', 'true');
+      banner.appendChild(balloon);
+    });
+    var colors = ['#f0b4c8', '#9fd0ff', '#f3d48a', '#b7f0c8', '#e2c2ff'];
+    for (var i = 0; i < 14; i++) {
+      var bit = document.createElement('i');
+      bit.className = 'confetti';
+      bit.style.left = (6 + (i * 6.4) % 88) + '%';
+      bit.style.background = colors[i % colors.length];
+      bit.style.animationDelay = (i * 0.28) + 's';
+      bit.setAttribute('aria-hidden', 'true');
+      banner.appendChild(bit);
+    }
+    banner.appendChild(copy);
+  }
+
+  function isBirthdayEvent(event) {
+    return !!(event && (event.birthday || /\b(?:birthdays?|b-?days?)\b/i.test(event.title || '')));
+  }
+
+  function birthdayName(title) {
+    var text = String(title || '').replace(/\s+/g, ' ').trim();
+    var leading = text.match(/^(.*?)(?:['’]s)?\s+(?:birthday|b-?day)\b/i);
+    if (leading && leading[1].replace(/^happy\s+/i, '').trim()) return leading[1].replace(/^happy\s+/i, '').replace(/[!,.]+$/g, '').trim();
+    var trailing = text.match(/\b(?:birthday|b-?day)\b[:\-\s]+(.+)/i);
+    if (trailing && trailing[1].trim()) return trailing[1].replace(/[!,.]+$/g, '').trim();
+    return '';
+  }
+
+  function birthdayNames(events) {
+    var names = [];
+    events.forEach(function (event) {
+      if (!isBirthdayEvent(event)) return;
+      var name = birthdayName(event.title);
+      if (name && names.indexOf(name) < 0) names.push(name);
+    });
+    return names;
+  }
+
+  function birthdayUntitled(events) {
+    return events.some(function (event) { return isBirthdayEvent(event) && !birthdayName(event.title); });
+  }
+
+  function joinNames(names) {
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return names[0] + ' and ' + names[1];
+    return names.slice(0, -1).join(', ') + ', and ' + names[names.length - 1];
+  }
+
+  function cycleLayout(step) {
+    if (!state.settings || document.getElementById('board').hidden) return;
+    var order = LAYOUTS.map(function (entry) { return entry[0]; });
+    var current = document.body.dataset.layout || 'balanced';
+    var index = order.indexOf(current);
+    if (index < 0) index = 0;
+    var next = order[(index + step + order.length) % order.length];
+    applyLayout(next, true);
+  }
+
+  async function applyLayout(name, persist) {
+    if (!state.settings) state.settings = {};
+    state.settings.layout = name;
+    document.body.dataset.layout = name;
+    renderDays();
+    renderParty();
+    document.querySelectorAll('#layouts .layout-btn').forEach(function (button) {
+      button.setAttribute('aria-checked', button.dataset.layout === name ? 'true' : 'false');
+    });
+    if (!persist) return;
+    try {
+      var saved = await api('/glance/api/settings', { method: 'PUT', body: { layout: name } });
+      state.settings = saved;
+      document.body.dataset.layout = saved.layout || name;
+    } catch (error) {
+      var note = document.getElementById('settings-error');
+      if (note) note.textContent = error.message || 'Could not save the layout';
+    }
   }
 
   async function refresh() {
@@ -768,6 +884,7 @@
     document.getElementById('w-air').checked = settings.widgets.air !== false;
     document.getElementById('w-lights').checked = settings.widgets.lights !== false;
     document.getElementById('w-family').checked = settings.widgets.family !== false;
+    renderLayoutButtons(settings.layout || 'balanced');
     fillFamily();
     var tuya = settings.tuya || {};
     var accessId = document.getElementById('tuya-id');
@@ -916,6 +1033,7 @@
     }
   });
 
+  document.getElementById('layout-next').addEventListener('click', function () { cycleLayout(1); });
   document.getElementById('gear').addEventListener('click', openSettings);
   document.getElementById('settings-close').addEventListener('click', closeSettings);
   document.getElementById('save-home').addEventListener('click', function () { saveHome(); });
@@ -992,6 +1110,51 @@
     var request = root.requestFullscreen || root.webkitRequestFullscreen;
     if (request) request.call(root);
   });
+
+  var swipeX = 0;
+  var swipeY = 0;
+  document.getElementById('board').addEventListener('pointerdown', function (event) {
+    swipeX = 0;
+    if (event.target.closest('button, a, input, select, textarea, .events, .lights, .settings')) return;
+    swipeX = event.clientX;
+    swipeY = event.clientY;
+  });
+  document.getElementById('board').addEventListener('pointerup', function (event) {
+    if (!swipeX) return;
+    var dx = event.clientX - swipeX;
+    var dy = event.clientY - swipeY;
+    swipeX = 0;
+    if (Math.abs(dx) < 90 || Math.abs(dx) < Math.abs(dy)) return;
+    cycleLayout(dx < 0 ? 1 : -1);
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.altKey || event.metaKey || event.ctrlKey) return;
+    var typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+    if (typing || state.open) return;
+    if (event.key === 'ArrowRight') cycleLayout(1);
+    if (event.key === 'ArrowLeft') cycleLayout(-1);
+  });
+
+  function renderLayoutButtons(current) {
+    var root = document.getElementById('layouts');
+    if (!root) return;
+    root.replaceChildren();
+    LAYOUTS.forEach(function (entry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'layout-btn';
+      button.dataset.layout = entry[0];
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', entry[0] === current ? 'true' : 'false');
+      var name = document.createElement('strong');
+      name.textContent = entry[1];
+      var hint = document.createElement('small');
+      hint.textContent = entry[2];
+      button.append(name, hint);
+      button.addEventListener('click', function () { applyLayout(entry[0], true); });
+      root.appendChild(button);
+    });
+  }
 
   var idleTimer;
   function bump() {

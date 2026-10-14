@@ -22,10 +22,32 @@ export type AgendaEvent = {
   start: number;
   end: number;
   allDay: boolean;
+  birthday?: boolean;
   feedId: string;
   feedLabel: string;
   color: string;
 };
+
+const BIRTHDAY_TITLE = /\b(?:birthdays?|b-?days?)\b/i;
+
+export function titleIsBirthday(title: string): boolean {
+  return BIRTHDAY_TITLE.test(title || '');
+}
+
+export function birthdayName(title: string): string {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  const leading = text.match(/^(.*?)(?:['’]s)?\s+(?:birthday|b-?day)\b/i);
+  if (leading && leading[1].replace(/^happy\s+/i, '').trim()) {
+    return cleanBirthdayName(leading[1]);
+  }
+  const trailing = text.match(/\b(?:birthday|b-?day)\b[:\-\s]+(.+)/i);
+  if (trailing && trailing[1].trim()) return cleanBirthdayName(trailing[1]);
+  return '';
+}
+
+function cleanBirthdayName(value: string): string {
+  return value.replace(/^happy\s+/i, '').replace(/[!,.]+$/g, '').trim();
+}
 
 const WORK_PREFIX = /^\s*\[work\]\s*/i;
 const DAY_INDEX: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
@@ -64,9 +86,10 @@ type RawEvent = {
   rrule: RRule | null;
   exdates: number[];
   recurrenceId: number | null;
+  birthday: boolean;
 };
 
-type Occ = { title: string; start: number; end: number; allDay: boolean };
+type Occ = { title: string; start: number; end: number; allDay: boolean; birthday: boolean };
 
 export function stripWorkPrefix(title: string): string {
   const stripped = title.replace(WORK_PREFIX, '').trim();
@@ -130,6 +153,7 @@ export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, 
     start: occ.start,
     end: occ.end,
     allDay: occ.allDay,
+    birthday: occ.birthday || titleIsBirthday(occ.title),
     feedId: feed.id,
     feedLabel: feed.label,
     color: feed.color
@@ -286,7 +310,8 @@ function emptyRaw(index: number): RawEvent {
     durationMs: null,
     rrule: null,
     exdates: [],
-    recurrenceId: null
+    recurrenceId: null,
+    birthday: false
   };
 }
 
@@ -328,6 +353,9 @@ function parseIcs(ics: string): RawEvent[] {
     if (!prop) continue;
     if (prop.name === 'UID' && prop.value.trim()) current.uid = prop.value.trim();
     else if (prop.name === 'SUMMARY') current.summary = unescapeText(prop.value);
+    else if (prop.name === 'CATEGORIES' && /birthday/i.test(prop.value)) current.birthday = true;
+    else if (prop.name === 'DESCRIPTION' && prop.value.length < 120 && /\bbirthday\b/i.test(prop.value)) current.birthday = true;
+    else if (/^X-/.test(prop.name) && /birthday|cake\.gif/i.test(`${prop.name} ${prop.value}`)) current.birthday = true;
     else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
     else if (prop.name === 'DTSTART') {
       const stamp = parseStamp(prop.value, prop.params, calendarZone);
@@ -375,7 +403,7 @@ function singleOcc(raw: RawEvent): Occ | null {
   if (!raw.start || raw.start.y < 1970) return null;
   const start = stampUtc(raw.start);
   const end = start + durationOf(raw);
-  return { title: raw.summary || 'Busy', start, end, allDay: raw.start.allDay };
+  return { title: raw.summary || 'Busy', start, end, allDay: raw.start.allDay, birthday: raw.birthday || titleIsBirthday(raw.summary) };
 }
 
 function minuteKey(ms: number): number {
@@ -429,7 +457,9 @@ function expandRule(raw: RawEvent, windowStart: number, windowEnd: number): Occ[
     if (exceedsUntil(start, date, rule.until)) return false;
     emitted.n++;
     const end = allDay ? start + duration : start + duration;
-    if (overlaps(start, end, windowStart, windowEnd)) out.push({ title, start, end, allDay });
+    if (overlaps(start, end, windowStart, windowEnd)) {
+      out.push({ title, start, end, allDay, birthday: raw.birthday || titleIsBirthday(title) });
+    }
     return true;
   };
 

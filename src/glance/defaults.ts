@@ -18,3 +18,6 @@ export const DEFAULT_WIDGETS = {
 
 export const THEMES = ['auto', 'aurora', 'desert', 'golf', 'glass'] as const;
 export type GlanceTheme = (typeof THEMES)[number];
+
+export const LAYOUTS = ['balanced', 'calendar', 'today', 'threeday', 'home'] as const;
+export type GlanceLayout = (typeof LAYOUTS)[number];

@@ -9,7 +9,9 @@ import {
   GLANCE_FAIL_LIMIT,
   GLANCE_FAIL_WINDOW_MS,
   GLANCE_SESSION_SECONDS,
+  LAYOUTS,
   THEMES,
+  type GlanceLayout,
   type GlanceTheme
 } from './defaults';
 import { dedupeWorkMirrors, eventsFromIcs, type AgendaEvent, type FeedMeta } from './ics';
@@ -38,6 +40,7 @@ type SettingsRow = {
   night_start: number;
   night_end: number;
   widgets_json: string;
+  layout: string;
   password_hash: string;
   tuya_access_id: string;
   tuya_access_secret: string;
@@ -164,6 +167,7 @@ glance.put('/settings', async (c) => {
   const lat = numberIn(body.lat ?? current.lat, -90, 90, 'Latitude');
   const lon = numberIn(body.lon ?? current.lon, -180, 180, 'Longitude');
   const theme = themeOf(body.theme ?? current.theme);
+  const layout = layoutOf(body.layout ?? current.layout);
   const clock24 = boolOf(body.clock24 ?? current.clock_24h) ? 1 : 0;
   const nightStart = hourOf(body.nightStart ?? current.night_start, 'Night start');
   const nightEnd = hourOf(body.nightEnd ?? current.night_end, 'Night end');
@@ -177,7 +181,7 @@ glance.put('/settings', async (c) => {
   await db
     .prepare(
       `UPDATE glance_settings
-       SET location_name = ?, lat = ?, lon = ?, theme = ?, clock_24h = ?, night_start = ?, night_end = ?, widgets_json = ?, tuya_access_id = ?, tuya_access_secret = ?, updated_at = ?
+       SET location_name = ?, lat = ?, lon = ?, theme = ?, layout = ?, clock_24h = ?, night_start = ?, night_end = ?, widgets_json = ?, tuya_access_id = ?, tuya_access_secret = ?, updated_at = ?
        WHERE id = 'default'`
     )
     .bind(
@@ -185,6 +189,7 @@ glance.put('/settings', async (c) => {
       lat,
       lon,
       theme,
+      layout,
       clock24,
       nightStart,
       nightEnd,
@@ -567,6 +572,7 @@ function serializeEvent(event: AgendaEvent) {
   return {
     title: event.title,
     allDay: event.allDay,
+    birthday: event.birthday || false,
     start: formatPhoenix(event.start),
     end: formatPhoenix(event.end),
     feed: event.feedLabel,
@@ -1017,6 +1023,7 @@ async function publicSettings(db: D1Database) {
     lat: settings.lat,
     lon: settings.lon,
     theme: themeOf(settings.theme),
+    layout: layoutOf(settings.layout),
     clock24: !!settings.clock_24h,
     nightStart: settings.night_start,
     nightEnd: settings.night_end,
@@ -1038,7 +1045,7 @@ async function publicSettings(db: D1Database) {
 async function loadSettings(db: D1Database): Promise<SettingsRow> {
   const row = await db
     .prepare(
-      `SELECT location_name, lat, lon, theme, clock_24h, night_start, night_end, widgets_json, password_hash,
+      `SELECT location_name, lat, lon, theme, layout, clock_24h, night_start, night_end, widgets_json, password_hash,
               tuya_access_id, tuya_access_secret
        FROM glance_settings WHERE id = 'default'`
     )
@@ -1186,6 +1193,12 @@ function hourOf(value: unknown, label: string): number {
 
 function boolOf(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+function layoutOf(value: unknown): GlanceLayout {
+  const layout = String(value || 'balanced');
+  if ((LAYOUTS as readonly string[]).includes(layout)) return layout as GlanceLayout;
+  return 'balanced';
 }
 
 function themeOf(value: unknown): GlanceTheme {
