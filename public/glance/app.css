@@ -611,7 +611,9 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   #time { font-size: 3.2rem; }
   .lower { grid-template-rows: minmax(8rem, 1fr) auto; }
   .rail { display: flex; overflow: hidden; }
-  .light-name, .family-status { font-size: 1.08rem; }
+  body[data-layout="home"] .light-name,
+  body[data-layout="home"] .family-status { font-size: 1.08rem; }
+  .rail { gap: 0.3rem; }
   .count-when { font-size: 1.55rem; }
   .day-facts { padding-top: 0.4rem; padding-bottom: 0.4rem; }
   body[data-layout="home"] .rail { order: -1; }
