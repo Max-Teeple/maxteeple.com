@@ -16,6 +16,7 @@
     calendar: null,
     todos: [],
     lights: null,
+    family: null,
     open: false
   };
 
@@ -367,8 +368,9 @@
     var existing = document.getElementById('todo-input');
     if (existing) draft = existing.value;
     rail.replaceChildren();
-    var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true, lights: true };
+    var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true, lights: true, family: true };
     renderLights(rail, widgets);
+    renderFamily(rail, widgets);
     if (widgets.countdown !== false) {
       var next = document.createElement('section');
       next.className = 'rail-card';
@@ -567,6 +569,98 @@
     renderRail();
   }
 
+  function renderFamily(rail, widgets) {
+    if (widgets.family === false) return;
+    var card = document.createElement('section');
+    card.className = 'rail-card family-card';
+    var heading = document.createElement('h3');
+    heading.textContent = 'Family';
+    card.appendChild(heading);
+    var data = state.family;
+    var people = (data && data.people) || [];
+    if (!people.length) {
+      var quiet = document.createElement('p');
+      quiet.className = 'quiet';
+      quiet.textContent = 'Add your family in settings.';
+      card.appendChild(quiet);
+      rail.appendChild(card);
+      return;
+    }
+    people.forEach(function (person) {
+      var line = document.createElement('p');
+      line.className = 'family-line';
+      var dot = document.createElement('i');
+      dot.style.background = person.color || '#f6f3ec';
+      var text = document.createElement('span');
+      text.textContent = person.phrase;
+      line.append(dot, text);
+      if (person.age) {
+        var age = document.createElement('em');
+        age.textContent = person.age;
+        line.appendChild(age);
+      }
+      card.appendChild(line);
+    });
+    card.appendChild(familyMap(data));
+    rail.appendChild(card);
+  }
+
+  function familyMap(data) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 96');
+    svg.setAttribute('class', 'family-map');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Family map');
+    var spots = [];
+    if (data.home) spots.push(data.home);
+    (data.places || []).forEach(function (place) { spots.push(place); });
+    (data.people || []).forEach(function (person) {
+      if (person.lat != null && person.lon != null) spots.push(person);
+    });
+    if (!spots.length) return svg;
+    var minLat = spots[0].lat;
+    var maxLat = spots[0].lat;
+    var minLon = spots[0].lon;
+    var maxLon = spots[0].lon;
+    spots.forEach(function (spot) {
+      minLat = Math.min(minLat, spot.lat);
+      maxLat = Math.max(maxLat, spot.lat);
+      minLon = Math.min(minLon, spot.lon);
+      maxLon = Math.max(maxLon, spot.lon);
+    });
+    if (maxLat - minLat < 0.02) { minLat -= 0.01; maxLat += 0.01; }
+    if (maxLon - minLon < 0.02) { minLon -= 0.01; maxLon += 0.01; }
+    function xy(lat, lon) {
+      return [
+        12 + ((lon - minLon) / (maxLon - minLon)) * 176,
+        10 + ((maxLat - lat) / (maxLat - minLat)) * 76
+      ];
+    }
+    if (data.home) {
+      var home = xy(data.home.lat, data.home.lon);
+      var ring = document.createElementNS(ns, 'circle');
+      ring.setAttribute('cx', home[0]);
+      ring.setAttribute('cy', home[1]);
+      ring.setAttribute('r', '6');
+      ring.setAttribute('fill', 'none');
+      ring.setAttribute('stroke', 'rgba(246,243,236,0.75)');
+      ring.setAttribute('stroke-width', '1.4');
+      svg.appendChild(ring);
+    }
+    (data.people || []).forEach(function (person) {
+      if (person.lat == null || person.lon == null) return;
+      var point = xy(person.lat, person.lon);
+      var dot = document.createElementNS(ns, 'circle');
+      dot.setAttribute('cx', point[0]);
+      dot.setAttribute('cy', point[1]);
+      dot.setAttribute('r', '4.2');
+      dot.setAttribute('fill', person.color || '#f6f3ec');
+      svg.appendChild(dot);
+    });
+    return svg;
+  }
+
   function sunBit(label, iso) {
     var wrap = document.createElement('div');
     var span = document.createElement('span');
@@ -636,12 +730,14 @@
       api('/glance/api/weather'),
       api('/glance/api/calendar'),
       api('/glance/api/todos'),
-      api('/glance/api/lights')
+      api('/glance/api/lights'),
+      api('/glance/api/location')
     ]);
     state.weather = results[0];
     state.calendar = results[1];
     state.todos = results[2].todos || [];
     state.lights = results[3];
+    state.family = results[4];
     renderAll();
   }
 
@@ -671,6 +767,8 @@
     document.getElementById('w-sun').checked = settings.widgets.sun !== false;
     document.getElementById('w-air').checked = settings.widgets.air !== false;
     document.getElementById('w-lights').checked = settings.widgets.lights !== false;
+    document.getElementById('w-family').checked = settings.widgets.family !== false;
+    fillFamily();
     var tuya = settings.tuya || {};
     var accessId = document.getElementById('tuya-id');
     var accessSecret = document.getElementById('tuya-secret');
@@ -820,6 +918,10 @@
 
   document.getElementById('gear').addEventListener('click', openSettings);
   document.getElementById('settings-close').addEventListener('click', closeSettings);
+  document.getElementById('save-home').addEventListener('click', function () { saveHome(); });
+  document.getElementById('save-places').addEventListener('click', function () { savePlaces(); });
+  document.getElementById('add-place').addEventListener('click', function () { addPlaceRow(); });
+  document.getElementById('add-person').addEventListener('click', function () { addPerson(); });
   document.getElementById('add-feed').addEventListener('click', function () {
     document.getElementById('feed-list').appendChild(feedRow({ id: '', label: '', color: COLORS[(state.settings.feeds || []).length % COLORS.length], enabled: true, saved: false }));
   });
@@ -843,7 +945,8 @@
             countdown: document.getElementById('w-count').checked,
             sun: document.getElementById('w-sun').checked,
             air: document.getElementById('w-air').checked,
-            lights: document.getElementById('w-lights').checked
+            lights: document.getElementById('w-lights').checked,
+            family: document.getElementById('w-family').checked
           },
           feeds: collectFeeds(),
           tuyaAccessId: document.getElementById('tuya-id').value,
@@ -932,6 +1035,197 @@
       renderRail();
     }).catch(function () {});
   }, 30000);
+
+  function fillFamily() {
+    var data = state.family || {};
+    var home = data.home;
+    document.getElementById('home-lat').value = home ? home.lat : '';
+    document.getElementById('home-lon').value = home ? home.lon : '';
+    document.getElementById('home-radius').value = home ? home.radiusM : 120;
+    document.getElementById('stale-hours').value = data.staleHours || 6;
+    var list = document.getElementById('place-list');
+    list.replaceChildren();
+    (data.places || []).forEach(function (place) { list.appendChild(placeRow(place)); });
+    var people = document.getElementById('people-list');
+    people.replaceChildren();
+    (data.people || []).forEach(function (person) {
+      var row = document.createElement('div');
+      row.className = 'light-pref';
+      var swatch = document.createElement('i');
+      swatch.style.background = person.color;
+      swatch.style.width = '0.7rem';
+      swatch.style.height = '0.7rem';
+      swatch.style.borderRadius = '50%';
+      var name = document.createElement('span');
+      name.textContent = person.name;
+      var fresh = document.createElement('button');
+      fresh.type = 'button';
+      fresh.className = 'text-btn';
+      fresh.textContent = 'New token';
+      fresh.addEventListener('click', function () { rotatePerson(person.id); });
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'text-btn danger';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', function () { removePerson(person.id); });
+      row.append(swatch, name, fresh, remove);
+      people.appendChild(row);
+    });
+  }
+
+  function placeRow(place) {
+    var row = document.createElement('div');
+    row.className = 'feed place-row';
+    if (place) {
+      row.dataset.lat = place.lat;
+      row.dataset.lon = place.lon;
+    }
+    var name = document.createElement('input');
+    name.className = 'feed-label place-name';
+    name.placeholder = 'Work';
+    name.value = place ? place.name : '';
+    var address = document.createElement('input');
+    address.className = 'feed-label place-address';
+    address.placeholder = 'Address, or leave blank to keep the saved point';
+    var radius = document.createElement('input');
+    radius.className = 'feed-label place-radius';
+    radius.inputMode = 'numeric';
+    radius.placeholder = 'Radius in meters';
+    radius.value = place ? place.radiusM : 200;
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-btn danger';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', function () { row.remove(); });
+    row.append(name, address, radius, remove);
+    return row;
+  }
+
+  function addPlaceRow() {
+    document.getElementById('place-list').appendChild(placeRow(null));
+  }
+
+  function homePayload() {
+    var lat = document.getElementById('home-lat').value.trim();
+    var lon = document.getElementById('home-lon').value.trim();
+    var address = document.getElementById('home-address').value.trim();
+    var radius = Number(document.getElementById('home-radius').value);
+    if (!address && !lat && !lon) return null;
+    var body = { radius: radius };
+    if (address) body.address = address;
+    else if (lat && lon) {
+      body.lat = Number(lat);
+      body.lon = Number(lon);
+    }
+    return body;
+  }
+
+  function placePayload() {
+    return Array.prototype.map.call(document.querySelectorAll('#place-list .place-row'), function (row) {
+      var body = {
+        name: row.querySelector('.place-name').value,
+        address: row.querySelector('.place-address').value,
+        radius: Number(row.querySelector('.place-radius').value)
+      };
+      if (!body.address && row.dataset.lat) {
+        body.lat = Number(row.dataset.lat);
+        body.lon = Number(row.dataset.lon);
+      }
+      return body;
+    }).filter(function (place) { return place.name.trim() || place.address.trim(); });
+  }
+
+  async function saveHome() {
+    var error = document.getElementById('settings-error');
+    error.textContent = '';
+    try {
+      state.family = await api('/glance/api/location/places', {
+        method: 'PUT',
+        body: { home: homePayload(), staleHours: Number(document.getElementById('stale-hours').value) }
+      });
+      document.getElementById('home-address').value = '';
+      fillFamily();
+      renderRail();
+    } catch (err) {
+      error.textContent = err.message || 'Could not save home';
+    }
+  }
+
+  async function savePlaces() {
+    var error = document.getElementById('settings-error');
+    error.textContent = '';
+    try {
+      state.family = await api('/glance/api/location/places', {
+        method: 'PUT',
+        body: { places: placePayload(), staleHours: Number(document.getElementById('stale-hours').value) }
+      });
+      fillFamily();
+      renderRail();
+    } catch (err) {
+      error.textContent = err.message || 'Could not save places';
+    }
+  }
+
+  async function addPerson() {
+    var error = document.getElementById('settings-error');
+    error.textContent = '';
+    var name = document.getElementById('person-name').value.trim();
+    if (!name) {
+      error.textContent = 'Name the person first';
+      return;
+    }
+    try {
+      var created = await api('/glance/api/location/people', {
+        method: 'POST',
+        body: { name: name, color: COLORS[((state.family && state.family.people) || []).length % COLORS.length] }
+      });
+      document.getElementById('person-name').value = '';
+      showPersonSetup(created);
+      state.family = await api('/glance/api/location');
+      fillFamily();
+      renderRail();
+    } catch (err) {
+      error.textContent = err.message || 'Could not add that person';
+    }
+  }
+
+  async function rotatePerson(id) {
+    var error = document.getElementById('settings-error');
+    error.textContent = '';
+    try {
+      showPersonSetup(await api('/glance/api/location/people/' + id + '/token', { method: 'POST', body: {} }));
+    } catch (err) {
+      error.textContent = err.message || 'Could not replace the token';
+    }
+  }
+
+  async function removePerson(id) {
+    await api('/glance/api/location/people/' + id, { method: 'DELETE' });
+    state.family = await api('/glance/api/location');
+    fillFamily();
+    renderRail();
+  }
+
+  function showPersonSetup(created) {
+    var box = document.getElementById('person-setup');
+    box.hidden = false;
+    box.replaceChildren();
+    var title = document.createElement('p');
+    title.className = 'hint';
+    title.textContent = 'Copy this into OwnTracks now. It will not be shown again.';
+    var token = document.createElement('p');
+    token.textContent = created.token;
+    var link = document.createElement('a');
+    link.href = created.owntracks.link;
+    link.textContent = 'Open in OwnTracks';
+    var url = document.createElement('p');
+    url.className = 'hint';
+    url.textContent = created.owntracks.url;
+    var user = document.createElement('p');
+    user.className = 'hint';
+    user.textContent = 'User ' + created.owntracks.username + ' · password is the token';
+    box.append(title, token, user, url, link);
+  }
 
   function renderLightPrefs() {
     var list = document.getElementById('light-list');

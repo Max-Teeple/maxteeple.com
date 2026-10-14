@@ -14,6 +14,16 @@ import {
 } from './defaults';
 import { dedupeWorkMirrors, eventsFromIcs, type AgendaEvent, type FeedMeta } from './ics';
 import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, zonedToUtc } from './time';
+import {
+  familyPhrase,
+  geocodeAddress,
+  haversineMeters,
+  matchPlace,
+  minutesFromHome,
+  owntracksConfig,
+  type Fix,
+  type Place
+} from './location';
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 
@@ -111,7 +121,9 @@ glance.post('/login', async (c) => {
 });
 
 glance.use('*', async (c, next) => {
-  if (c.req.path.endsWith('/login')) return next();
+  const path = c.req.path;
+  if (path.endsWith('/login')) return next();
+  if (c.req.method === 'POST' && (path.endsWith('/location/owntracks') || path === '/location')) return next();
   const token = readCookie(c.req.header('cookie'), GLANCE_COOKIE);
   if (!token) return c.json({ ok: false, message: 'Login required' }, 401);
   const tokenHash = await sha256Hex(token);
@@ -280,6 +292,106 @@ glance.post('/lights/:id', async (c) => {
   }
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, id, on: body.on });
+});
+
+glance.post('/location/owntracks', async (c) => {
+  const secret = basicParts(c.req.header('authorization'));
+  const person =
+    (await personForToken(c.env.LIVEVIEW_DB, secret.password)) ||
+    (await personForToken(c.env.LIVEVIEW_DB, secret.username));
+  if (!person) return c.json({ ok: false }, 401);
+  const body = await readJson(c.req.raw).catch(() => ({}));
+  const point = pointFromOwntracks(body);
+  if (point) await storeFix(c.env.LIVEVIEW_DB, person.id, point);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
+});
+
+glance.post('/location', async (c) => {
+  const header = c.req.header('authorization') || '';
+  const secret = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+  const person = await personForToken(c.env.LIVEVIEW_DB, secret);
+  if (!person) return c.json({ ok: false, message: 'Login required' }, 401);
+  const body = await readJson(c.req.raw);
+  const lat = Number(body.lat);
+  const lon = Number(body.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new HttpError(400, 'Need a latitude and longitude');
+  }
+  const acc = Number.isFinite(Number(body.acc)) ? Number(body.acc) : null;
+  await storeFix(c.env.LIVEVIEW_DB, person.id, { lat, lon, acc, vel: null, regions: [], recordedAt: Date.now() });
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
+});
+
+glance.get('/location', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json(await locationView(c.env, c.req.url));
+});
+
+glance.post('/location/people', async (c) => {
+  const body = await readJson(c.req.raw);
+  const name = cleanName(body.name);
+  const color = normalizeColor(body.color);
+  const db = c.env.LIVEVIEW_DB;
+  const count = await db.prepare(`SELECT COUNT(*) AS n FROM glance_people`).first<{ n: number }>();
+  if ((count?.n || 0) >= 8) throw new HttpError(400, 'Eight people is the limit');
+  const token = base64url(crypto.getRandomValues(new Uint8Array(18)));
+  const id = crypto.randomUUID();
+  const max = await db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS n FROM glance_people`).first<{ n: number }>();
+  await db
+    .prepare(`INSERT INTO glance_people (id, name, color, token_hash, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(id, name, color, await sha256Hex(token), (max?.n ?? -1) + 1, new Date().toISOString())
+    .run();
+  const origin = new URL(c.req.url).origin;
+  const setup = owntracksConfig({ name, token, origin });
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    ok: true,
+    person: { id, name, color },
+    token,
+    owntracks: { url: setup.url, username: setup.username, password: token, link: setup.link }
+  }, 201);
+});
+
+glance.post('/location/people/:id/token', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.LIVEVIEW_DB;
+  const person = await db.prepare(`SELECT id, name, color FROM glance_people WHERE id = ?`).bind(id).first<{ id: string; name: string; color: string }>();
+  if (!person) throw new HttpError(404, 'That person is not on the list');
+  const token = base64url(crypto.getRandomValues(new Uint8Array(18)));
+  await db.prepare(`UPDATE glance_people SET token_hash = ? WHERE id = ?`).bind(await sha256Hex(token), id).run();
+  const setup = owntracksConfig({ name: person.name, token, origin: new URL(c.req.url).origin });
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    ok: true,
+    person,
+    token,
+    owntracks: { url: setup.url, username: setup.username, password: token, link: setup.link }
+  });
+});
+
+glance.delete('/location/people/:id', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.LIVEVIEW_DB;
+  await db.prepare(`DELETE FROM glance_location_points WHERE person_id = ?`).bind(id).run();
+  await db.prepare(`DELETE FROM glance_people WHERE id = ?`).bind(id).run();
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
+});
+
+glance.put('/location/places', async (c) => {
+  const body = await readJson(c.req.raw);
+  const db = c.env.LIVEVIEW_DB;
+  if (body.staleHours !== undefined) {
+    const hours = Number(body.staleHours);
+    if (!Number.isInteger(hours) || hours < 1 || hours > 72) throw new HttpError(400, 'Stale hours should be between 1 and 72');
+    await db.prepare(`UPDATE glance_settings SET location_stale_hours = ? WHERE id = 'default'`).bind(hours).run();
+  }
+  if (body.home !== undefined) await saveHome(db, body.home);
+  if (Array.isArray(body.places)) await savePlaces(db, body.places);
+  c.header('Cache-Control', 'no-store');
+  return c.json(await locationView(c.env, c.req.url));
 });
 
 glance.get('/todos', async (c) => {
@@ -580,6 +692,246 @@ async function replaceFeeds(db: D1Database, incoming: unknown[]) {
   }
 }
 
+function basicParts(header: string | undefined): { username: string; password: string } {
+  if (!header || !header.toLowerCase().startsWith('basic ')) return { username: '', password: '' };
+  try {
+    const decoded = atob(header.slice(6).trim());
+    const split = decoded.indexOf(':');
+    if (split < 0) return { username: decoded.trim(), password: '' };
+    return { username: decoded.slice(0, split).trim(), password: decoded.slice(split + 1).trim() };
+  } catch {
+    return { username: '', password: '' };
+  }
+}
+
+async function personForToken(db: D1Database, secret: string): Promise<{ id: string; name: string } | null> {
+  if (!secret || secret.length < 8 || secret.length > 200) return null;
+  const row = await db
+    .prepare(`SELECT id, name FROM glance_people WHERE token_hash = ?`)
+    .bind(await sha256Hex(secret))
+    .first<{ id: string; name: string }>();
+  return row || null;
+}
+
+function pointFromOwntracks(body: Record<string, unknown>): Fix | null {
+  const type = String(body._type || '');
+  if (type !== 'location' && type !== 'transition') return null;
+  const lat = Number(body.lat);
+  const lon = Number(body.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  const regions = Array.isArray(body.inregions) ? body.inregions.map((item) => String(item)).slice(0, 12) : [];
+  if (type === 'transition' && String(body.event || '') === 'enter' && body.desc) regions.push(String(body.desc));
+  const tst = Number(body.tst);
+  const recordedAt = Number.isFinite(tst) && tst > 1_500_000_000 && tst < 4_000_000_000 ? tst * 1000 : Date.now();
+  return {
+    lat,
+    lon,
+    acc: finiteOrNull(body.acc),
+    vel: finiteOrNull(body.vel),
+    regions,
+    recordedAt
+  };
+}
+
+function finiteOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function storeFix(db: D1Database, personId: string, fix: Fix) {
+  if (fix.recordedAt < Date.now() - 48 * 3600000 || fix.recordedAt > Date.now() + 5 * 60000) return;
+  await db
+    .prepare(
+      `INSERT INTO glance_location_points (id, person_id, lat, lon, acc, vel, regions, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      crypto.randomUUID(),
+      personId,
+      fix.lat,
+      fix.lon,
+      fix.acc,
+      fix.vel,
+      JSON.stringify(fix.regions.slice(0, 12)),
+      new Date(fix.recordedAt).toISOString()
+    )
+    .run();
+  await purgeLocations(db, personId);
+}
+
+async function purgeLocations(db: D1Database, personId?: string) {
+  const cutoff = new Date(Date.now() - 48 * 3600000).toISOString();
+  await db.prepare(`DELETE FROM glance_location_points WHERE recorded_at < ?`).bind(cutoff).run();
+  if (!personId) return;
+  await db
+    .prepare(
+      `DELETE FROM glance_location_points
+       WHERE person_id = ?
+         AND id NOT IN (
+           SELECT id FROM glance_location_points WHERE person_id = ? ORDER BY recorded_at DESC LIMIT 400
+         )`
+    )
+    .bind(personId, personId)
+    .run();
+}
+
+type PlaceRow = { id: string; name: string; lat: number; lon: number; radius_m: number; is_home: number };
+
+async function locationView(env: Bindings, _requestUrl: string) {
+  const db = env.LIVEVIEW_DB;
+  await purgeLocations(db);
+  const staleRow = await db
+    .prepare(`SELECT location_stale_hours AS hours FROM glance_settings WHERE id = 'default'`)
+    .first<{ hours: number }>();
+  const staleHours = Number(staleRow?.hours) || 6;
+  const placeRows = (
+    await db
+      .prepare(`SELECT id, name, lat, lon, radius_m, is_home FROM glance_places ORDER BY is_home DESC, sort_order, name`)
+      .all<PlaceRow>()
+  ).results || [];
+  const places: Place[] = placeRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    lat: row.lat,
+    lon: row.lon,
+    radiusM: row.radius_m,
+    home: !!row.is_home
+  }));
+  const home = places.find((place) => place.home) || null;
+  const people = (
+    await db.prepare(`SELECT id, name, color FROM glance_people ORDER BY sort_order, name`).all<{ id: string; name: string; color: string }>()
+  ).results || [];
+  const now = Date.now();
+  const cards = [];
+  for (const person of people) {
+    const points = (
+      await db
+        .prepare(
+          `SELECT lat, lon, acc, vel, regions, recorded_at FROM glance_location_points
+           WHERE person_id = ? ORDER BY recorded_at DESC LIMIT 2`
+        )
+        .bind(person.id)
+        .all<{ lat: number; lon: number; acc: number | null; vel: number | null; regions: string; recorded_at: string }>()
+    ).results || [];
+    const latest = points[0];
+    const previous = points[1];
+    const fix = latest ? fixFromRow(latest) : null;
+    const driving = fix ? moving(fix, previous ? fixFromRow(previous) : null, now) : false;
+    const here = fix ? matchPlace(fix, places) : null;
+    let minutes: number | null = null;
+    if (fix && home && !here?.home && now - fix.recordedAt < staleHours * 3600000) {
+      minutes = await minutesFromHome(env.LIVEVIEW_MEDIA, person.id, fix, home);
+    }
+    cards.push({
+      id: person.id,
+      name: person.name,
+      color: person.color,
+      phrase: familyPhrase({ name: person.name, fix, places, staleHours, now, minutes, driving }),
+      stale: fix ? now - fix.recordedAt >= staleHours * 3600000 : false,
+      age: fix ? formatAgeMs(now - fix.recordedAt) : null,
+      lat: fix?.lat ?? null,
+      lon: fix?.lon ?? null,
+      minutes,
+      place: here?.name || null,
+      driving,
+      atHome: !!here?.home
+    });
+  }
+  return {
+    ok: true,
+    staleHours,
+    home: home ? { name: home.name, lat: home.lat, lon: home.lon, radiusM: home.radiusM } : null,
+    places: places.filter((place) => !place.home).map((place) => ({
+      id: place.id,
+      name: place.name,
+      lat: place.lat,
+      lon: place.lon,
+      radiusM: place.radiusM
+    })),
+    people: cards
+  };
+}
+
+function fixFromRow(row: { lat: number; lon: number; acc: number | null; vel: number | null; regions: string; recorded_at: string }): Fix {
+  let regions: string[] = [];
+  try {
+    const parsed = JSON.parse(row.regions || '[]');
+    if (Array.isArray(parsed)) regions = parsed.map((item) => String(item));
+  } catch {
+    regions = [];
+  }
+  return {
+    lat: row.lat,
+    lon: row.lon,
+    acc: row.acc,
+    vel: row.vel,
+    regions,
+    recordedAt: Date.parse(row.recorded_at)
+  };
+}
+
+function moving(latest: Fix, previous: Fix | null, now: number): boolean {
+  if ((latest.vel || 0) >= 10) return true;
+  if (!previous) return false;
+  if (now - previous.recordedAt > 15 * 60000) return false;
+  return haversineMeters(latest.lat, latest.lon, previous.lat, previous.lon) > 250;
+}
+
+function formatAgeMs(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+async function saveHome(db: D1Database, home: unknown) {
+  await db.prepare(`DELETE FROM glance_places WHERE is_home = 1`).run();
+  if (home == null || home === false) return;
+  if (!home || typeof home !== 'object') throw new HttpError(400, 'Home needs a place');
+  const place = await resolvePlace(home as Record<string, unknown>, 'Home', true);
+  await db
+    .prepare(`INSERT INTO glance_places (id, name, lat, lon, radius_m, is_home, sort_order) VALUES ('home', 'Home', ?, ?, ?, 1, 0)`)
+    .bind(place.lat, place.lon, place.radius)
+    .run();
+}
+
+async function savePlaces(db: D1Database, incoming: unknown[]) {
+  if (incoming.length > 12) throw new HttpError(400, 'Twelve places is the limit');
+  await db.prepare(`DELETE FROM glance_places WHERE is_home = 0`).run();
+  let order = 0;
+  for (const item of incoming) {
+    if (!item || typeof item !== 'object') continue;
+    const place = await resolvePlace(item as Record<string, unknown>, 'Place', false);
+    await db
+      .prepare(`INSERT INTO glance_places (id, name, lat, lon, radius_m, is_home, sort_order) VALUES (?, ?, ?, ?, ?, 0, ?)`)
+      .bind(crypto.randomUUID(), place.name, place.lat, place.lon, place.radius, order)
+      .run();
+    order++;
+  }
+}
+
+async function resolvePlace(row: Record<string, unknown>, fallback: string, home: boolean) {
+  let lat = Number(row.lat);
+  let lon = Number(row.lon);
+  const address = typeof row.address === 'string' ? row.address.trim() : '';
+  if ((!Number.isFinite(lat) || !Number.isFinite(lon)) && address) {
+    const found = await geocodeAddress(address);
+    if (!found) throw new HttpError(400, "Couldn't find that address");
+    lat = found.lat;
+    lon = found.lon;
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new HttpError(400, 'Need an address or a map point');
+  }
+  const name = home ? 'Home' : cleanName(row.name || fallback);
+  let radius = Number(row.radius ?? row.radiusM ?? (home ? 120 : 200));
+  if (!Number.isFinite(radius)) radius = home ? 120 : 200;
+  radius = Math.round(Math.min(5000, Math.max(30, radius)));
+  return { name, lat, lon, radius };
+}
+
 type LightPref = { device_id: string; label: string; enabled: number; sort_order: number };
 
 async function lightPrefs(db: D1Database): Promise<LightPref[]> {
@@ -849,7 +1201,8 @@ function widgetsOf(value: unknown): Widgets {
     sun: row.sun === undefined ? true : boolOf(row.sun),
     air: row.air === undefined ? true : boolOf(row.air),
     summary: row.summary === undefined ? true : boolOf(row.summary),
-    lights: row.lights === undefined ? true : boolOf(row.lights)
+    lights: row.lights === undefined ? true : boolOf(row.lights),
+    family: row.family === undefined ? true : boolOf(row.family)
   };
 }
 

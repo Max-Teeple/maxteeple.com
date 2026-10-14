@@ -128,6 +128,31 @@
             </label>
             <div id="light-list" class="feed-list"></div>
           </section>
+          <section>
+            <h3>Family</h3>
+            <p class="hint">Phone locations stay on this server. A device token is shown only when you create or replace it.</p>
+            <label class="field">Home address
+              <input id="home-address" autocomplete="off" placeholder="Street, city" />
+            </label>
+            <div class="split">
+              <label class="field">Latitude <input id="home-lat" inputmode="decimal" /></label>
+              <label class="field">Longitude <input id="home-lon" inputmode="decimal" /></label>
+              <label class="field">Radius (m) <input id="home-radius" inputmode="numeric" value="120" /></label>
+            </div>
+            <button id="save-home" type="button" class="text-btn">Save home</button>
+            <div id="place-list" class="feed-list"></div>
+            <button id="add-place" type="button" class="text-btn">Add place</button>
+            <label class="field">Show last seen after
+              <input id="stale-hours" inputmode="numeric" value="6" />
+            </label>
+            <button id="save-places" type="button" class="text-btn">Save places</button>
+            <div id="people-list" class="feed-list"></div>
+            <div class="split">
+              <label class="field">Name <input id="person-name" maxlength="40" placeholder="Max" /></label>
+            </div>
+            <button id="add-person" type="button" class="text-btn">Add person</button>
+            <div id="person-setup" class="setup-box" hidden></div>
+          </section>
           <section class="split">
             <label class="field">Place <input id="set-place" name="locationName" autocomplete="off" /></label>
             <label class="field">Latitude <input id="set-lat" name="lat" inputmode="decimal" /></label>
@@ -154,6 +179,7 @@
               <label class="check"><input id="w-sun" type="checkbox" /> Sunrise and sunset</label>
               <label class="check"><input id="w-air" type="checkbox" /> Air quality</label>
               <label class="check"><input id="w-lights" type="checkbox" /> Lights</label>
+              <label class="check"><input id="w-family" type="checkbox" /> Family</label>
             </div>
           </section>
           <p id="settings-error" class="form-error" role="alert"></p>

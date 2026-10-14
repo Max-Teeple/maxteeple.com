@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth';
 import { dedupeWorkMirrors, eventsFromIcs } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
+import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { shapeWeather } from '../src/glance/weather';
 
@@ -39,7 +40,7 @@ function withSession(path: string, session: string, init?: RequestInit) {
 
 describe('Glance kitchen board', () => {
   it('requires a login before any data route', async () => {
-    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights'];
+    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights', '/glance/api/location'];
     for (const path of paths) {
       const response = await api(path);
       expect(response.status, path).toBe(401);
@@ -257,6 +258,92 @@ describe('Tuya signing', () => {
     const lightsText = await lights.text();
     expect(lightsText).not.toContain(accessId);
     expect(lightsText).not.toContain(accessSecret);
+  });
+});
+
+describe('family location', () => {
+  it('phrases home, a named place, driving, and last seen', () => {
+    const now = Date.parse('2026-10-14T20:00:00Z');
+    const home = { id: 'home', name: 'Home', lat: 33.45, lon: -112.07, radiusM: 150, home: true };
+    const work = { id: 'work', name: 'Work', lat: 33.5, lon: -112.1, radiusM: 200, home: false };
+    const atHome = { lat: 33.4502, lon: -112.0702, acc: 10, vel: 0, regions: [], recordedAt: now - 60000 };
+    expect(haversineMeters(atHome.lat, atHome.lon, home.lat, home.lon)).toBeLessThan(150);
+    expect(matchPlace(atHome, [home, work])?.home).toBe(true);
+    expect(familyPhrase({ name: 'Max', fix: atHome, places: [home, work], staleHours: 6, now, minutes: 0, driving: false })).toBe('Max is home');
+    const atWork = { lat: 33.5004, lon: -112.1004, acc: 12, vel: 0, regions: [], recordedAt: now - 120000 };
+    expect(familyPhrase({ name: 'Max', fix: atWork, places: [home, work], staleHours: 6, now, minutes: 24, driving: false })).toBe('Max is at Work, 24 min from home');
+    const road = { lat: 33.47, lon: -112.09, acc: 20, vel: 40, regions: [], recordedAt: now - 30000 };
+    expect(familyPhrase({ name: 'Max', fix: road, places: [home, work], staleHours: 6, now, minutes: 12, driving: true })).toBe('Max is driving, 12 min from home');
+    const stale = { ...atWork, recordedAt: now - 8 * 3600000 };
+    expect(familyPhrase({ name: 'Max', fix: stale, places: [home, work], staleHours: 6, now, minutes: null, driving: false })).toBe('Max last seen at Work, 8h ago');
+  });
+
+  it('accepts OwnTracks and Shortcuts posts, then forgets them', async () => {
+    const session = await signIn();
+    const placed = await withSession('/glance/api/location/places', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        staleHours: 6,
+        home: { lat: 33.4484, lon: -112.074, radius: 150 },
+        places: [{ name: 'Work', lat: 33.5, lon: -112.1, radius: 180 }]
+      })
+    });
+    expect(placed.status).toBe(200);
+
+    const created = await withSession('/glance/api/location/people', session, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Ada', color: '#7dcea0' })
+    });
+    expect(created.status).toBe(201);
+    const setup = await created.json() as { person: { id: string }; token: string; owntracks: { url: string; link: string; username: string } };
+    expect(setup.token.length).toBeGreaterThan(16);
+    expect(setup.owntracks.url).toContain('/glance/api/location/owntracks');
+    expect(setup.owntracks.link.startsWith('owntracks:///config?inline=')).toBe(true);
+    const listed = await withSession('/glance/api/location', session);
+    expect(JSON.stringify(await listed.json())).not.toContain(setup.token);
+
+    const basic = btoa(`${setup.owntracks.username}:${setup.token}`);
+    const homePost = await api('/glance/api/location/owntracks', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _type: 'location', lat: 33.4484, lon: -112.074, acc: 8, vel: 0, tst: Math.floor(Date.now() / 1000) })
+    });
+    expect(homePost.status).toBe(200);
+    const atHome = await withSession('/glance/api/location', session);
+    const homeBody = await atHome.json() as { people: { phrase: string }[] };
+    expect(homeBody.people[0].phrase).toBe('Ada is home');
+
+    const driving = await api('/glance/api/location', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${setup.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: 33.47, lon: -112.12, acc: 15 })
+    });
+    expect(driving.status).toBe(200);
+    const away = await withSession('/glance/api/location', session);
+    const awayBody = await away.json() as { people: { phrase: string; lat: number }[] };
+    expect(awayBody.people[0].phrase).toMatch(/Ada is (driving|out), \d+ min from home/);
+    expect(awayBody.people[0].lat).toBeCloseTo(33.47, 2);
+
+    const rejected = await api('/glance/api/location/owntracks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ _type: 'location', lat: 1, lon: 2 })
+    });
+    expect(rejected.status).toBe(401);
+
+    const removed = await withSession(`/glance/api/location/people/${setup.person.id}`, session, { method: 'DELETE' });
+    expect(removed.status).toBe(200);
+    await withSession('/glance/api/location/places', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home: null, places: [] })
+    });
+    const empty = await withSession('/glance/api/location', session);
+    const emptyBody = await empty.json() as { people: unknown[]; home: unknown };
+    expect(emptyBody.people).toEqual([]);
+    expect(emptyBody.home).toBeNull();
   });
 });
 
