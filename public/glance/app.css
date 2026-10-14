@@ -537,7 +537,7 @@ body[data-layout="calendar"] .date, body[data-layout="calendar"] .summary { font
 body[data-layout="calendar"] .now-card { min-height: 0; padding: 0.45rem 0.7rem; }
 body[data-layout="calendar"] .temp { font-size: 2rem; }
 body[data-layout="calendar"] .wx { width: 2.4rem; height: 2.4rem; }
-body[data-layout="calendar"] .lower { grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem); }
+body[data-layout="calendar"] .lower { grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem); }
 body[data-layout="calendar"] .event-title { font-size: 1.02rem; }
 body[data-layout="calendar"] .day.is-today .event-title { font-size: 1.12rem; }
 
@@ -552,7 +552,7 @@ body[data-layout="today"] .lights-card, body[data-layout="today"] .family-card {
 body[data-layout="threeday"] .days { grid-template-columns: 1.35fr 1fr 1fr; }
 body[data-layout="threeday"] .now-card { min-height: 7.2rem; }
 body[data-layout="threeday"] .temp { font-size: 3rem; }
-body[data-layout="threeday"] .lower { grid-template-columns: minmax(0, 1fr) minmax(16rem, 18rem); }
+body[data-layout="threeday"] .lower { grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem); }
 
 body[data-layout="home"] .app { grid-template-rows: auto minmax(0, 1fr); }
 body[data-layout="home"] .hourly { display: none; }
@@ -607,8 +607,13 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .fday { min-width: 0; }
   .days { display: grid; grid-template-columns: 1fr; overflow: hidden; }
   .day, .day.is-today { min-width: 0; min-height: 0; }
-  .lower { grid-template-rows: minmax(0, 1fr) minmax(12rem, 0.85fr); }
+  .hourly { display: none; }
+  #time { font-size: 3.2rem; }
+  .lower { grid-template-rows: minmax(8rem, 1fr) auto; }
   .rail { display: flex; overflow: hidden; }
+  .light-name, .family-status { font-size: 1.08rem; }
+  .count-when { font-size: 1.55rem; }
+  .day-facts { padding-top: 0.4rem; padding-bottom: 0.4rem; }
   body[data-layout="home"] .rail { order: -1; }
   body[data-layout="today"] .lower, body[data-layout="home"] .lower, body[data-layout="calendar"] .lower, body[data-layout="threeday"] .lower { grid-template-columns: 1fr; }
   .tools { top: 0.6rem; right: 0.6rem; }
