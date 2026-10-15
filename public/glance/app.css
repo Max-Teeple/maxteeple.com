@@ -575,10 +575,10 @@ body[data-layout="today"] .hour:nth-child(n+9) { display: none; }
 body[data-layout="today"] .lower { grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.95fr); }
 body[data-layout="today"] .lights-card, body[data-layout="today"] .family-card { flex: 0 0 auto; }
 
-body[data-layout="threeday"] .days { grid-template-columns: 1.35fr 1fr 1fr; }
+body[data-layout="threeday"] .days { grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.68fr) minmax(0, 0.68fr); }
 body[data-layout="threeday"] .now-card { min-height: 0; }
 body[data-layout="threeday"] .temp { font-size: 3rem; }
-body[data-layout="threeday"] .lower { grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem); }
+body[data-layout="threeday"] .lower { grid-template-columns: minmax(0, 1fr) minmax(26rem, 30rem); }
 
 body[data-layout="home"] .app { grid-template-rows: auto minmax(0, 1fr); }
 body[data-layout="home"] .hourly { display: none; }
@@ -829,5 +829,24 @@ body { container-name: screen; container-type: inline-size; }
   .week { padding: 0.45rem; }
   .week-bar h2 { font-size: 1rem; }
   .week-days { gap: 0.25rem; }
+}
+
+@media (min-width: 1061px) {
+  body[data-layout="threeday"] .lower {
+    grid-template-columns: minmax(0, 1fr) minmax(26rem, 30rem);
+  }
+  body[data-layout="threeday"] .days {
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.68fr) minmax(0, 0.68fr);
+  }
+  body[data-layout="threeday"] .add-days {
+    grid-template-columns: max-content max-content minmax(0, 1fr);
+  }
+  body[data-layout="threeday"] .add-days button {
+    min-width: max-content;
+    white-space: nowrap;
+  }
+  body[data-layout="threeday"] .add-times {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
