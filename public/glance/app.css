@@ -404,7 +404,7 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 .add-card { gap: 0.35rem; }
 .add-card form, .add-quiet { display: grid; gap: 0.35rem; }
 .add-card form {
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr) auto auto;
+  grid-template-columns: minmax(6.4rem, 1.35fr) minmax(0, 0.8fr) auto auto;
 }
 .add-times, .add-foot { display: contents; }
 #add-title, .add-days, #add-end, .add-note { grid-column: 1 / -1; }
@@ -419,7 +419,7 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   padding: 0 0.55rem;
   font-size: 1rem;
 }
-.add-days { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 0.35rem; min-width: 0; }
+.add-days { display: grid; grid-template-columns: auto auto minmax(6.6rem, 1fr); gap: 0.35rem; min-width: 0; }
 .add-days button, .add-go, .add-card .text-btn {
   min-height: 42px;
   border-radius: 999px;
@@ -645,6 +645,13 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
 }
 
 @media (max-height: 900px) and (max-width: 1250px) {
+  .now-card { grid-template-columns: auto minmax(0, 1fr); }
+  .now-facts { grid-column: 1 / -1; justify-content: flex-start; gap: 0.55rem; flex-wrap: wrap; }
+  .add-card form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .add-days { grid-template-columns: 1fr 1fr; }
+  .add-days input[type="date"] { grid-column: 1 / -1; }
+  .rail { gap: 0.12rem; }
+  .add-card { padding-top: 0.28rem; padding-bottom: 0.18rem; }
   .lower,
   body[data-layout="calendar"] .lower,
   body[data-layout="threeday"] .lower,
@@ -695,6 +702,9 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .summary { max-width: none; }
   .now-card { min-height: 0; padding: 0.5rem 0.65rem; grid-template-columns: auto minmax(0, 1fr); }
   .now-facts { grid-column: 1 / -1; justify-content: space-between; gap: 0.4rem; }
+  .add-card form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .add-days { grid-template-columns: 1fr 1fr; }
+  .add-days input[type="date"] { grid-column: 1 / -1; }
   .temp { font-size: 2.5rem; }
   .wx { width: 2.8rem; height: 2.8rem; }
   .hourly { display: none; }
