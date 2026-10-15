@@ -11,6 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Glance" />
+    <meta name="glance-build" content="__GLANCE_BUILD__" />
     <link rel="manifest" href="/glance/manifest.webmanifest" />
     <link rel="canonical" href="https://maxteeple.com/glance/" />
     <link rel="icon" href="/glance/icon.svg" type="image/svg+xml" />
@@ -21,7 +22,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/glance/app.css" />
+    <link rel="stylesheet" href="/glance/app.css?v=__GLANCE_BUILD__" />
   </head>
   <body data-theme="aurora">
     <div class="scenery" aria-hidden="true">
@@ -220,6 +221,6 @@
         </div>
       </form>
     </div>
-    <script src="/glance/app.js"></script>
+    <script src="/glance/app.js?v=__GLANCE_BUILD__"></script>
   </body>
 </html>

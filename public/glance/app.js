@@ -21,6 +21,12 @@
     googleNotice: ''
   };
 
+  try {
+    var savedView = JSON.parse(sessionStorage.getItem('glance-view') || 'null');
+    if (savedView && savedView.layout) document.body.dataset.layout = savedView.layout;
+    if (savedView && savedView.theme && savedView.theme !== 'auto') document.body.dataset.theme = savedView.theme;
+  } catch (err) { /* keep the default scene */ }
+
   var login = document.getElementById('login');
   var board = document.getElementById('board');
   var boot = document.getElementById('boot');
@@ -824,7 +830,7 @@
       }
       document.getElementById('add-title').value = '';
       state.googleNotice = 'Added';
-      await refresh();
+      await refreshCalendar();
       state.googleNotice = '';
     } catch (err) {
       removeOptimistic(optimistic);
@@ -954,17 +960,26 @@
     }
   }
 
+  async function refreshCalendar() {
+    var body = await api('/glance/api/calendar');
+    state.calendar = body;
+    renderDays();
+    renderParty();
+    if (document.getElementById('next-card')) renderCountdown();
+    return body;
+  }
+
   async function refresh() {
+    var calendarPromise = refreshCalendar();
     var results = await Promise.all([
       api('/glance/api/weather'),
-      api('/glance/api/calendar'),
       api('/glance/api/lights'),
       api('/glance/api/location')
     ]);
     state.weather = results[0];
-    state.calendar = results[1];
-    state.lights = results[2];
-    state.family = results[3];
+    state.lights = results[1];
+    state.family = results[2];
+    await calendarPromise;
     renderAll();
   }
 
@@ -1312,12 +1327,46 @@
     window.addEventListener(name, bump, { passive: true });
   });
 
+  var reloading = false;
+  function reloadForDeploy(remote) {
+    if (reloading) return;
+    reloading = true;
+    try {
+      var settings = state.settings || {};
+      sessionStorage.setItem('glance-reloaded-for', remote);
+      sessionStorage.setItem('glance-view', JSON.stringify({
+        layout: settings.layout || document.body.dataset.layout || 'balanced',
+        theme: settings.theme || 'auto'
+      }));
+    } catch (err) { /* reload anyway */ }
+    window.location.reload();
+  }
+
+  async function checkVersion() {
+    if (reloading) return;
+    try {
+      var res = await fetch('/glance/api/version', { cache: 'no-store', credentials: 'same-origin' });
+      if (!res.ok) return;
+      var body = await res.json();
+      var remote = body && body.version;
+      var here = (document.querySelector('meta[name="glance-build"]') || {}).content || '';
+      if (!remote || !here || remote === here) return;
+      if (sessionStorage.getItem('glance-reloaded-for') === remote) return;
+      reloadForDeploy(remote);
+    } catch (err) { /* stay on this build until the next check */ }
+  }
+
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible' && !board.hidden) {
+    if (document.visibilityState !== 'visible') return;
+    checkVersion();
+    if (!board.hidden) {
       wake();
-      refresh().catch(function () {});
+      refreshCalendar().catch(function () {});
     }
   });
+  window.addEventListener('focus', function () { checkVersion(); });
+  setInterval(checkVersion, 60 * 1000);
+  checkVersion();
 
   async function bootApp() {
     var session = await api('/glance/api/session');
@@ -1331,6 +1380,9 @@
   setInterval(function () {
     if (!board.hidden) applyChrome();
   }, 1000);
+  setInterval(function () {
+    if (!board.hidden) refreshCalendar().catch(function () {});
+  }, 60 * 1000);
   setInterval(function () {
     if (!board.hidden) refresh().catch(function () {});
   }, 5 * 60 * 1000);

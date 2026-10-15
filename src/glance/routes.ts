@@ -30,6 +30,7 @@ import {
 } from './location';
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
+import { GLANCE_BUILD } from './build-id';
 import {
   GOOGLE_ACCOUNT,
   cleanEventTitle,
@@ -139,6 +140,11 @@ glance.post('/login', async (c) => {
   c.header('Set-Cookie', sessionCookie(token), { append: true });
   c.header('Set-Cookie', clearCookie(GLANCE_COOKIE_LEGACY, '/'), { append: true });
   return c.redirect('/glance/', 303);
+});
+
+glance.get('/version', (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, version: GLANCE_BUILD });
 });
 
 glance.use('*', async (c, next) => {
@@ -285,7 +291,7 @@ glance.get('/calendar', async (c) => {
     return c.json(await withAddedEvents(db, present([], Date.now(), [])));
   }
   const key = `glance:cal:v2:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
-  const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 180, () => buildCalendar(feeds));
+  const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds));
   return c.json(await withAddedEvents(c.env.LIVEVIEW_DB, payload));
 });
 
@@ -632,24 +638,36 @@ export async function handleGlance(request: Request, env: Bindings, ctx: Executi
     return stampGlance(request, copyResponse(response, {
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
     }));
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405 });
   }
   const assetUrl = new URL(request.url);
+  assetUrl.search = '';
   if (url.pathname === '/glance/') assetUrl.pathname = '/glance/index.html';
   const asset = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+  const versioned = url.searchParams.has('v');
+  const isHtml = url.pathname === '/glance/' || url.pathname.endsWith('.html');
+  if (isHtml && (asset.ok || asset.status === 304)) {
+    const html = (await asset.text()).replaceAll('__GLANCE_BUILD__', GLANCE_BUILD);
+    const headers = new Headers({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': CSP,
+      'X-Frame-Options': 'DENY'
+    });
+    return stampGlance(request, new Response(html, { status: asset.status, headers }));
+  }
   const headers: Record<string, string> = {
-    'Cache-Control': 'no-cache',
+    'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff'
   };
-  if (assetUrl.pathname.endsWith('.html')) {
-    headers['Content-Security-Policy'] = CSP;
-    headers['X-Frame-Options'] = 'DENY';
-  }
   return stampGlance(request, copyResponse(asset, headers));
 }
 
