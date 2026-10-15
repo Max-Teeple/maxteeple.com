@@ -65,6 +65,7 @@ type SettingsRow = {
   google_refresh_token: string;
   google_account: string;
   event_notify_url?: string;
+  event_notify_key?: string;
 };
 
 type FeedRow = {
@@ -241,6 +242,17 @@ glance.put('/settings', async (c) => {
       .bind(await sealSecret(clientId, key), await sealSecret(clientSecret, key), new Date().toISOString())
       .run();
   }
+  const incomingNotifyUrl = body.eventNotifyUrl ?? body.event_notify_url;
+  const incomingNotifyKey = body.eventNotifyKey ?? body.event_notify_key;
+  if (incomingNotifyUrl !== undefined || incomingNotifyKey !== undefined) {
+    const material = await tokenKey(c.env);
+    const notifyUrl = eventNotifyUrlField(incomingNotifyUrl, current.event_notify_url || '');
+    const notifyKey = eventNotifyKeyField(incomingNotifyKey, await openSecret(current.event_notify_key || '', material));
+    await db
+      .prepare(`UPDATE glance_settings SET event_notify_url = ?, event_notify_key = ?, updated_at = ? WHERE id = 'default'`)
+      .bind(notifyUrl, await sealSecret(notifyKey, material), new Date().toISOString())
+      .run();
+  }
   c.header('Cache-Control', 'no-store');
   await forgetDashboard(c.env.LIVEVIEW_MEDIA);
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
@@ -365,9 +377,10 @@ glance.post('/events', async (c) => {
   if (!creds || !refresh || settings.google_account.toLowerCase() !== GOOGLE_ACCOUNT) {
     throw new HttpError(400, 'Connect Google to add events');
   }
+  let googleId = '';
   try {
     const access = await googleAccessToken(creds, refresh);
-    await insertGoogleEvent(access, googleEventBody({
+    googleId = await insertGoogleEvent(access, googleEventBody({
       title,
       allDay: boolOf(body.allDay),
       startMs: range.startMs,
@@ -390,9 +403,39 @@ glance.post('/events', async (c) => {
     ...glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color }),
     source: 'glance' as const
   };
-  await notifyGlanceEvent(c.env, settings, event);
+  const notify = await notifyGlanceEvent(c.env, settings, event);
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, event });
+  return c.json({ ok: true, event, googleId, notify });
+});
+
+glance.delete('/events/:id', async (c) => {
+  const id = decodeURIComponent(c.req.param('id') || '');
+  if (!/^[A-Za-z0-9_-]{4,256}$/.test(id)) throw new HttpError(400, 'Unknown event');
+  const db = c.env.LIVEVIEW_DB;
+  const settings = await loadSettings(db);
+  const creds = await googleCreds(c.env, settings);
+  const material = await tokenKey(c.env);
+  const refresh = await openSecret(settings.google_refresh_token, material);
+  if (!creds || !refresh || settings.google_account.toLowerCase() !== GOOGLE_ACCOUNT) {
+    throw new HttpError(400, 'Connect Google to add events');
+  }
+  try {
+    const access = await googleAccessToken(creds, refresh);
+    await deleteGoogleEvent(access, id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'reconnect') {
+      await db.prepare(`UPDATE glance_settings SET google_refresh_token = '', google_account = '' WHERE id = 'default'`).run();
+      throw new HttpError(400, 'Reconnect Google Calendar in settings');
+    }
+    console.error('[glance] google event delete', scrub(message || 'error'));
+    throw new HttpError(502, 'Google Calendar did not remove that event');
+  }
+  const title = cleanOptionalTitle(c.req.query('title'));
+  if (title) await db.prepare(`DELETE FROM glance_added_events WHERE title = ?`).bind(title).run();
+  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
 });
 
 glance.get('/lights', async (c) => {
@@ -1347,6 +1390,10 @@ async function publicSettings(env: Bindings) {
       clientConfigured: Boolean((env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) || (settings.google_client_id && settings.google_client_secret)),
       clientIdSaved: !!settings.google_client_id || !!env.GOOGLE_CLIENT_ID,
       clientSecretSaved: !!settings.google_client_secret || !!env.GOOGLE_CLIENT_SECRET
+    },
+    eventNotify: {
+      urlSaved: !!(env.GLANCE_EVENT_NOTIFY_URL || settings.event_notify_url),
+      keySaved: !!(env.GLANCE_EVENT_NOTIFY_KEY || settings.event_notify_key)
     }
   };
 }
@@ -1355,7 +1402,7 @@ async function loadSettings(db: D1Database): Promise<SettingsRow> {
   const row = await db
     .prepare(
       `SELECT location_name, lat, lon, theme, layout, clock_24h, night_start, night_end, widgets_json, password_hash,
-              tuya_access_id, tuya_access_secret, google_client_id, google_client_secret, google_refresh_token, google_account, event_notify_url
+              tuya_access_id, tuya_access_secret, google_client_id, google_client_secret, google_refresh_token, google_account, event_notify_url, event_notify_key
        FROM glance_settings WHERE id = 'default'`
     )
     .first<SettingsRow>();
@@ -1568,14 +1615,27 @@ async function confirmCalendarAccess(access: string): Promise<void> {
   if (!response.ok) throw new Error('calendar_forbidden');
 }
 
-async function insertGoogleEvent(access: string, body: unknown): Promise<void> {
+async function insertGoogleEvent(access: string, body: unknown): Promise<string> {
   const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none', {
     method: 'POST',
     headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  const data = (await response.json().catch(() => ({}))) as { id?: string };
   if (response.status === 401) throw new Error('reconnect');
   if (!response.ok) throw new Error('insert');
+  return typeof data.id === 'string' ? data.id : '';
+}
+
+async function deleteGoogleEvent(access: string, id: string): Promise<void> {
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}?sendUpdates=none`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${access}` } }
+  );
+  await response.arrayBuffer().catch(() => undefined);
+  if (response.status === 404 || response.status === 410) return;
+  if (response.status === 401) throw new Error('reconnect');
+  if (!response.ok) throw new Error('delete');
 }
 
 async function revokeGoogle(token: string): Promise<void> {
@@ -1600,9 +1660,9 @@ async function personalColor(db: D1Database): Promise<string> {
 /**
  * Calendar Manager notify payload. POST this JSON only:
  * { title: string, start: string, end: string, allDay: boolean, source: "glance" }
- * The URL is GLANCE_EVENT_NOTIFY_URL or glance_settings.event_notify_url, and stays unset
- * until Max provides one. GLANCE_EVENT_NOTIFY_KEY, when set, is sent only as
- * Authorization: Bearer. Neither the URL nor the key is included in the body.
+ * The URL is GLANCE_EVENT_NOTIFY_URL, or glance_settings.event_notify_url when that secret is unset.
+ * The bearer key is GLANCE_EVENT_NOTIFY_KEY, or the encrypted glance_settings.event_notify_key.
+ * Neither value is included in the body or the API response.
  */
 function glanceNotifyBody(event: { title: string; start: string; end: string; allDay: boolean }) {
   return {
@@ -1614,37 +1674,76 @@ function glanceNotifyBody(event: { title: string; start: string; end: string; al
   };
 }
 
+type NotifyResult = { attempted: boolean; ok: boolean; status: number };
+
 async function notifyGlanceEvent(
   env: Bindings,
   settings: SettingsRow,
   event: { title: string; start: string; end: string; allDay: boolean }
-): Promise<void> {
+): Promise<NotifyResult> {
   const configured = (env.GLANCE_EVENT_NOTIFY_URL || settings.event_notify_url || '').trim();
-  if (!configured) return;
+  if (!configured) return { attempted: false, ok: false, status: 0 };
   let target: URL;
   try {
     target = new URL(configured);
   } catch {
     console.error('[glance] event notify skipped');
-    return;
+    return { attempted: false, ok: false, status: 0 };
   }
   if (target.protocol !== 'https:') {
     console.error('[glance] event notify skipped');
-    return;
+    return { attempted: false, ok: false, status: 0 };
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const key = (env.GLANCE_EVENT_NOTIFY_KEY || '').trim();
+  const material = await tokenKey(env);
+  const key = (env.GLANCE_EVENT_NOTIFY_KEY || '').trim() || (await openSecret(settings.event_notify_key || '', material)).trim();
   if (key) headers.Authorization = `Bearer ${key}`;
   try {
-    await fetch(target.toString(), {
+    const response = await fetch(target.toString(), {
       method: 'POST',
       headers,
       body: JSON.stringify(glanceNotifyBody(event)),
       signal: AbortSignal.timeout(4000)
     });
+    await response.arrayBuffer().catch(() => undefined);
+    if (!response.ok) {
+      console.error('[glance] event notify failed');
+      return { attempted: true, ok: false, status: response.status };
+    }
+    return { attempted: true, ok: true, status: response.status };
   } catch {
     console.error('[glance] event notify failed');
+    return { attempted: true, ok: false, status: 0 };
   }
+}
+
+function eventNotifyUrlField(incoming: unknown, current: string): string {
+  if (typeof incoming !== 'string') return current || '';
+  const value = incoming.trim();
+  if (!value) return '';
+  if (value.length > 500) throw new HttpError(400, 'That notify address is too long');
+  let target: URL;
+  try {
+    target = new URL(value);
+  } catch {
+    throw new HttpError(400, 'That notify address is not a valid URL');
+  }
+  if (target.protocol !== 'https:' || target.username || target.password) {
+    throw new HttpError(400, 'The notify address must be https');
+  }
+  return target.toString();
+}
+
+function eventNotifyKeyField(incoming: unknown, current: string): string {
+  if (typeof incoming !== 'string') return current || '';
+  const value = incoming.trim();
+  if (!value) return '';
+  if (value.length < 16 || value.length > 200 || /\s/.test(value)) throw new HttpError(400, 'That notify key does not look right');
+  return value;
+}
+
+function cleanOptionalTitle(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 200);
 }
 
 function glanceEvent(input: { title: string; allDay: boolean; startMs: number; endMs: number; color: string }) {

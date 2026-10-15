@@ -1,6 +1,25 @@
-import { env, SELF } from 'cloudflare:test';
+import { env, fetchMock, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { hashPassword } from '../src/auth';
+import { hashPassword, jwtSecret } from '../src/auth';
+import type { Bindings } from '../src/types';
+
+declare module 'cloudflare:test' {
+  export const fetchMock: {
+    activate(): void;
+    deactivate(): void;
+    disableNetConnect(): void;
+    get(origin: string): {
+      intercept(opts: { path: string; method: string }): {
+        reply(status: number, body?: unknown): unknown;
+        reply(callback: (opts: { headers?: unknown; body?: unknown }) => {
+          statusCode: number;
+          data: string;
+          responseOptions: Record<string, unknown>;
+        }): unknown;
+      };
+    };
+  };
+}
 import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
@@ -751,5 +770,127 @@ describe('Google Calendar events', () => {
     expect(googleFailureReason('invalid_client')).toBe('invalid_client');
     expect(googleFailureReason('redirect_uri_mismatch')).toBe('redirect_uri_mismatch');
     expect(googleFailureReason('bad secret GOCSPX-nope')).toBe('token_exchange_failed');
+  });
+
+  it('stores an encrypted notify key and posts it when env secrets are unset', async () => {
+    const session = await signIn();
+    const notifyUrl = 'https://notify.example/hook';
+    const notifyKey = 'settings-notify-key-value';
+    const saved = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleClientId: '1234567890-glance.apps.googleusercontent.com',
+        googleClientSecret: 'GOCSPX-test-secret-value',
+        event_notify_url: notifyUrl,
+        event_notify_key: notifyKey
+      })
+    });
+    expect(saved.status).toBe(200);
+    const body = await saved.json() as { eventNotify: { urlSaved: boolean; keySaved: boolean } };
+    expect(body.eventNotify).toEqual({ urlSaved: true, keySaved: true });
+    const packed = JSON.stringify(body);
+    expect(packed).not.toContain(notifyKey);
+    expect(packed).not.toContain(notifyUrl);
+    expect(packed).not.toContain('event_notify');
+
+    const row = await env.LIVEVIEW_DB.prepare(
+      `SELECT event_notify_url, event_notify_key FROM glance_settings WHERE id = 'default'`
+    ).first<{ event_notify_url: string; event_notify_key: string }>();
+    expect(row?.event_notify_url).toBe(notifyUrl);
+    expect(row?.event_notify_key.startsWith('v1.')).toBe(true);
+    expect(row?.event_notify_key).not.toContain(notifyKey);
+    expect(await openSecret(row?.event_notify_key || '', await jwtSecret(env as unknown as Bindings))).toBe(notifyKey);
+
+    const kept = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: 'golf' })
+    });
+    expect(kept.status).toBe(200);
+    expect(JSON.stringify(await kept.json())).not.toContain(notifyKey);
+    const still = await env.LIVEVIEW_DB.prepare(
+      `SELECT event_notify_url, event_notify_key FROM glance_settings WHERE id = 'default'`
+    ).first<{ event_notify_url: string; event_notify_key: string }>();
+    expect(still?.event_notify_url).toBe(notifyUrl);
+    expect(await openSecret(still?.event_notify_key || '', await jwtSecret(env as unknown as Bindings))).toBe(notifyKey);
+
+    const rejected = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventNotifyUrl: 'http://notify.example/hook' })
+    });
+    expect(rejected.status).toBe(400);
+
+    const material = await jwtSecret(env as unknown as Bindings);
+    await env.LIVEVIEW_DB.prepare(
+      `UPDATE glance_settings SET google_refresh_token = ?, google_account = ? WHERE id = 'default'`
+    ).bind(await sealSecret('refresh-token-value', material), 'max.teeple@gmail.com').run();
+
+    const seen = { authorization: '', payload: '' };
+    fetchMock.activate();
+    fetchMock.disableNetConnect();
+    try {
+      fetchMock.get('https://oauth2.googleapis.com').intercept({ path: '/token', method: 'POST' }).reply(200, {
+        access_token: 'ya29.test-access',
+        expires_in: 3600
+      });
+      fetchMock.get('https://www.googleapis.com').intercept({
+        path: '/calendar/v3/calendars/primary/events?sendUpdates=none',
+        method: 'POST'
+      }).reply(200, { id: 'testeventid1' });
+      fetchMock.get('https://notify.example').intercept({ path: '/hook', method: 'POST' }).reply((opts: { headers?: unknown; body?: unknown }) => {
+        const headerText = JSON.stringify(opts.headers);
+        seen.authorization = headerText.match(/Bearer [^"\\]+/)?.[0] || '';
+        seen.payload = typeof opts.body === 'string' ? opts.body : new TextDecoder().decode(opts.body as Uint8Array);
+        return { statusCode: 200, data: '{"ok":true}', responseOptions: {} };
+      });
+      const created = await withSession('/glance/api/events', session, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Glance notify test', date: '2026-10-15', start: '16:00', durationMinutes: 5 })
+      });
+      expect(created.status).toBe(200);
+      const createdBody = await created.json() as {
+        event: { title: string; source: string; allDay: boolean };
+        googleId: string;
+        notify: { attempted: boolean; ok: boolean; status: number };
+      };
+      expect(createdBody.event.title).toBe('Glance notify test');
+      expect(createdBody.event.source).toBe('glance');
+      expect(createdBody.event.allDay).toBe(false);
+      expect(createdBody.googleId).toBe('testeventid1');
+      expect(createdBody.notify).toEqual({ attempted: true, ok: true, status: 200 });
+      expect(JSON.stringify(createdBody)).not.toContain(notifyKey);
+      expect(JSON.stringify(createdBody)).not.toContain(notifyUrl);
+      expect(seen.authorization).toBe('Bearer settings-notify-key-value');
+      const payload = JSON.parse(seen.payload || '{}') as { title: string; allDay: boolean; source: string; start: string; end: string };
+      expect(payload.title).toBe('Glance notify test');
+      expect(payload.allDay).toBe(false);
+      expect(payload.source).toBe('glance');
+      expect(payload.start.startsWith('2026-10-15T16:00:00')).toBe(true);
+      expect(payload.end.startsWith('2026-10-15T16:05:00')).toBe(true);
+      expect(Object.keys(payload).sort()).toEqual(['allDay', 'end', 'source', 'start', 'title']);
+
+      fetchMock.get('https://oauth2.googleapis.com').intercept({ path: '/token', method: 'POST' }).reply(200, {
+        access_token: 'ya29.test-access',
+        expires_in: 3600
+      });
+      fetchMock.get('https://www.googleapis.com').intercept({
+        path: '/calendar/v3/calendars/primary/events/testeventid1?sendUpdates=none',
+        method: 'DELETE'
+      }).reply(204);
+      const removed = await withSession('/glance/api/events/testeventid1?title=Glance%20notify%20test', session, { method: 'DELETE' });
+      expect(removed.status).toBe(200);
+      const left = await env.LIVEVIEW_DB.prepare(
+        `SELECT COUNT(*) AS n FROM glance_added_events WHERE title = 'Glance notify test'`
+      ).first<{ n: number }>();
+      expect(left?.n).toBe(0);
+    } finally {
+      fetchMock.deactivate();
+      await env.LIVEVIEW_DB.prepare(
+        `UPDATE glance_settings SET google_refresh_token = '', google_account = '', event_notify_url = '', event_notify_key = '' WHERE id = 'default'`
+      ).run();
+    }
   });
 });
