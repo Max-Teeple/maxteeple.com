@@ -10,6 +10,7 @@
     ['golf', 'Golf'],
     ['glass', 'Glass']
   ];
+  var DEFAULT_LAYOUT = 'threeday';
   var state = {
     settings: null,
     weather: null,
@@ -18,14 +19,34 @@
     lights: null,
     family: null,
     open: false,
-    googleNotice: ''
+    googleNotice: '',
+    layoutReady: false
   };
 
-  try {
-    var savedView = JSON.parse(sessionStorage.getItem('glance-view') || 'null');
-    if (savedView && savedView.layout) document.body.dataset.layout = savedView.layout;
-    if (savedView && savedView.theme && savedView.theme !== 'auto') document.body.dataset.theme = savedView.theme;
-  } catch (err) { /* keep the default scene */ }
+  function savedTheme() {
+    try {
+      var raw = localStorage.getItem('glance-view') || sessionStorage.getItem('glance-view');
+      var saved = JSON.parse(raw || 'null');
+      return saved && saved.theme ? saved.theme : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function rememberView(theme) {
+    var view = { layout: DEFAULT_LAYOUT, theme: theme || 'auto' };
+    try {
+      var raw = JSON.stringify(view);
+      sessionStorage.setItem('glance-view', raw);
+      localStorage.setItem('glance-view', raw);
+      localStorage.removeItem('glance-layout');
+    } catch (err) { /* private mode still shows three-day */ }
+  }
+
+  document.body.dataset.layout = DEFAULT_LAYOUT;
+  var openingTheme = savedTheme();
+  if (openingTheme && openingTheme !== 'auto') document.body.dataset.theme = openingTheme;
+  rememberView(openingTheme);
 
   var login = document.getElementById('login');
   var board = document.getElementById('board');
@@ -137,7 +158,7 @@
 
   function applyChrome() {
     document.body.dataset.theme = resolvedTheme();
-    document.body.dataset.layout = (state.settings && state.settings.layout) || 'balanced';
+    document.body.dataset.layout = (state.settings && state.settings.layout) || DEFAULT_LAYOUT;
     var parts = phoenixParts(new Date());
     var start = state.settings ? state.settings.nightStart : 21;
     var end = state.settings ? state.settings.nightEnd : 6;
@@ -313,7 +334,7 @@
       return;
     }
     var clock24 = !!(state.settings && state.settings.clock24);
-    var layout = document.body.dataset.layout || 'balanced';
+    var layout = document.body.dataset.layout || DEFAULT_LAYOUT;
     var limit = layout === 'today' || layout === 'home' ? 1 : layout === 'threeday' ? 3 : 7;
     (calendar.days || []).slice(0, limit).forEach(function (day) {
       var col = document.createElement('article');
@@ -908,7 +929,7 @@
   function cycleLayout(step) {
     if (!state.settings || document.getElementById('board').hidden) return;
     var order = LAYOUTS.map(function (entry) { return entry[0]; });
-    var current = document.body.dataset.layout || 'balanced';
+    var current = document.body.dataset.layout || DEFAULT_LAYOUT;
     var index = order.indexOf(current);
     if (index < 0) index = 0;
     var next = order[(index + step + order.length) % order.length];
@@ -944,18 +965,27 @@
     return body;
   }
 
-  async function refresh() {
+  async function refresh(forceDefault) {
+    var onScreen = document.body.dataset.layout || DEFAULT_LAYOUT;
     var body = await api('/glance/api/dashboard');
+    var serverLayout = body.settings && body.settings.layout;
     state.settings = body.settings;
     state.weather = body.weather;
     state.calendar = body.calendar;
     state.lights = body.lights;
     state.family = body.location;
     if (state.settings) {
-      document.body.dataset.layout = state.settings.layout || document.body.dataset.layout || 'balanced';
+      if (forceDefault || !state.layoutReady) {
+        state.settings.layout = DEFAULT_LAYOUT;
+        document.body.dataset.layout = DEFAULT_LAYOUT;
+        state.layoutReady = true;
+      } else {
+        state.settings.layout = onScreen;
+        document.body.dataset.layout = onScreen;
+      }
     }
     renderAll();
-    return body;
+    return { body: body, serverLayout: serverLayout };
   }
 
   function hourOptions(select, selected) {
@@ -985,7 +1015,7 @@
     document.getElementById('w-air').checked = settings.widgets.air !== false;
     document.getElementById('w-lights').checked = settings.widgets.lights !== false;
     document.getElementById('w-family').checked = settings.widgets.family !== false;
-    renderLayoutButtons(settings.layout || 'balanced');
+    renderLayoutButtons(settings.layout || DEFAULT_LAYOUT);
     fillFamily();
     var tuya = settings.tuya || {};
     var accessId = document.getElementById('tuya-id');
@@ -1128,6 +1158,7 @@
     state.open = false;
     settingsEl.hidden = true;
     document.body.classList.remove('settings-open');
+    applyLayout(DEFAULT_LAYOUT, true);
   }
 
   async function wake() {
@@ -1189,6 +1220,7 @@
   function closeWeek() {
     weekEl.hidden = true;
     clearTimeout(weekTimer);
+    applyLayout(DEFAULT_LAYOUT, true);
   }
 
   function openWeek() {
@@ -1480,10 +1512,7 @@
     try {
       var settings = state.settings || {};
       sessionStorage.setItem('glance-reloaded-for', remote);
-      sessionStorage.setItem('glance-view', JSON.stringify({
-        layout: settings.layout || document.body.dataset.layout || 'balanced',
-        theme: settings.theme || 'auto'
-      }));
+      rememberView(settings.theme || 'auto');
     } catch (err) { /* reload anyway */ }
     window.location.reload();
   }
@@ -1515,7 +1544,16 @@
   checkVersion();
 
   async function bootApp() {
-    await refresh();
+    var loaded = await refresh(true);
+    rememberView(state.settings && state.settings.theme);
+    if (loaded.serverLayout !== DEFAULT_LAYOUT) {
+      try {
+        var saved = await api('/glance/api/settings', { method: 'PUT', body: { layout: DEFAULT_LAYOUT } });
+        state.settings = saved;
+        state.settings.layout = DEFAULT_LAYOUT;
+        document.body.dataset.layout = DEFAULT_LAYOUT;
+      } catch (err) { /* the board still opens on three-day */ }
+    }
     showBoard();
     wake();
     bump();
@@ -1536,7 +1574,7 @@
     if (!state.settings) state.settings = {};
     if (detail.layout) state.settings.layout = detail.layout;
     if (detail.theme) state.settings.theme = detail.theme;
-    document.body.dataset.layout = state.settings.layout || 'balanced';
+    document.body.dataset.layout = state.settings.layout || DEFAULT_LAYOUT;
     document.body.dataset.theme = state.settings.theme === 'auto' ? resolvedTheme() : (state.settings.theme || 'aurora');
     renderDays();
     renderParty();

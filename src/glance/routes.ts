@@ -1731,9 +1731,9 @@ function boolOf(value: unknown): boolean {
 }
 
 function layoutOf(value: unknown): GlanceLayout {
-  const layout = String(value || 'balanced');
+  const layout = String(value || 'threeday');
   if ((LAYOUTS as readonly string[]).includes(layout)) return layout as GlanceLayout;
-  return 'balanced';
+  return 'threeday';
 }
 
 function themeOf(value: unknown): GlanceTheme {
