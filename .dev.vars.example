@@ -3,3 +3,7 @@
 #   npx wrangler secret put ADMIN_APPROVAL_TOKEN
 # Then paste that value into /liveview/admin.html. Demo passwords are not admin.
 ADMIN_APPROVAL_TOKEN=demo-admin
+# Google Calendar OAuth web client. Production: npx wrangler secret put GOOGLE_CLIENT_ID
+# and npx wrangler secret put GOOGLE_CLIENT_SECRET
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=

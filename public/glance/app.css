@@ -299,7 +299,6 @@ body.is-dim .dimmer { opacity: 0.45; }
 }
 .day { min-height: 0; min-width: 0; overflow: hidden; }
 .rail-card { flex: 0 0 auto; min-width: 0; max-width: 100%; overflow: hidden; }
-.todo-form input { min-width: 0; }
 .light, .family-line, .family-line div, .day-facts, .card-head { min-width: 0; max-width: 100%; }
 .day.is-today { background: rgba(8, 10, 14, 0.88); border-color: rgba(255,255,255,0.24); }
 .day-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; margin-bottom: 0.35rem; }
@@ -378,10 +377,6 @@ body.is-dim .dimmer { opacity: 0.45; }
 .setup-box code, .setup-box input { word-break: break-all; }
 .light-pref { display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.35rem; align-items: center; margin-bottom: 0.45rem; }
 
-.todos { list-style: none; margin: 0.25rem 0 0; padding: 0; overflow: hidden; min-height: 0; }
-.todos li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 0.25rem; align-items: center; min-height: 2.2rem; }
-.todos li.done .todo-title { opacity: 0.45; text-decoration: line-through; }
-.todo-title { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check, .tiny {
   width: 36px;
   height: 36px;
@@ -390,23 +385,39 @@ body.is-dim .dimmer { opacity: 0.45; }
   color: var(--ink);
 }
 .check[aria-pressed="true"] { background: var(--ink); color: #16181c; }
-.todo-form { display: flex; gap: 0.4rem; margin-top: 0.45rem; }
-.todo-form input {
-  flex: 1;
+.add-card { gap: 0.4rem; }
+.add-card form, .add-quiet { display: grid; gap: 0.4rem; }
+.add-card input, .add-card select {
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(0,0,0,.28);
+  background: rgba(0, 0, 0, 0.28);
   padding: 0 0.7rem;
+  font-size: 1.05rem;
 }
-.todo-form button {
+.add-days { display: flex; gap: 0.35rem; }
+.add-days button, .add-go, .add-card .text-btn {
   min-height: 44px;
-  padding: 0 0.8rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,.08);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 0.75rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.rail-card.todos-card { flex: 0 1 auto; min-height: 0; }
+.add-days button { flex: 1; }
+.add-days button[aria-pressed="true"] { background: var(--ink); color: #16181c; }
+.add-days input { flex: 1.3; }
+.add-times { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+.add-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem; }
+.add-allday { display: flex; align-items: center; gap: 0.45rem; min-height: 44px; font-size: 1.02rem; }
+.add-go { font-weight: 600; }
+.add-note { margin: 0; color: var(--muted); font-size: 1.02rem; line-height: 1.3; }
+.add-card.is-busy { opacity: 0.7; }
 
 .tools { position: absolute; top: 1rem; right: 1rem; display: flex; gap: 0.4rem; z-index: 2; }
 .tools button, .icon-btn {
@@ -593,13 +604,17 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .count-title { font-size: 1.15rem; }
   .rail { gap: 0.3rem; }
   .rail-card { padding: 0.5rem 0.6rem 0.45rem; }
-  .light { min-height: 2.05rem; }
+  .light { min-height: 1.65rem; }
   .light-name, body[data-layout="home"] .light-name { font-size: 1.12rem; }
   .family-status, body[data-layout="home"] .family-status { font-size: 1.12rem; }
   .family-meta { font-size: 0.98rem; }
   .fact strong { font-size: 1.12rem; }
   .day-facts { padding-top: 0.35rem; padding-bottom: 0.35rem; }
-  .todo-form input, .todo-form button { min-height: 38px; }
+  .rail { gap: 0.22rem; }
+  .add-card form { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr) auto auto; gap: 0.25rem; }
+  .add-times, .add-foot { display: contents; }
+  #add-title, .add-days, #add-end { grid-column: 1 / -1; }
+  .add-card input, .add-card select, .add-days button, .add-go, .add-allday { min-height: 32px; font-size: 0.95rem; }
 }
 
 @media (max-height: 900px) and (max-width: 1250px) {
@@ -691,7 +706,7 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .family-meta { font-size: 0.95rem; }
   .fact strong { font-size: 1.12rem; }
   .day-facts { padding-top: 0.32rem; padding-bottom: 0.32rem; }
-  .todo-form input, .todo-form button { min-height: 38px; }
+  .add-card input, .add-card select, .add-days button, .add-go, .add-allday { min-height: 36px; font-size: 0.92rem; }
   body[data-layout="today"] .days,
   body[data-layout="home"] .days { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
   body[data-layout="threeday"] .days { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); }

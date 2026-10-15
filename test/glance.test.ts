@@ -5,6 +5,7 @@ import { birthdayName, dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, titleIs
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
+import { eventRange, googleAuthUrl, googleEventBody, openSecret, sealSecret } from '../src/glance/google';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -589,5 +590,74 @@ END:VCALENDAR`;
     expect(weather.hourly[0].time.endsWith('-07:00')).toBe(true);
     expect(weather.sun.sunrise).toBe('2026-10-14T06:42:00-07:00');
     expect(weather.air.label).toBe('Good');
+  });
+});
+
+describe('Google Calendar events', () => {
+  it('builds a Basil event and keeps the refresh token off the page', async () => {
+    const now = Date.parse('2026-10-15T12:00:00-07:00');
+    const timed = eventRange({ title: 'Dentist', date: '2026-10-15', allDay: false, start: '16:00', durationMinutes: 90 }, now);
+    expect(googleEventBody({ title: 'Dentist', allDay: false, ...timed })).toEqual({
+      summary: 'Dentist',
+      colorId: '10',
+      start: { dateTime: '2026-10-15T16:00:00', timeZone: 'America/Phoenix' },
+      end: { dateTime: '2026-10-15T17:30:00', timeZone: 'America/Phoenix' }
+    });
+    const day = eventRange({ title: 'Picnic', date: '2026-10-16', allDay: true }, now);
+    expect(googleEventBody({ title: 'Picnic', allDay: true, ...day })).toEqual({
+      summary: 'Picnic',
+      colorId: '10',
+      start: { date: '2026-10-16' },
+      end: { date: '2026-10-17' }
+    });
+    expect(() => eventRange({ title: 'Late', date: '2026-10-15', allDay: false, start: '18:00', end: '17:00' }, now)).toThrow(/before the start/);
+
+    const sealed = await sealSecret('refresh-token-value', 'server-key');
+    expect(sealed.startsWith('v1.')).toBe(true);
+    expect(sealed).not.toContain('refresh-token-value');
+    expect(await openSecret(sealed, 'server-key')).toBe('refresh-token-value');
+    expect(await openSecret(sealed, 'other-key')).toBe('');
+
+    const session = await signIn();
+    const clientId = '1234567890-glance.apps.googleusercontent.com';
+    const clientSecret = 'GOCSPX-test-secret-value';
+    const saved = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ googleClientId: clientId, googleClientSecret: clientSecret })
+    });
+    expect(saved.status).toBe(200);
+    const settings = await saved.json() as { google: { connected: boolean; clientConfigured: boolean; account: string } };
+    expect(settings.google.connected).toBe(false);
+    expect(settings.google.clientConfigured).toBe(true);
+    expect(settings.google.account).toBe('');
+    expect(JSON.stringify(settings)).not.toContain(clientSecret);
+    expect(JSON.stringify(settings)).not.toContain(clientId);
+    expect(JSON.stringify(settings)).not.toContain('refresh');
+
+    const start = await withSession('/glance/api/google/start', session, { redirect: 'manual' });
+    expect(start.status).toBe(302);
+    const location = new URL(start.headers.get('location') || '');
+    expect(location.origin).toBe('https://accounts.google.com');
+    expect(location.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/calendar.events');
+    expect(location.searchParams.get('access_type')).toBe('offline');
+    expect(location.searchParams.get('prompt')).toBe('consent');
+    expect(location.searchParams.get('redirect_uri')).toBe('https://maxteeple.test/glance/api/google/callback');
+    expect(start.headers.get('set-cookie') || '').toContain('glance_google_state=');
+    expect(start.headers.get('set-cookie') || '').toContain('SameSite=Lax');
+
+    const blocked = await withSession('/glance/api/events', session, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Dentist', date: '2026-10-15', start: '16:00', durationMinutes: 60 })
+    });
+    expect(blocked.status).toBe(400);
+    const blockedBody = await blocked.json() as { message: string };
+    expect(blockedBody.message).toBe('Connect Google to add events');
+    expect(JSON.stringify(blockedBody)).not.toContain(clientSecret);
+
+    const authUrl = googleAuthUrl({ clientId, redirectUri: 'https://maxteeple.com/glance/api/google/callback', state: 'abc' });
+    expect(authUrl).toContain('prompt=consent');
+    expect(authUrl).toContain('access_type=offline');
   });
 });

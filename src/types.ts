@@ -16,6 +16,11 @@ export type Bindings = {
   STREAM_WEBHOOK_SECRET?: string;
   /** Optional HTTPS endpoint that receives invite payloads. SMTP is not available on Workers. */
   INVITE_WEBHOOK_URL?: string;
+  /** Google Calendar OAuth web client. Prefer these over values typed into Glance settings. */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** Optional key for encrypting the Google refresh token. Falls back to the stored server secret. */
+  GLANCE_DATA_KEY?: string;
 };
 
 export type Variables = {

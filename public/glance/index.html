@@ -134,6 +134,21 @@
             <div id="light-list" class="feed-list"></div>
           </section>
           <section>
+            <h3>Google Calendar</h3>
+            <p id="google-status" class="hint">Connect Google to add events on the personal calendar.</p>
+            <p>
+              <a id="google-connect" class="text-btn" href="/glance/api/google/start">Connect Google Calendar</a>
+              <button id="google-disconnect" type="button" class="text-btn danger" hidden>Disconnect</button>
+            </p>
+            <p class="hint">Leave these blank when the client is already stored as a Worker secret. A saved value is never shown again.</p>
+            <label class="field">Client ID
+              <input id="google-client-id" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" />
+            </label>
+            <label class="field">Client secret
+              <input id="google-client-secret" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" />
+            </label>
+          </section>
+          <section>
             <h3>Family</h3>
             <p class="hint">Phone locations stay on this server. A device token is shown only when you create or replace it.</p>
             <label class="field">Home address

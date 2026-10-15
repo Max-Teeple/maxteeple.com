@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { hashPassword, verifyPassword } from '../auth';
+import { hashPassword, jwtSecret, verifyPassword } from '../auth';
 import { ensureSchema } from '../schema';
 import type { Bindings } from '../types';
 import { HttpError } from '../util';
@@ -30,6 +30,18 @@ import {
 } from './location';
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
+import {
+  GOOGLE_ACCOUNT,
+  cleanEventTitle,
+  eventRange,
+  googleAuthUrl,
+  googleEventBody,
+  openSecret,
+  redirectUri,
+  safeEqual,
+  sealSecret,
+  type EventDraft
+} from './google';
 
 type GlanceEnv = { Bindings: Bindings; Variables: { sessionId: string } };
 
@@ -46,6 +58,10 @@ type SettingsRow = {
   password_hash: string;
   tuya_access_id: string;
   tuya_access_secret: string;
+  google_client_id: string;
+  google_client_secret: string;
+  google_refresh_token: string;
+  google_account: string;
 };
 
 type FeedRow = {
@@ -130,7 +146,10 @@ glance.use('*', async (c, next) => {
   if (path.endsWith('/login')) return next();
   if (c.req.method === 'POST' && (path.endsWith('/location/owntracks') || path === '/location')) return next();
   const token = readSessionToken(c.req.header('cookie'));
-  if (!token) return c.json({ ok: false, message: 'Login required' }, 401);
+  if (!token) {
+    if (c.req.path === '/google/callback') return c.redirect('/glance/?google=login');
+    return c.json({ ok: false, message: 'Login required' }, 401);
+  }
   const tokenHash = await sha256Hex(token);
   const row = await c.env.LIVEVIEW_DB.prepare(
     `SELECT id, expires_at FROM glance_sessions WHERE token_hash = ?`
@@ -138,6 +157,7 @@ glance.use('*', async (c, next) => {
     .bind(tokenHash)
     .first<{ id: string; expires_at: string }>();
   if (!row || Date.parse(row.expires_at) <= Date.now()) {
+    if (c.req.path === '/google/callback') return c.redirect('/glance/?google=login');
     return c.json({ ok: false, message: 'Login required' }, 401);
   }
   c.set('sessionId', row.id);
@@ -154,12 +174,12 @@ glance.post('/logout', async (c) => {
 
 glance.get('/session', async (c) => {
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, ...(await publicSettings(c.env.LIVEVIEW_DB)) });
+  return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
 glance.get('/settings', async (c) => {
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, ...(await publicSettings(c.env.LIVEVIEW_DB)) });
+  return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
 glance.put('/settings', async (c) => {
@@ -204,8 +224,17 @@ glance.put('/settings', async (c) => {
     .run();
   if (Array.isArray(body.feeds)) await replaceFeeds(db, body.feeds);
   if (Array.isArray(body.lights) && body.lights.length) await saveLightPrefs(db, body.lights);
+  if (typeof body.googleClientId === 'string' || typeof body.googleClientSecret === 'string') {
+    const key = await tokenKey(c.env);
+    const clientId = googleClientIdField(body.googleClientId, await openSecret(current.google_client_id || '', key));
+    const clientSecret = googleClientSecretField(body.googleClientSecret, await openSecret(current.google_client_secret || '', key));
+    await db
+      .prepare(`UPDATE glance_settings SET google_client_id = ?, google_client_secret = ?, updated_at = ? WHERE id = 'default'`)
+      .bind(await sealSecret(clientId, key), await sealSecret(clientSecret, key), new Date().toISOString())
+      .run();
+  }
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, ...(await publicSettings(db)) });
+  return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
 glance.post('/password', async (c) => {
@@ -253,11 +282,124 @@ glance.get('/calendar', async (c) => {
   ).results.filter((feed) => feed.url);
   c.header('Cache-Control', 'no-store');
   if (!feeds.length) {
-    return c.json(present([], Date.now(), []));
+    return c.json(await withAddedEvents(db, present([], Date.now(), [])));
   }
   const key = `glance:cal:v2:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
   const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 180, () => buildCalendar(feeds));
-  return c.json(payload);
+  return c.json(await withAddedEvents(c.env.LIVEVIEW_DB, payload));
+});
+
+glance.get('/google/start', async (c) => {
+  const settings = await loadSettings(c.env.LIVEVIEW_DB);
+  const creds = await googleCreds(c.env, settings);
+  if (!creds) return c.redirect('/glance/?google=setup');
+  const state = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  c.header('Cache-Control', 'no-store');
+  c.header('Set-Cookie', stateCookie(state), { append: true });
+  return c.redirect(googleAuthUrl({
+    clientId: creds.clientId,
+    redirectUri: redirectUri(c.req.url),
+    state
+  }));
+});
+
+glance.get('/google/callback', async (c) => {
+  const url = new URL(c.req.url);
+  const state = url.searchParams.get('state') || '';
+  const expected = readCookie(c.req.header('cookie'), 'glance_google_state');
+  c.header('Set-Cookie', stateCookie('', 0), { append: true });
+  c.header('Cache-Control', 'no-store');
+  if (url.searchParams.get('error') === 'access_denied') return c.redirect('/glance/?google=denied');
+  if (!state || !expected || !safeEqual(state, expected)) return c.redirect('/glance/?google=expired');
+  const code = url.searchParams.get('code') || '';
+  if (!code) return c.redirect('/glance/?google=error');
+  const settings = await loadSettings(c.env.LIVEVIEW_DB);
+  const creds = await googleCreds(c.env, settings);
+  if (!creds) return c.redirect('/glance/?google=setup');
+  try {
+    const tokens = await exchangeGoogleCode(creds, redirectUri(c.req.url), code);
+    if (!tokens.refreshToken) return c.redirect('/glance/?google=error');
+    const account = await googlePrimaryEmail(tokens.accessToken);
+    if (account.toLowerCase() !== GOOGLE_ACCOUNT) {
+      await revokeGoogle(tokens.refreshToken);
+      return c.redirect('/glance/?google=account');
+    }
+    const key = await tokenKey(c.env);
+    await c.env.LIVEVIEW_DB
+      .prepare(`UPDATE glance_settings SET google_refresh_token = ?, google_account = ?, updated_at = ? WHERE id = 'default'`)
+      .bind(await sealSecret(tokens.refreshToken, key), account, new Date().toISOString())
+      .run();
+    return c.redirect('/glance/?google=connected');
+  } catch (error) {
+    console.error('[glance] google connect', error instanceof Error ? scrub(error.message) : 'error');
+    return c.redirect('/glance/?google=error');
+  }
+});
+
+glance.post('/google/disconnect', async (c) => {
+  const settings = await loadSettings(c.env.LIVEVIEW_DB);
+  const key = await tokenKey(c.env);
+  const refresh = await openSecret(settings.google_refresh_token, key);
+  if (refresh) await revokeGoogle(refresh);
+  await c.env.LIVEVIEW_DB
+    .prepare(`UPDATE glance_settings SET google_refresh_token = '', google_account = '', updated_at = ? WHERE id = 'default'`)
+    .bind(new Date().toISOString())
+    .run();
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, ...(await publicSettings(c.env)) });
+});
+
+glance.post('/events', async (c) => {
+  const body = await readJson(c.req.raw);
+  let title = '';
+  let range: { startMs: number; endMs: number };
+  try {
+    title = cleanEventTitle(body.title);
+    const draft: EventDraft = {
+      title,
+      date: String(body.date || ''),
+      allDay: boolOf(body.allDay),
+      start: typeof body.start === 'string' ? body.start : undefined,
+      end: typeof body.end === 'string' && body.end ? body.end : undefined,
+      durationMinutes: body.durationMinutes == null || body.durationMinutes === '' ? undefined : Number(body.durationMinutes)
+    };
+    range = eventRange(draft);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'Check that event');
+  }
+  const db = c.env.LIVEVIEW_DB;
+  const settings = await loadSettings(db);
+  const creds = await googleCreds(c.env, settings);
+  const key = await tokenKey(c.env);
+  const refresh = await openSecret(settings.google_refresh_token, key);
+  if (!creds || !refresh || settings.google_account.toLowerCase() !== GOOGLE_ACCOUNT) {
+    throw new HttpError(400, 'Connect Google to add events');
+  }
+  try {
+    const access = await googleAccessToken(creds, refresh);
+    await insertGoogleEvent(access, googleEventBody({
+      title,
+      allDay: boolOf(body.allDay),
+      startMs: range.startMs,
+      endMs: range.endMs
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'reconnect') {
+      await db.prepare(`UPDATE glance_settings SET google_refresh_token = '', google_account = '' WHERE id = 'default'`).run();
+      throw new HttpError(400, 'Reconnect Google Calendar in settings');
+    }
+    console.error('[glance] google event', scrub(message || 'error'));
+    throw new HttpError(502, 'Google Calendar did not accept that event');
+  }
+  const allDay = boolOf(body.allDay);
+  const color = await personalColor(db);
+  await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    ok: true,
+    event: glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color })
+  });
 });
 
 glance.get('/lights', async (c) => {
@@ -1083,7 +1225,8 @@ function optionalName(value: unknown): string {
   return name;
 }
 
-async function publicSettings(db: D1Database) {
+async function publicSettings(env: Bindings) {
+  const db = env.LIVEVIEW_DB;
   const settings = await loadSettings(db);
   const feeds = (
     await db
@@ -1116,6 +1259,13 @@ async function publicSettings(db: D1Database) {
     tuya: {
       accessIdSaved: !!settings.tuya_access_id,
       accessSecretSaved: !!settings.tuya_access_secret
+    },
+    google: {
+      connected: !!settings.google_refresh_token && settings.google_account.toLowerCase() === GOOGLE_ACCOUNT,
+      account: settings.google_account.toLowerCase() === GOOGLE_ACCOUNT ? settings.google_account : '',
+      clientConfigured: Boolean((env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) || (settings.google_client_id && settings.google_client_secret)),
+      clientIdSaved: !!settings.google_client_id || !!env.GOOGLE_CLIENT_ID,
+      clientSecretSaved: !!settings.google_client_secret || !!env.GOOGLE_CLIENT_SECRET
     }
   };
 }
@@ -1124,7 +1274,7 @@ async function loadSettings(db: D1Database): Promise<SettingsRow> {
   const row = await db
     .prepare(
       `SELECT location_name, lat, lon, theme, layout, clock_24h, night_start, night_end, widgets_json, password_hash,
-              tuya_access_id, tuya_access_secret
+              tuya_access_id, tuya_access_secret, google_client_id, google_client_secret, google_refresh_token, google_account
        FROM glance_settings WHERE id = 'default'`
     )
     .first<SettingsRow>();
@@ -1231,6 +1381,205 @@ async function readPassword(request: Request): Promise<string> {
   }
   const body = await readJson(request);
   return typeof body.password === 'string' ? body.password.trim() : '';
+}
+
+function stateCookie(state: string, maxAge = 600): string {
+  return `glance_google_state=${state}; HttpOnly; Secure; Path=/glance; Max-Age=${maxAge}; SameSite=Lax`;
+}
+
+async function tokenKey(env: Bindings): Promise<string> {
+  return env.GLANCE_DATA_KEY?.trim() || jwtSecret(env);
+}
+
+async function googleCreds(env: Bindings, settings: SettingsRow): Promise<{ clientId: string; clientSecret: string } | null> {
+  const key = await tokenKey(env);
+  const clientId = env.GOOGLE_CLIENT_ID?.trim() || (await openSecret(settings.google_client_id || '', key));
+  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim() || (await openSecret(settings.google_client_secret || '', key));
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
+function googleClientIdField(incoming: unknown, current: string): string {
+  if (typeof incoming !== 'string') return current || '';
+  const value = incoming.trim();
+  if (!value) return current || '';
+  if (!/^[\w.-]{8,120}\.apps\.googleusercontent\.com$/.test(value)) {
+    throw new HttpError(400, 'That client ID does not look like a Google web client');
+  }
+  return value;
+}
+
+function googleClientSecretField(incoming: unknown, current: string): string {
+  if (typeof incoming !== 'string') return current || '';
+  const value = incoming.trim();
+  if (!value) return current || '';
+  if (value.length < 10 || value.length > 200 || /\s/.test(value)) throw new HttpError(400, 'That client secret does not look right');
+  return value;
+}
+
+async function exchangeGoogleCode(
+  creds: { clientId: string; clientSecret: string },
+  callback: string,
+  code: string
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      redirect_uri: callback,
+      grant_type: 'authorization_code'
+    })
+  });
+  const data = (await response.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string };
+  if (!response.ok || !data.access_token) throw new Error('token');
+  return { accessToken: data.access_token, refreshToken: data.refresh_token || '' };
+}
+
+async function googleAccessToken(
+  creds: { clientId: string; clientSecret: string },
+  refresh: string
+): Promise<string> {
+  const cacheKey = `glance:google:${await sha256Hex(refresh)}`;
+  const hit = memory.get(cacheKey);
+  if (hit && Date.now() - hit.at < 50 * 60_000) {
+    const parsed = JSON.parse(hit.raw) as { token?: string; exp?: number };
+    if (parsed.token && parsed.exp && parsed.exp > Date.now() + 60_000) return parsed.token;
+  }
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      refresh_token: refresh,
+      grant_type: 'refresh_token'
+    })
+  });
+  const data = (await response.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
+  if (data.error === 'invalid_grant') throw new Error('reconnect');
+  if (!response.ok || !data.access_token) throw new Error('refresh');
+  const exp = Date.now() + (Number(data.expires_in) || 3600) * 1000;
+  memory.set(cacheKey, { at: Date.now(), raw: JSON.stringify({ token: data.access_token, exp }) });
+  return data.access_token;
+}
+
+async function googlePrimaryEmail(access: string): Promise<string> {
+  const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary', {
+    headers: { Authorization: `Bearer ${access}` }
+  });
+  const data = (await response.json().catch(() => ({}))) as { id?: string };
+  if (!response.ok || !data.id) throw new Error('calendar');
+  return data.id;
+}
+
+async function insertGoogleEvent(access: string, body: unknown): Promise<void> {
+  const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (response.status === 401) throw new Error('reconnect');
+  if (!response.ok) throw new Error('insert');
+}
+
+async function revokeGoogle(token: string): Promise<void> {
+  try {
+    await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token })
+    });
+  } catch {
+    /* The local copy is still removed. */
+  }
+}
+
+async function personalColor(db: D1Database): Promise<string> {
+  const row = await db
+    .prepare(`SELECT color FROM glance_feeds WHERE enabled = 1 AND lower(label) = 'personal' ORDER BY sort_order LIMIT 1`)
+    .first<{ color: string }>();
+  return row?.color || '#7dcea0';
+}
+
+function glanceEvent(input: { title: string; allDay: boolean; startMs: number; endMs: number; color: string }) {
+  return {
+    title: input.title,
+    allDay: input.allDay,
+    birthday: false,
+    start: formatPhoenix(input.startMs),
+    end: formatPhoenix(input.endMs),
+    feed: 'Personal',
+    color: input.color,
+    date: phoenixDate(input.startMs)
+  };
+}
+
+async function rememberAdded(
+  db: D1Database,
+  row: { title: string; allDay: boolean; startMs: number; endMs: number }
+): Promise<void> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  await db.prepare(`DELETE FROM glance_added_events WHERE created_at < ?`).bind(cutoff).run();
+  await db
+    .prepare(`INSERT INTO glance_added_events (id, title, all_day, start_ms, end_ms, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(crypto.randomUUID(), row.title, row.allDay ? 1 : 0, row.startMs, row.endMs, new Date().toISOString())
+    .run();
+}
+
+type CardEvent = {
+  title: string;
+  allDay: boolean;
+  birthday?: boolean;
+  start: string;
+  end: string;
+  feed: string;
+  color: string;
+  started?: boolean;
+};
+
+async function withAddedEvents<T extends { days?: { date: string; events: CardEvent[] }[]; upcoming?: CardEvent | null }>(
+  db: D1Database,
+  payload: T
+): Promise<T> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  await db.prepare(`DELETE FROM glance_added_events WHERE created_at < ?`).bind(cutoff).run();
+  const rows = (
+    await db
+      .prepare(`SELECT title, all_day, start_ms, end_ms FROM glance_added_events ORDER BY start_ms`)
+      .all<{ title: string; all_day: number; start_ms: number; end_ms: number }>()
+  ).results;
+  if (!rows.length || !payload.days) return payload;
+  const color = await personalColor(db);
+  for (const row of rows) {
+    const event = glanceEvent({
+      title: row.title,
+      allDay: !!row.all_day,
+      startMs: row.start_ms,
+      endMs: row.end_ms,
+      color
+    });
+    for (const day of payload.days) {
+      const covers = row.all_day ? day.date >= phoenixDate(row.start_ms) && day.date < phoenixDate(row.end_ms) : day.date === event.date;
+      if (!covers) continue;
+      const dup = day.events.some((item) => {
+        if (item.title !== row.title) return false;
+        if (row.all_day) return !!item.allDay;
+        return Math.abs(Date.parse(item.start) - row.start_ms) < 120_000;
+      });
+      if (!dup) day.events.push(event);
+      day.events.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
+    }
+    if (!row.all_day && row.end_ms > Date.now()) {
+      const currentStart = payload.upcoming ? Date.parse(payload.upcoming.start) : Number.POSITIVE_INFINITY;
+      if (row.start_ms < currentStart) {
+        payload.upcoming = { ...event, started: row.start_ms <= Date.now() };
+      }
+    }
+  }
+  return payload;
 }
 
 function clientIp(request: Request): string {

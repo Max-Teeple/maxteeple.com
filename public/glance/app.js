@@ -17,7 +17,8 @@
     todos: [],
     lights: null,
     family: null,
-    open: false
+    open: false,
+    googleNotice: ''
   };
 
   var login = document.getElementById('login');
@@ -368,9 +369,7 @@
 
   function renderRail() {
     var rail = document.getElementById('rail');
-    var draft = '';
-    var existing = document.getElementById('todo-input');
-    if (existing) draft = existing.value;
+    var draft = readAddDraft();
     rail.replaceChildren();
     var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true, lights: true, family: true };
     renderLights(rail, widgets);
@@ -390,57 +389,7 @@
       renderCountdown();
     }
     renderDayFacts(rail, widgets);
-    var todos = document.createElement('section');
-    todos.className = 'rail-card todos-card';
-    var th = document.createElement('h3');
-    th.textContent = 'To-dos';
-    var list = document.createElement('ul');
-    list.className = 'todos';
-    if (!state.todos.length) {
-      var empty = document.createElement('p');
-      empty.className = 'quiet';
-      empty.textContent = 'Nothing waiting.';
-      todos.append(th, empty);
-    } else {
-      state.todos.forEach(function (todo, index) {
-        var li = document.createElement('li');
-        if (todo.done) li.className = 'done';
-        var check = document.createElement('button');
-        check.type = 'button';
-        check.className = 'check';
-        check.setAttribute('aria-pressed', todo.done ? 'true' : 'false');
-        check.setAttribute('aria-label', todo.done ? 'Mark not done' : 'Mark done');
-        check.textContent = todo.done ? '✓' : '';
-        check.addEventListener('click', function () { toggleTodo(todo); });
-        var title = document.createElement('span');
-        title.className = 'todo-title';
-        title.textContent = todo.title;
-        var up = tiny('Move up', '↑', function () { moveTodo(index, -1); });
-        var down = tiny('Move down', '↓', function () { moveTodo(index, 1); });
-        var del = tiny('Delete', '×', function () { deleteTodo(todo); });
-        li.append(check, title, up, down, del);
-        list.appendChild(li);
-      });
-      todos.append(th, list);
-    }
-    var form = document.createElement('form');
-    form.className = 'todo-form';
-    var input = document.createElement('input');
-    input.id = 'todo-input';
-    input.placeholder = 'Add a to-do';
-    input.maxLength = 200;
-    input.value = draft;
-    input.setAttribute('aria-label', 'New to-do');
-    var add = document.createElement('button');
-    add.type = 'submit';
-    add.textContent = 'Add';
-    form.append(input, add);
-    form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      addTodo(input.value);
-    });
-    todos.appendChild(form);
-    rail.appendChild(todos);
+    renderAdd(rail, draft);
   }
 
   function renderLights(rail, widgets) {
@@ -637,41 +586,252 @@
     return button;
   }
 
-  async function toggleTodo(todo) {
-    await api('/glance/api/todos/' + todo.id, { method: 'PATCH', body: { done: !todo.done } });
-    await loadTodos();
+  function phoenixDateKey(date) {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: PHOENIX,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date);
+    var bag = {};
+    parts.forEach(function (part) { bag[part.type] = part.value; });
+    return bag.year + '-' + bag.month + '-' + bag.day;
   }
 
-  async function deleteTodo(todo) {
-    await api('/glance/api/todos/' + todo.id, { method: 'DELETE' });
-    await loadTodos();
+  function shiftDateKey(key, days) {
+    var bits = key.split('-').map(Number);
+    var next = new Date(Date.UTC(bits[0], bits[1] - 1, bits[2] + days));
+    return next.toISOString().slice(0, 10);
   }
 
-  async function moveTodo(index, delta) {
-    var next = index + delta;
-    if (next < 0 || next >= state.todos.length) return;
-    var ids = state.todos.map(function (todo) { return todo.id; });
-    var swap = ids[index];
-    ids[index] = ids[next];
-    ids[next] = swap;
-    var body = await api('/glance/api/todos/reorder', { method: 'POST', body: { ids: ids } });
-    state.todos = body.todos || [];
-    renderRail();
+  function defaultStart() {
+    var parts = phoenixParts(new Date());
+    var hour = parts.hour;
+    var minute = parts.minute < 30 ? 30 : 0;
+    if (parts.minute >= 30) hour = (hour + 1) % 24;
+    return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
   }
 
-  async function addTodo(title) {
-    var clean = title.trim();
-    if (!clean) return;
-    await api('/glance/api/todos', { method: 'POST', body: { title: clean } });
-    var input = document.getElementById('todo-input');
-    if (input) input.value = '';
-    await loadTodos();
+  function readAddDraft() {
+    var title = document.getElementById('add-title');
+    if (!title) return null;
+    var pressed = document.querySelector('.add-day[aria-pressed="true"]');
+    return {
+      title: title.value,
+      day: pressed ? pressed.dataset.day : 'today',
+      date: document.getElementById('add-date').value,
+      start: document.getElementById('add-start').value,
+      duration: document.getElementById('add-duration').value,
+      end: document.getElementById('add-end').value,
+      allDay: document.getElementById('add-allday').checked
+    };
   }
 
-  async function loadTodos() {
-    var body = await api('/glance/api/todos');
-    state.todos = body.todos || [];
-    renderRail();
+  function renderAdd(rail, draft) {
+    var card = document.createElement('section');
+    card.className = 'rail-card add-card';
+    var heading = document.createElement('h3');
+    heading.textContent = 'Add event';
+    card.appendChild(heading);
+    var google = (state.settings && state.settings.google) || {};
+    var note = document.createElement('p');
+    note.className = 'add-note';
+    note.textContent = state.googleNotice || '';
+    if (!google.connected) {
+      var quiet = document.createElement('div');
+      quiet.className = 'add-quiet';
+      var line = document.createElement('p');
+      line.className = 'add-note';
+      line.textContent = 'Connect Google to add events';
+      var link = document.createElement('a');
+      link.className = 'add-go';
+      link.href = '/glance/api/google/start';
+      link.textContent = 'Connect Google Calendar';
+      quiet.append(line, link);
+      if (state.googleNotice) quiet.appendChild(note);
+      card.appendChild(quiet);
+      rail.appendChild(card);
+      return;
+    }
+    var today = phoenixDateKey(new Date());
+    var saved = draft || {};
+    var form = document.createElement('form');
+    var title = document.createElement('input');
+    title.id = 'add-title';
+    title.maxLength = 200;
+    title.placeholder = 'Title';
+    title.setAttribute('aria-label', 'Event title');
+    title.autocapitalize = 'sentences';
+    title.value = saved.title || '';
+    var days = document.createElement('div');
+    days.className = 'add-days';
+    var chosen = saved.day || 'today';
+    [['today', 'Today'], ['tomorrow', 'Tomorrow']].forEach(function (entry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'add-day';
+      button.dataset.day = entry[0];
+      button.textContent = entry[1];
+      button.setAttribute('aria-pressed', chosen === entry[0] ? 'true' : 'false');
+      button.addEventListener('click', function () {
+        days.querySelectorAll('.add-day').forEach(function (item) { item.setAttribute('aria-pressed', 'false'); });
+        button.setAttribute('aria-pressed', 'true');
+        date.value = entry[0] === 'today' ? today : shiftDateKey(today, 1);
+      });
+      days.appendChild(button);
+    });
+    var date = document.createElement('input');
+    date.id = 'add-date';
+    date.type = 'date';
+    date.setAttribute('aria-label', 'Day');
+    date.value = saved.date || (chosen === 'tomorrow' ? shiftDateKey(today, 1) : today);
+    date.addEventListener('change', function () {
+      var mode = date.value === today ? 'today' : date.value === shiftDateKey(today, 1) ? 'tomorrow' : 'date';
+      days.querySelectorAll('.add-day').forEach(function (item) {
+        item.setAttribute('aria-pressed', item.dataset.day === mode ? 'true' : 'false');
+      });
+    });
+    days.appendChild(date);
+    var times = document.createElement('div');
+    times.className = 'add-times';
+    var start = document.createElement('input');
+    start.id = 'add-start';
+    start.type = 'time';
+    start.setAttribute('aria-label', 'Start time');
+    start.value = saved.start || defaultStart();
+    var duration = document.createElement('select');
+    duration.id = 'add-duration';
+    duration.setAttribute('aria-label', 'Duration');
+    [['30', '30 min'], ['60', '1 hour'], ['90', '90 min'], ['120', '2 hours'], ['end', 'End time']].forEach(function (entry) {
+      var option = document.createElement('option');
+      option.value = entry[0];
+      option.textContent = entry[1];
+      duration.appendChild(option);
+    });
+    duration.value = saved.duration || '60';
+    var end = document.createElement('input');
+    end.id = 'add-end';
+    end.type = 'time';
+    end.setAttribute('aria-label', 'End time');
+    end.value = saved.end || '';
+    end.hidden = duration.value !== 'end';
+    duration.addEventListener('change', function () { end.hidden = duration.value !== 'end'; });
+    times.append(start, duration, end);
+    var foot = document.createElement('div');
+    foot.className = 'add-foot';
+    var allday = document.createElement('label');
+    allday.className = 'add-allday';
+    var box = document.createElement('input');
+    box.id = 'add-allday';
+    box.type = 'checkbox';
+    box.checked = !!saved.allDay;
+    allday.append(box, document.createTextNode('All day'));
+    var go = document.createElement('button');
+    go.className = 'add-go';
+    go.type = 'submit';
+    go.textContent = 'Add';
+    foot.append(allday, go);
+    function syncAllDay() { times.hidden = box.checked; }
+    box.addEventListener('change', syncAllDay);
+    syncAllDay();
+    var status = document.createElement('p');
+    status.className = 'add-note';
+    status.textContent = state.googleNotice || '';
+    form.append(title, days, times, foot, status);
+    form.addEventListener('submit', function (event) { event.preventDefault(); submitEvent(form); });
+    card.appendChild(form);
+    rail.appendChild(card);
+  }
+
+  function eventOnDay(day, event) {
+    if (event.allDay) {
+      var endDate = (event.end || '').slice(0, 10);
+      return day.date >= event.date && day.date < endDate;
+    }
+    return day.date === event.date;
+  }
+
+  function insertOptimistic(event) {
+    if (!state.calendar || !state.calendar.days || !event) return;
+    state.calendar.days.forEach(function (day) {
+      if (!eventOnDay(day, event)) return;
+      var exists = day.events.some(function (item) { return item.title === event.title && item.start === event.start; });
+      if (!exists) day.events.push(event);
+      day.events.sort(function (a, b) { return Number(b.allDay) - Number(a.allDay) || String(a.start).localeCompare(String(b.start)); });
+    });
+    if (!event.allDay && state.calendar) {
+      var start = new Date(event.start).getTime();
+      var current = state.calendar.upcoming ? new Date(state.calendar.upcoming.start).getTime() : Infinity;
+      if (start < current) state.calendar.upcoming = Object.assign({ started: start <= Date.now() }, event);
+    }
+    renderDays();
+    renderCountdown();
+  }
+
+  function removeOptimistic(event) {
+    if (!state.calendar || !event) return;
+    state.calendar.days.forEach(function (day) {
+      day.events = day.events.filter(function (item) { return !(item.title === event.title && item.start === event.start); });
+    });
+    renderDays();
+    renderCountdown();
+  }
+
+  async function submitEvent(form) {
+    var title = document.getElementById('add-title').value.trim();
+    var status = form.querySelector('.add-note');
+    if (!title) {
+      status.textContent = 'Add a title';
+      return;
+    }
+    var allDay = document.getElementById('add-allday').checked;
+    if (!allDay && !document.getElementById('add-start').value) {
+      status.textContent = 'Pick a start time';
+      return;
+    }
+    if (!allDay && document.getElementById('add-duration').value === 'end' && !document.getElementById('add-end').value) {
+      status.textContent = 'Pick an end time';
+      return;
+    }
+    var duration = document.getElementById('add-duration').value;
+    var payload = {
+      title: title,
+      date: document.getElementById('add-date').value,
+      allDay: allDay,
+      start: document.getElementById('add-start').value,
+      durationMinutes: duration === 'end' ? undefined : Number(duration),
+      end: duration === 'end' ? document.getElementById('add-end').value : ''
+    };
+    var optimistic = {
+      title: title,
+      allDay: allDay,
+      birthday: false,
+      date: payload.date,
+      start: payload.date + 'T' + (allDay ? '00:00:00' : payload.start + ':00') + '-07:00',
+      end: payload.date + 'T' + (allDay ? '00:00:00' : (payload.end || payload.start) + ':00') + '-07:00',
+      feed: 'Personal',
+      color: '#7dcea0'
+    };
+    if (allDay) optimistic.end = shiftDateKey(payload.date, 1) + 'T00:00:00-07:00';
+    status.textContent = '';
+    insertOptimistic(optimistic);
+    form.classList.add('is-busy');
+    try {
+      var created = await api('/glance/api/events', { method: 'POST', body: payload });
+      if (created.event) {
+        removeOptimistic(optimistic);
+        insertOptimistic(created.event);
+      }
+      document.getElementById('add-title').value = '';
+      state.googleNotice = 'Added';
+      await refresh();
+      state.googleNotice = '';
+    } catch (err) {
+      removeOptimistic(optimistic);
+      status.textContent = err.message || 'That event was not added';
+    }
+    var current = document.querySelector('.add-card form');
+    if (current) current.classList.remove('is-busy');
   }
 
   function renderAll() {
@@ -798,15 +958,13 @@
     var results = await Promise.all([
       api('/glance/api/weather'),
       api('/glance/api/calendar'),
-      api('/glance/api/todos'),
       api('/glance/api/lights'),
       api('/glance/api/location')
     ]);
     state.weather = results[0];
     state.calendar = results[1];
-    state.todos = results[2].todos || [];
-    state.lights = results[3];
-    state.family = results[4];
+    state.lights = results[2];
+    state.family = results[3];
     renderAll();
   }
 
@@ -846,6 +1004,23 @@
     accessSecret.value = '';
     accessId.placeholder = tuya.accessIdSaved ? 'Saved on the server' : 'Access ID';
     accessSecret.placeholder = tuya.accessSecretSaved ? 'Saved on the server' : 'Access secret';
+    var google = settings.google || {};
+    var googleStatus = document.getElementById('google-status');
+    var googleConnect = document.getElementById('google-connect');
+    var googleDisconnectBtn = document.getElementById('google-disconnect');
+    if (googleStatus && googleConnect && googleDisconnectBtn) {
+      googleStatus.textContent = google.connected
+        ? 'Connected as ' + (google.account || 'your Google account') + '. New events use Basil green.'
+        : (state.googleNotice || 'Connect Google to add events');
+      googleConnect.hidden = !!google.connected;
+      googleDisconnectBtn.hidden = !google.connected;
+      var clientId = document.getElementById('google-client-id');
+      var clientSecret = document.getElementById('google-client-secret');
+      clientId.value = '';
+      clientSecret.value = '';
+      clientId.placeholder = google.clientIdSaved ? 'Saved on the server' : 'Client ID';
+      clientSecret.placeholder = google.clientSecretSaved ? 'Saved on the server' : 'Client secret';
+    }
     renderLightPrefs();
     var themes = document.getElementById('themes');
     themes.replaceChildren();
@@ -1023,6 +1198,8 @@
           feeds: collectFeeds(),
           tuyaAccessId: document.getElementById('tuya-id').value,
           tuyaAccessSecret: document.getElementById('tuya-secret').value,
+          googleClientId: (document.getElementById('google-client-id') || { value: '' }).value,
+          googleClientSecret: (document.getElementById('google-client-secret') || { value: '' }).value,
           lights: collectLightPrefs()
         }
       });
@@ -1049,6 +1226,18 @@
       msg.textContent = 'Password updated. This screen stays signed in.';
     } catch (err) {
       msg.textContent = err.message || 'Could not change the password';
+    }
+  });
+  var googleDisconnect = document.getElementById('google-disconnect');
+  if (googleDisconnect) googleDisconnect.addEventListener('click', async function () {
+    var status = document.getElementById('google-status');
+    try {
+      state.settings = await api('/glance/api/google/disconnect', { method: 'POST', body: {} });
+      status.textContent = 'Google Calendar is disconnected.';
+      fillSettings();
+      renderRail();
+    } catch (err) {
+      status.textContent = err.message || 'Could not disconnect';
     }
   });
   document.getElementById('sign-out').addEventListener('click', async function () {
@@ -1400,7 +1589,25 @@
     renderLightPrefs();
   }
 
-  bootApp().catch(function (error) {
+  var googleCode = new URLSearchParams(window.location.search).get('google');
+  if (googleCode) {
+    var googleMessages = {
+      connected: 'Google Calendar is connected.',
+      denied: 'Google was not connected.',
+      expired: 'That connection link expired. Try again from settings.',
+      account: 'Connect max.teeple@gmail.com. That was a different Google account.',
+      setup: 'Add the Google client ID and secret in settings, or store them as Worker secrets.',
+      login: 'Sign in, then connect Google Calendar.',
+      error: 'Google could not be connected. Try again from settings.'
+    };
+    state.googleNotice = googleMessages[googleCode] || googleMessages.error;
+    if (googleCode === 'login') document.getElementById('login-error').textContent = state.googleNotice;
+    history.replaceState({}, '', '/glance/');
+  }
+
+  bootApp().then(function () {
+    if (googleCode === 'setup' || googleCode === 'connected' || googleCode === 'account' || googleCode === 'error') openSettings();
+  }).catch(function (error) {
     if (!error || error.status !== 401) showLogin();
   });
 })();
