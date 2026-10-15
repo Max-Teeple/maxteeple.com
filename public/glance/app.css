@@ -522,6 +522,26 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   body[data-layout="home"] .lower { grid-template-columns: minmax(15rem, 17.5rem) minmax(0, 1fr); }
 }
 
+@media (max-height: 830px) and (max-width: 1150px) {
+  .hourly { display: none; }
+  .summary, .place { display: none; }
+  .fday .wx { display: none; }
+  #time, body[data-layout="today"] #time, body[data-layout="calendar"] #time, body[data-layout="home"] #time { font-size: 2rem; }
+  .date, .next-line { font-size: 0.875rem; margin-top: 0; }
+  .now-card, body[data-layout="today"] .now-card { padding: 0.2rem 0.4rem; min-height: 0; }
+  .temp, body[data-layout="today"] .temp { font-size: 1.55rem; }
+  .wx, body[data-layout="today"] .wx { width: 1.35rem; height: 1.35rem; }
+  .forecast { gap: 0.2rem; }
+  .fday { padding: 0.12rem 0.08rem; }
+  .rail { gap: 0.12rem; }
+  .rail-card, .add-card { padding: 0.16rem 0.32rem; }
+  .light { min-height: 1.3rem; }
+  .family-line { margin-top: 0.1rem; }
+  .add-card form, .add-times { gap: 0.12rem; }
+  .add-card input, .add-card select, .add-days button, .add-go, .add-allday { min-height: 26px; }
+  .add-foot { flex-wrap: nowrap; }
+}
+
 @media (max-height: 780px) {
   .app { gap: 0.25rem; }
   #time, body[data-layout="calendar"] #time, body[data-layout="home"] #time { font-size: 2.15rem; }
