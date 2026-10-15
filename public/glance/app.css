@@ -161,6 +161,19 @@ body.is-dim .dimmer { opacity: 0.45; }
 
 .boot, .login, .app, .settings { position: relative; z-index: 1; }
 
+.privacy-public {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0.8rem;
+  z-index: 2;
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+.privacy-public a { color: var(--muted); }
+body:has(#board:not([hidden])) .privacy-public { display: none; }
+
 .boot {
   margin: 0;
   min-height: 100dvh;

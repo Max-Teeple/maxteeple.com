@@ -74,6 +74,17 @@ describe('Glance kitchen board', () => {
     const html = await page.text();
     expect(html).toContain('apple-mobile-web-app-capable');
     expect(html).toContain('login-password');
+    expect(html).toContain('href="/glance/privacy.html"');
+    const privacy = await api('/glance/privacy.html');
+    expect(privacy.status).toBe(200);
+    const policy = await privacy.text();
+    expect(policy).toContain('Privacy policy');
+    expect(policy).toContain('max.teeple@gmail.com');
+    expect(policy).toContain('Google Calendar API');
+    expect(policy).toContain('encrypted');
+    const privacyAlias = await api('/glance/privacy');
+    expect(privacyAlias.status).toBe(200);
+    expect(await privacyAlias.text()).toContain('max.teeple@gmail.com');
     expect(html).not.toMatch(/outlook\.office365|calendar\.google/i);
     const home = await api('/');
     expect(await home.text()).toContain('href="/glance/"');

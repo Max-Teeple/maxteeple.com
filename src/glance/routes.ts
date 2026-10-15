@@ -647,9 +647,10 @@ export async function handleGlance(request: Request, env: Bindings, ctx: Executi
   const assetUrl = new URL(request.url);
   assetUrl.search = '';
   if (url.pathname === '/glance/') assetUrl.pathname = '/glance/index.html';
+  if (url.pathname === '/glance/privacy') assetUrl.pathname = '/glance/privacy.html';
   const asset = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   const versioned = url.searchParams.has('v');
-  const isHtml = url.pathname === '/glance/' || url.pathname.endsWith('.html');
+  const isHtml = url.pathname === '/glance/' || url.pathname === '/glance/privacy' || url.pathname.endsWith('.html');
   if (isHtml && (asset.ok || asset.status === 304)) {
     const html = (await asset.text()).replaceAll('__GLANCE_BUILD__', GLANCE_BUILD);
     const headers = new Headers({
