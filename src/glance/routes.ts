@@ -6,6 +6,8 @@ import { HttpError } from '../util';
 import {
   DEFAULT_WIDGETS,
   GLANCE_COOKIE,
+  GLANCE_COOKIE_LEGACY,
+  GLANCE_COOKIE_PATH,
   GLANCE_FAIL_LIMIT,
   GLANCE_FAIL_WINDOW_MS,
   GLANCE_SESSION_SECONDS,
@@ -102,8 +104,7 @@ function scrub(message: string): string {
 }
 
 glance.post('/login', async (c) => {
-  const body = await readJson(c.req.raw);
-  const password = typeof body.password === 'string' ? body.password : '';
+  const password = await readPassword(c.req.raw);
   if (!password || password.length > 200) throw new HttpError(401, 'Wrong password');
   const ip = clientIp(c.req.raw);
   const db = c.env.LIVEVIEW_DB;
@@ -118,16 +119,17 @@ glance.post('/login', async (c) => {
   }
   await db.prepare(`DELETE FROM glance_login_attempts WHERE ip = ?`).bind(ip).run();
   const token = await createSession(db);
-  c.header('Set-Cookie', sessionCookie(token));
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true });
+  c.header('Set-Cookie', sessionCookie(token), { append: true });
+  c.header('Set-Cookie', clearCookie(GLANCE_COOKIE_LEGACY, '/'), { append: true });
+  return c.redirect('/glance/', 303);
 });
 
 glance.use('*', async (c, next) => {
   const path = c.req.path;
   if (path.endsWith('/login')) return next();
   if (c.req.method === 'POST' && (path.endsWith('/location/owntracks') || path === '/location')) return next();
-  const token = readCookie(c.req.header('cookie'), GLANCE_COOKIE);
+  const token = readSessionToken(c.req.header('cookie'));
   if (!token) return c.json({ ok: false, message: 'Login required' }, 401);
   const tokenHash = await sha256Hex(token);
   const row = await c.env.LIVEVIEW_DB.prepare(
@@ -144,8 +146,9 @@ glance.use('*', async (c, next) => {
 
 glance.post('/logout', async (c) => {
   await c.env.LIVEVIEW_DB.prepare(`DELETE FROM glance_sessions WHERE id = ?`).bind(c.get('sessionId')).run();
-  c.header('Set-Cookie', sessionCookie('', 0));
   c.header('Cache-Control', 'no-store');
+  c.header('Set-Cookie', clearCookie(GLANCE_COOKIE, GLANCE_COOKIE_PATH), { append: true });
+  c.header('Set-Cookie', clearCookie(GLANCE_COOKIE_LEGACY, '/'), { append: true });
   return c.json({ ok: true });
 });
 
@@ -207,8 +210,8 @@ glance.put('/settings', async (c) => {
 
 glance.post('/password', async (c) => {
   const body = await readJson(c.req.raw);
-  const current = typeof body.current === 'string' ? body.current : '';
-  const next = typeof body.next === 'string' ? body.next : '';
+  const current = typeof body.current === 'string' ? body.current.trim() : '';
+  const next = typeof body.next === 'string' ? body.next.trim() : '';
   if (next.length < 10 || next.length > 200) throw new HttpError(400, 'Use at least 10 characters');
   const db = c.env.LIVEVIEW_DB;
   const settings = await loadSettings(db);
@@ -221,8 +224,9 @@ glance.post('/password', async (c) => {
     .run();
   await db.prepare(`DELETE FROM glance_sessions`).run();
   const token = await createSession(db);
-  c.header('Set-Cookie', sessionCookie(token));
   c.header('Cache-Control', 'no-store');
+  c.header('Set-Cookie', sessionCookie(token), { append: true });
+  c.header('Set-Cookie', clearCookie(GLANCE_COOKIE_LEGACY, '/'), { append: true });
   return c.json({ ok: true });
 });
 
@@ -476,16 +480,18 @@ glance.delete('/todos/:id', async (c) => {
 
 export async function handleGlance(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
-  if (url.pathname === '/glance') return Response.redirect(new URL('/glance/', url).toString(), 302);
-  if (url.pathname === '/glance/api' || url.pathname.startsWith('/glance/api/')) {
+  const canonical = canonicalGlanceRedirect(request);
+  if (canonical) return canonical;
+  const apiPath = url.pathname.replace(/\/+$/, '') || '/';
+  if (apiPath === '/glance/api' || apiPath.startsWith('/glance/api/')) {
     const routed = new URL(request.url);
-    routed.pathname = url.pathname.replace(/^\/glance\/api/, '') || '/';
+    routed.pathname = apiPath.replace(/^\/glance\/api/, '') || '/';
     const response = await glance.fetch(new Request(routed.toString(), request), env, ctx);
-    const headers = new Headers(response.headers);
-    headers.set('Referrer-Policy', 'no-referrer');
-    headers.set('X-Content-Type-Options', 'nosniff');
-    headers.set('Cache-Control', 'no-store');
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+    return stampGlance(request, copyResponse(response, {
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store'
+    }));
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405 });
@@ -493,15 +499,87 @@ export async function handleGlance(request: Request, env: Bindings, ctx: Executi
   const assetUrl = new URL(request.url);
   if (url.pathname === '/glance/') assetUrl.pathname = '/glance/index.html';
   const asset = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
-  const headers = new Headers(asset.headers);
-  headers.set('Cache-Control', 'no-cache');
-  headers.set('Referrer-Policy', 'no-referrer');
-  headers.set('X-Content-Type-Options', 'nosniff');
+  const headers: Record<string, string> = {
+    'Cache-Control': 'no-cache',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff'
+  };
   if (assetUrl.pathname.endsWith('.html')) {
-    headers.set('Content-Security-Policy', CSP);
-    headers.set('X-Frame-Options', 'DENY');
+    headers['Content-Security-Policy'] = CSP;
+    headers['X-Frame-Options'] = 'DENY';
   }
-  return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
+  return stampGlance(request, copyResponse(asset, headers));
+}
+
+const GLANCE_APEX = 'maxteeple.com';
+const HSTS = 'max-age=31536000';
+
+function visitorScheme(request: Request, url: URL): 'http' | 'https' {
+  const forwarded = request.headers.get('x-forwarded-proto');
+  if (forwarded) {
+    const first = forwarded.split(',')[0]?.trim().toLowerCase();
+    if (first === 'http' || first === 'https') return first;
+  }
+  const visitor = request.headers.get('cf-visitor');
+  if (visitor) {
+    try {
+      const scheme = String((JSON.parse(visitor) as { scheme?: string }).scheme || '').toLowerCase();
+      if (scheme === 'http' || scheme === 'https') return scheme;
+    } catch {
+      /* ignore malformed cf-visitor */
+    }
+  }
+  return url.protocol === 'http:' ? 'http' : 'https';
+}
+
+function requestHost(request: Request, url: URL): string {
+  return (request.headers.get('host') || url.host).split(':')[0].toLowerCase();
+}
+
+function canonicalGlanceRedirect(request: Request): Response | null {
+  const url = new URL(request.url);
+  const host = requestHost(request, url);
+  const scheme = visitorScheme(request, url);
+  const production = host === GLANCE_APEX || host === `www.${GLANCE_APEX}`;
+  const needsApex = production && (host !== GLANCE_APEX || scheme !== 'https');
+  const needsSlash = url.pathname === '/glance';
+  if (!needsApex && !needsSlash) return null;
+  const target = new URL(request.url);
+  target.pathname = needsSlash ? '/glance/' : url.pathname;
+  if (needsApex) {
+    target.protocol = 'https:';
+    target.hostname = GLANCE_APEX;
+    target.port = '';
+  }
+  const status = request.method === 'GET' || request.method === 'HEAD' ? 301 : 308;
+  const headers = new Headers({
+    Location: target.toString(),
+    'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer'
+  });
+  if (scheme === 'https') headers.set('Strict-Transport-Security', HSTS);
+  return new Response(null, { status, headers });
+}
+
+function stampGlance(request: Request, response: Response): Response {
+  if (visitorScheme(request, new URL(request.url)) !== 'https') return response;
+  return copyResponse(response, { 'Strict-Transport-Security': HSTS });
+}
+
+function copyResponse(response: Response, extra: Record<string, string>): Response {
+  const headers = new Headers();
+  response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') return;
+    headers.set(key, value);
+  });
+  const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+  if (!cookies.length) {
+    const single = response.headers.get('set-cookie');
+    if (single) cookies.push(single);
+  }
+  for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+  for (const [key, value] of Object.entries(extra)) headers.set(key, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function buildCalendar(feeds: FeedRow[]) {
@@ -1124,7 +1202,11 @@ async function createSession(db: D1Database): Promise<string> {
 }
 
 function sessionCookie(token: string, maxAge = GLANCE_SESSION_SECONDS): string {
-  return `${GLANCE_COOKIE}=${token}; HttpOnly; Secure; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+  return `${GLANCE_COOKIE}=${token}; HttpOnly; Secure; Path=${GLANCE_COOKIE_PATH}; Max-Age=${maxAge}; SameSite=Lax`;
+}
+
+function clearCookie(name: string, path: string): string {
+  return `${name}=; HttpOnly; Secure; Path=${path}; Max-Age=0; SameSite=Lax`;
 }
 
 function readCookie(header: string | undefined, name: string): string {
@@ -1135,6 +1217,20 @@ function readCookie(header: string | undefined, name: string): string {
     if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
   }
   return '';
+}
+
+function readSessionToken(header: string | undefined): string {
+  return readCookie(header, GLANCE_COOKIE) || readCookie(header, GLANCE_COOKIE_LEGACY);
+}
+
+async function readPassword(request: Request): Promise<string> {
+  const type = (request.headers.get('content-type') || '').toLowerCase();
+  if (type.includes('application/x-www-form-urlencoded') || type.includes('multipart/form-data')) {
+    const form = await request.formData();
+    return String(form.get('password') ?? '').trim();
+  }
+  const body = await readJson(request);
+  return typeof body.password === 'string' ? body.password.trim() : '';
 }
 
 function clientIp(request: Request): string {

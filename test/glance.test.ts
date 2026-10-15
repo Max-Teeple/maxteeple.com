@@ -14,22 +14,28 @@ async function api(path: string, init?: RequestInit) {
   return SELF.fetch(new Request(`${origin}${path}`, init));
 }
 
+function setCookies(response: Response): string[] {
+  return typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [response.headers.get('set-cookie') || ''];
+}
+
 function cookiePair(response: Response): string {
-  const raw = response.headers.get('set-cookie') || '';
+  const raw = setCookies(response).find((cookie) => cookie.startsWith('glance_session=')) || setCookies(response)[0] || '';
   return raw.split(';')[0];
 }
 
-async function signIn(): Promise<string> {
+async function signIn(password = TEST_PASSWORD): Promise<string> {
   await api('/glance/api/weather');
   const hash = await hashPassword(TEST_PASSWORD);
   await env.LIVEVIEW_DB.prepare(`UPDATE glance_settings SET password_hash = ? WHERE id = 'default'`).bind(hash).run();
   const login = await api('/glance/api/login', {
     method: 'POST',
+    redirect: 'manual',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: TEST_PASSWORD })
+    body: JSON.stringify({ password })
   });
-  expect(login.status).toBe(200);
-  return (login.headers.get('set-cookie') || '').split(';')[0];
+  expect(login.status).toBe(303);
+  expect(new URL(login.headers.get('location') || '', origin).pathname).toBe('/glance/');
+  return cookiePair(login);
 }
 
 function withSession(path: string, session: string, init?: RequestInit) {
@@ -71,8 +77,44 @@ describe('Glance kitchen board', () => {
     const home = await api('/');
     expect(await home.text()).toContain('href="/glance/"');
     const redirect = await api('/glance', { redirect: 'manual' });
-    expect(redirect.status).toBe(302);
+    expect(redirect.status).toBe(301);
     expect(redirect.headers.get('location')).toBe(`${origin}/glance/`);
+    expect(page.headers.get('strict-transport-security')).toBe('max-age=31536000');
+    expect(html).toContain('autocapitalize="off"');
+    expect(html).toContain('autocorrect="off"');
+    expect(html).toContain('spellcheck="false"');
+    expect(html).toContain('apple-touch-icon');
+    expect(html).toContain('/glance/apple-touch-icon.png');
+    const manifest = await api('/glance/manifest.webmanifest');
+    expect(manifest.status).toBe(200);
+    const manifestBody = await manifest.json() as { display: string; start_url: string; scope: string };
+    expect(manifestBody.display).toBe('standalone');
+    expect(manifestBody.start_url).toBe('/glance/');
+    expect(manifestBody.scope).toBe('/glance/');
+  });
+
+  it('sends http and www glance traffic to the https apex', async () => {
+    const insecure = await SELF.fetch('https://maxteeple.com/glance', {
+      redirect: 'manual',
+      headers: { 'x-forwarded-proto': 'http' }
+    });
+    expect(insecure.status).toBe(301);
+    expect(insecure.headers.get('location')).toBe('https://maxteeple.com/glance/');
+    expect(insecure.headers.get('strict-transport-security')).toBeNull();
+
+    const posted = await SELF.fetch('http://maxteeple.com/glance/api/login', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/json', 'x-forwarded-proto': 'http' },
+      body: JSON.stringify({ password: 'ignored' })
+    });
+    expect(posted.status).toBe(308);
+    expect(posted.headers.get('location')).toBe('https://maxteeple.com/glance/api/login');
+
+    const www = await SELF.fetch('https://www.maxteeple.com/glance/app.css?v=1', { redirect: 'manual' });
+    expect(www.status).toBe(301);
+    expect(www.headers.get('location')).toBe('https://maxteeple.com/glance/app.css?v=1');
+    expect(www.headers.get('strict-transport-security')).toBe('max-age=31536000');
   });
 
   it('signs in with a year-long cookie and keeps to-dos', async () => {
@@ -87,19 +129,26 @@ describe('Glance kitchen board', () => {
     expect(wrong.status).toBe(401);
     expect(wrong.headers.get('set-cookie')).toBeNull();
 
-    const login = await api('/glance/api/login', {
+    const login = await api('/glance/api/login/', {
       method: 'POST',
+      redirect: 'manual',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: TEST_PASSWORD })
+      body: JSON.stringify({ password: `  ${TEST_PASSWORD}\n` })
     });
-    expect(login.status).toBe(200);
-    const setCookie = login.headers.get('set-cookie') || '';
+    expect(login.status).toBe(303);
+    expect(new URL(login.headers.get('location') || '', origin).pathname).toBe('/glance/');
+    const setCookie = setCookies(login).find((cookie) => cookie.startsWith('glance_session=')) || '';
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('Secure');
     expect(setCookie).toContain('SameSite=Lax');
+    expect(setCookie).not.toContain('SameSite=Strict');
     expect(setCookie).toContain('Max-Age=31536000');
-    expect(setCookie.startsWith('__Host-glance_session=')).toBe(true);
+    expect(setCookie).toContain('Path=/glance');
+    expect(setCookie.startsWith('glance_session=')).toBe(true);
     const session = cookiePair(login);
+    const token = session.split('=')[1];
+    const legacy = await api('/glance/api/session', { headers: { cookie: `__Host-glance_session=${token}` } });
+    expect(legacy.status).toBe(200);
 
     const created = await withSession('/glance/api/todos', session, {
       method: 'POST',

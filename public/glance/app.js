@@ -73,7 +73,8 @@
     var res = await fetch(path, {
       method: opts.method || 'GET',
       credentials: 'same-origin',
-      headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+      redirect: 'follow',
+      headers: opts.body ? { 'Content-Type': 'application/json', Accept: 'application/json' } : { Accept: 'application/json' },
       body: opts.body ? JSON.stringify(opts.body) : undefined
     });
     var body = {};
@@ -972,14 +973,15 @@
   document.getElementById('login-form').addEventListener('submit', async function (event) {
     event.preventDefault();
     var error = document.getElementById('login-error');
+    var input = document.getElementById('login-password');
+    input.value = input.value.trim();
     error.textContent = '';
     try {
       await api('/glance/api/login', {
         method: 'POST',
-        body: { password: document.getElementById('login-password').value }
+        body: { password: input.value }
       });
-      document.getElementById('login-password').value = '';
-      await bootApp();
+      window.location.replace('/glance/');
     } catch (err) {
       error.textContent = err.message || 'Wrong password';
     }
@@ -1038,8 +1040,8 @@
       await api('/glance/api/password', {
         method: 'POST',
         body: {
-          current: document.getElementById('pw-current').value,
-          next: document.getElementById('pw-next').value
+          current: document.getElementById('pw-current').value.trim(),
+          next: document.getElementById('pw-next').value.trim()
         }
       });
       document.getElementById('pw-current').value = '';
