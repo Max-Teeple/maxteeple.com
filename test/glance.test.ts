@@ -617,6 +617,22 @@ END:VCALENDAR`;
   });
 });
 
+describe('Glance week range', () => {
+  it('returns seven days for a requested week', async () => {
+    const session = await signIn();
+    const week = await withSession('/glance/api/calendar?start=2026-10-11', session);
+    expect(week.status).toBe(200);
+    const body = await week.json() as { days: { date: string; label: string; events: { title: string }[] }[] };
+    expect(body.days.map((day) => day.date)).toEqual([
+      '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17'
+    ]);
+    expect(body.days[0].label).toBe('Sun');
+    expect(body.days[3].label).toBe('Wed');
+    const bad = await withSession('/glance/api/calendar?start=2026-13-40', session);
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe('Google Calendar events', () => {
   it('builds a Basil event and keeps the refresh token off the page', async () => {
     const now = Date.parse('2026-10-15T12:00:00-07:00');

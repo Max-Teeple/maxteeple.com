@@ -75,6 +75,16 @@
     return text.hh + ':' + text.mm;
   }
 
+  function formatRange(event, clock24) {
+    if (!event || event.allDay) return 'All day';
+    var start = clockText(phoenixParts(new Date(event.start)), !!clock24);
+    var end = clockText(phoenixParts(new Date(event.end)), !!clock24);
+    var dash = '–';
+    if (clock24) return start.hh + ':' + start.mm + dash + end.hh + ':' + end.mm;
+    if (start.ap === end.ap) return start.hh + ':' + start.mm + dash + end.hh + ':' + end.mm + ' ' + end.ap;
+    return start.hh + ':' + start.mm + ' ' + start.ap + dash + end.hh + ':' + end.mm + ' ' + end.ap;
+  }
+
   async function api(path, options) {
     var opts = options || {};
     var res = await fetch(path, {
@@ -161,7 +171,7 @@
       bits.push('Low ' + current.low + '°');
     }
     var next = state.calendar && state.calendar.upcoming;
-    if (next) bits.push('Next, ' + next.title + (next.allDay ? '' : ' at ' + formatShort(next.start, state.settings && state.settings.clock24)));
+    if (next) bits.push('Next, ' + next.title + (next.allDay ? '' : ', ' + formatRange(next, state.settings && state.settings.clock24)));
     return bits.join('  ·  ') || 'A quiet day so far.';
   }
 
@@ -319,19 +329,16 @@
           var item = document.createElement('li');
           item.className = 'event' + (event.allDay ? ' all-day' : '');
           item.style.setProperty('--feed', event.color || '#f6f3ec');
-          if (!event.allDay) {
-            var time = document.createElement('span');
-            time.className = 'event-time';
-            time.textContent = formatShort(event.start, clock24);
-            item.appendChild(time);
-          }
+          var time = document.createElement('span');
+          time.className = 'event-time';
+          time.textContent = formatRange(event, clock24);
           var title = document.createElement('span');
           title.className = 'event-title';
           title.textContent = event.title;
           var feed = document.createElement('span');
           feed.className = 'feed-name';
           feed.textContent = event.feed || '';
-          item.append(title, feed);
+          item.append(time, title, feed);
           list.appendChild(item);
         });
         col.append(head, list);
@@ -1179,6 +1186,156 @@
     }
   });
 
+  var weekEl = document.getElementById('week');
+  var weekStartKey = '';
+  var weekTimer = 0;
+  var weekToken = 0;
+
+  function thisSunday() {
+    return weekSunday(phoenixDateKey(new Date()));
+  }
+
+  function weekSunday(key) {
+    var bits = key.split('-').map(Number);
+    var weekday = new Date(Date.UTC(bits[0], bits[1] - 1, bits[2])).getUTCDay();
+    return shiftDateKey(key, -weekday);
+  }
+
+  function weekLabel(days) {
+    if (!days || !days.length) return 'Week';
+    var first = days[0];
+    var last = days[days.length - 1];
+    var month = function (date) {
+      return new Intl.DateTimeFormat('en-US', { timeZone: PHOENIX, month: 'short' }).format(new Date(date + 'T12:00:00-07:00'));
+    };
+    var startMonth = month(first.date);
+    var endMonth = month(last.date);
+    if (startMonth === endMonth) return startMonth + ' ' + first.day + '–' + last.day;
+    return startMonth + ' ' + first.day + ' – ' + endMonth + ' ' + last.day;
+  }
+
+  function bumpWeek() {
+    clearTimeout(weekTimer);
+    if (weekEl.hidden) return;
+    weekTimer = setTimeout(closeWeek, 2 * 60 * 1000);
+  }
+
+  function closeWeek() {
+    weekEl.hidden = true;
+    clearTimeout(weekTimer);
+  }
+
+  function openWeek() {
+    if (state.open) return;
+    weekStartKey = thisSunday();
+    weekEl.hidden = false;
+    bumpWeek();
+    loadWeek();
+  }
+
+  async function loadWeek() {
+    var token = ++weekToken;
+    var root = document.getElementById('week-days');
+    var title = document.getElementById('week-title');
+    title.textContent = 'Loading…';
+    root.replaceChildren();
+    try {
+      var body = await api('/glance/api/calendar?start=' + encodeURIComponent(weekStartKey));
+      if (token !== weekToken) return;
+      state.week = body;
+      renderWeek();
+    } catch (err) {
+      if (token !== weekToken) return;
+      title.textContent = 'Week';
+      var note = document.createElement('p');
+      note.className = 'week-status';
+      note.textContent = err.message || 'That week did not load.';
+      root.appendChild(note);
+    }
+  }
+
+  function renderWeek() {
+    var body = state.week;
+    var root = document.getElementById('week-days');
+    var title = document.getElementById('week-title');
+    if (!body || !body.days) return;
+    title.textContent = weekLabel(body.days);
+    root.replaceChildren();
+    var clock24 = !!(state.settings && state.settings.clock24);
+    var today = phoenixDateKey(new Date());
+    body.days.forEach(function (day) {
+      var col = document.createElement('article');
+      col.className = 'day' + (day.date === today ? ' is-today' : '');
+      var head = document.createElement('div');
+      head.className = 'day-head';
+      var name = document.createElement('strong');
+      name.textContent = day.label;
+      var num = document.createElement('em');
+      num.textContent = String(day.day);
+      head.append(name, num);
+      var list = document.createElement('ol');
+      list.className = 'events';
+      if (!day.events.length) {
+        var quiet = document.createElement('p');
+        quiet.className = 'quiet';
+        quiet.textContent = 'Open';
+        col.append(head, quiet);
+      } else {
+        day.events.forEach(function (event) {
+          var item = document.createElement('li');
+          item.className = 'event' + (event.allDay ? ' all-day' : '');
+          item.style.setProperty('--feed', event.color || '#f6f3ec');
+          var time = document.createElement('span');
+          time.className = 'event-time';
+          time.textContent = formatRange(event, clock24);
+          var label = document.createElement('span');
+          label.className = 'event-title';
+          label.textContent = event.title;
+          var feed = document.createElement('span');
+          feed.className = 'feed-name';
+          feed.textContent = event.feed || '';
+          item.append(time, label, feed);
+          list.appendChild(item);
+        });
+        col.append(head, list);
+      }
+      root.appendChild(col);
+    });
+  }
+
+  function moveWeek(delta) {
+    weekStartKey = shiftDateKey(weekStartKey || thisSunday(), delta * 7);
+    bumpWeek();
+    loadWeek();
+  }
+
+  document.getElementById('week-open').addEventListener('click', openWeek);
+  document.getElementById('week-back').addEventListener('click', closeWeek);
+  document.getElementById('week-prev').addEventListener('click', function () { moveWeek(-1); });
+  document.getElementById('week-next').addEventListener('click', function () { moveWeek(1); });
+  document.getElementById('week-this').addEventListener('click', function () {
+    weekStartKey = thisSunday();
+    bumpWeek();
+    loadWeek();
+  });
+  var weekX = 0;
+  var weekY = 0;
+  weekEl.addEventListener('pointerdown', function (event) {
+    bumpWeek();
+    weekX = 0;
+    if (event.target.closest('button')) return;
+    weekX = event.clientX;
+    weekY = event.clientY;
+  });
+  weekEl.addEventListener('pointerup', function (event) {
+    if (!weekX) return;
+    var dx = event.clientX - weekX;
+    var dy = event.clientY - weekY;
+    weekX = 0;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy)) return;
+    moveWeek(dx < 0 ? 1 : -1);
+  });
+
   document.getElementById('layout-next').addEventListener('click', function () { cycleLayout(1); });
   document.getElementById('gear').addEventListener('click', openSettings);
   document.getElementById('settings-close').addEventListener('click', closeSettings);
@@ -1291,6 +1448,12 @@
     if (event.altKey || event.metaKey || event.ctrlKey) return;
     var typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
     if (typing || state.open) return;
+    if (!weekEl.hidden) {
+      if (event.key === 'ArrowRight') { event.preventDefault(); moveWeek(1); }
+      if (event.key === 'ArrowLeft') { event.preventDefault(); moveWeek(-1); }
+      if (event.key === 'Escape') closeWeek();
+      return;
+    }
     if (event.key === 'ArrowRight') cycleLayout(1);
     if (event.key === 'ArrowLeft') cycleLayout(-1);
   });

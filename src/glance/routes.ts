@@ -17,7 +17,7 @@ import {
   type GlanceTheme
 } from './defaults';
 import { dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, type AgendaEvent, type FeedMeta } from './ics';
-import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, zonedToUtc } from './time';
+import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, windowFrom, zonedToUtc } from './time';
 import {
   familyPhrase,
   geocodeAddress,
@@ -283,16 +283,17 @@ glance.get('/weather', async (c) => {
 
 glance.get('/calendar', async (c) => {
   const db = c.env.LIVEVIEW_DB;
+  const startDate = calendarStart(c.req.query('start'));
   const feeds = (await db
     .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
     .all<FeedRow>()
   ).results.filter((feed) => feed.url);
   c.header('Cache-Control', 'no-store');
   if (!feeds.length) {
-    return c.json(await withAddedEvents(db, present([], Date.now(), [])));
+    return c.json(await withAddedEvents(db, present([], Date.now(), [], startDate)));
   }
-  const key = `glance:cal:v2:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
-  const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds));
+  const key = `glance:cal:v3:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
+  const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds, startDate));
   return c.json(await withAddedEvents(c.env.LIVEVIEW_DB, payload));
 });
 
@@ -740,9 +741,26 @@ function copyResponse(response: Response, extra: Record<string, string>): Respon
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-async function buildCalendar(feeds: FeedRow[]) {
+function calendarStart(raw: string | undefined): string | null {
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new HttpError(400, 'Pick a week');
+  const [y, m, d] = raw.split('-').map(Number);
+  if (phoenixDate(zonedToUtc(y, m, d, 12, 0, 0, PHOENIX)) !== raw) throw new HttpError(400, 'Pick a week');
+  const today = phoenixDate(Date.now());
+  const [ty, tm, td] = today.split('-').map(Number);
+  const min = windowFrom(dateKeyFromParts(addDays(ty, tm, td, -400)), 1).dates[0];
+  const max = windowFrom(dateKeyFromParts(addDays(ty, tm, td, 400)), 1).dates[0];
+  if (raw < min || raw > max) throw new HttpError(400, 'That week is too far away');
+  return raw;
+}
+
+function dateKeyFromParts(value: { y: number; m: number; d: number }): string {
+  return `${value.y}-${String(value.m).padStart(2, '0')}-${String(value.d).padStart(2, '0')}`;
+}
+
+async function buildCalendar(feeds: FeedRow[], startDate: string | null) {
   const now = Date.now();
-  const window = phoenixWindow(now, 8);
+  const window = startDate ? windowFrom(startDate, 7) : phoenixWindow(now, 8);
   const status: { id: string; label: string; color: string; ok: boolean }[] = [];
   const events: AgendaEvent[] = [];
   await Promise.all(
@@ -758,11 +776,11 @@ async function buildCalendar(feeds: FeedRow[]) {
       }
     })
   );
-  return present(maskWorkEvents(dedupeWorkMirrors(events)), now, status);
+  return present(maskWorkEvents(dedupeWorkMirrors(events)), now, status, startDate);
 }
 
-function present(events: AgendaEvent[], now: number, feeds: { id: string; label: string; color: string; ok: boolean }[]) {
-  const window = phoenixWindow(now, 7);
+function present(events: AgendaEvent[], now: number, feeds: { id: string; label: string; color: string; ok: boolean }[], startDate: string | null = null) {
+  const window = startDate ? windowFrom(startDate, 7) : phoenixWindow(now, 7);
   const today = phoenixDate(now);
   const days = window.dates.map((date, index) => {
     const [y, m, d] = date.split('-').map(Number);
@@ -784,7 +802,7 @@ function present(events: AgendaEvent[], now: number, feeds: { id: string; label:
       .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start - b.start);
     return {
       date,
-      label: date === today ? 'Today' : index === 1 ? 'Tomorrow' : short,
+      label: !startDate && date === today ? 'Today' : !startDate && index === 1 ? 'Tomorrow' : short,
       weekday,
       day: d,
       events: items.map(serializeEvent)

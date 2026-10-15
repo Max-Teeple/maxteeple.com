@@ -162,13 +162,18 @@ export function dateFromWeekStart(weekStartDay: number, day: number, wkst: numbe
 
 export function phoenixWindow(now: number, days: number): { start: number; end: number; dates: string[] } {
   const p = partsInZone(now, PHOENIX);
+  return windowFrom(dateKey(p.y, p.m, p.d), days);
+}
+
+export function windowFrom(startDate: string, days: number): { start: number; end: number; dates: string[] } {
+  const [y, m, d] = startDate.split('-').map(Number);
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
-    const local = addDays(p.y, p.m, p.d, i);
+    const local = addDays(y, m, d, i);
     dates.push(dateKey(local.y, local.m, local.d));
   }
-  const start = zonedToUtc(p.y, p.m, p.d, 0, 0, 0, PHOENIX);
-  const endLocal = addDays(p.y, p.m, p.d, days);
+  const start = zonedToUtc(y, m, d, 0, 0, 0, PHOENIX);
+  const endLocal = addDays(y, m, d, days);
   const end = zonedToUtc(endLocal.y, endLocal.m, endLocal.d, 0, 0, 0, PHOENIX);
   return { start, end, dates };
 }
