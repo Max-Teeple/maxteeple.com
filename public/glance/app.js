@@ -788,7 +788,44 @@
     renderNextLine();
   }
 
+  var addSaving = false;
+
+  function resetAddForm(form) {
+    var today = phoenixDateKey(new Date());
+    var title = form.querySelector('#add-title');
+    if (title) title.value = '';
+    var date = form.querySelector('#add-date');
+    if (date) date.value = today;
+    var start = form.querySelector('#add-start');
+    if (start) start.value = defaultStart();
+    var duration = form.querySelector('#add-duration');
+    if (duration) duration.value = '60';
+    var end = form.querySelector('#add-end');
+    if (end) {
+      end.value = '';
+      end.hidden = true;
+    }
+    var box = form.querySelector('#add-allday');
+    if (box) box.checked = false;
+    var times = form.querySelector('.add-times');
+    if (times) times.hidden = false;
+    form.querySelectorAll('.add-day').forEach(function (item) {
+      item.setAttribute('aria-pressed', item.dataset.day === 'today' ? 'true' : 'false');
+    });
+  }
+
+  function setAddBusy(form, busy) {
+    var button = form.querySelector('.add-go');
+    form.classList.toggle('is-busy', busy);
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = busy ? 'Saving' : 'Add';
+    if (busy) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+  }
+
   async function submitEvent(form) {
+    if (addSaving || form.classList.contains('is-busy')) return;
     var title = document.getElementById('add-title').value.trim();
     var status = form.querySelector('.add-note');
     if (!title) {
@@ -811,7 +848,8 @@
       allDay: allDay,
       start: document.getElementById('add-start').value,
       durationMinutes: duration === 'end' ? undefined : Number(duration),
-      end: duration === 'end' ? document.getElementById('add-end').value : ''
+      end: duration === 'end' ? document.getElementById('add-end').value : '',
+      idempotencyKey: crypto.randomUUID()
     };
     var optimistic = {
       title: title,
@@ -824,25 +862,25 @@
       color: '#7dcea0'
     };
     if (allDay) optimistic.end = shiftDateKey(payload.date, 1) + 'T00:00:00-07:00';
+    addSaving = true;
+    setAddBusy(form, true);
     status.textContent = '';
     insertOptimistic(optimistic);
-    form.classList.add('is-busy');
     try {
       var created = await api('/glance/api/events', { method: 'POST', body: payload });
       if (created.event) {
         removeOptimistic(optimistic);
         insertOptimistic(created.event);
       }
-      document.getElementById('add-title').value = '';
-      state.googleNotice = 'Added';
-      await refreshCalendar();
-      state.googleNotice = '';
+      resetAddForm(form);
+      status.textContent = '';
+      try { await refreshCalendar(); } catch (err) { /* the event is already saved */ }
     } catch (err) {
       removeOptimistic(optimistic);
       status.textContent = err.message || 'That event was not added';
     }
-    var current = document.querySelector('.add-card form');
-    if (current) current.classList.remove('is-busy');
+    addSaving = false;
+    if (form.isConnected) setAddBusy(form, false);
   }
 
   function renderAll() {

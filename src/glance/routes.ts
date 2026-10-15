@@ -370,24 +370,62 @@ glance.post('/events', async (c) => {
   } catch (error) {
     throw new HttpError(400, error instanceof Error ? error.message : 'Check that event');
   }
+  const idem = eventIdempotencyKey(body.idempotencyKey);
   const db = c.env.LIVEVIEW_DB;
+  const idemId = idem ? `event:idem:${idem}` : '';
+  if (idemId) {
+    const replay = await savedEvent(db, idemId);
+    if (replay) {
+      c.header('Cache-Control', 'no-store');
+      return c.json({ ok: true, ...replay, duplicate: true });
+    }
+  }
+  const recent = await db
+    .prepare(
+      `SELECT id FROM glance_added_events
+       WHERE title = ? AND start_ms = ? AND end_ms = ? AND created_at >= ?
+       LIMIT 1`
+    )
+    .bind(title, range.startMs, range.endMs, new Date(Date.now() - EVENT_DEDUPE_MS).toISOString())
+    .first<{ id: string }>();
+  if (recent) throw new HttpError(409, 'That event was just added');
+  const fingerprint = `event:dup:${(await sha256Hex(`${title}\n${range.startMs}\n${range.endMs}`)).slice(0, 40)}`;
+  const claimed = await claimEventSlot(db, fingerprint, Date.now() + EVENT_DEDUPE_MS);
+  if (!claimed) throw new HttpError(409, 'That event was just added');
+  if (idemId) {
+    const idemClaimed = await claimEventSlot(db, idemId, Date.now() + EVENT_IDEM_MS);
+    if (!idemClaimed) {
+      const replay = await savedEvent(db, idemId);
+      await releaseEventSlot(db, fingerprint);
+      if (replay) {
+        c.header('Cache-Control', 'no-store');
+        return c.json({ ok: true, ...replay, duplicate: true });
+      }
+      throw new HttpError(409, 'That event is already being added');
+    }
+  }
   const settings = await loadSettings(db);
   const creds = await googleCreds(c.env, settings);
   const key = await tokenKey(c.env);
   const refresh = await openSecret(settings.google_refresh_token, key);
   if (!creds || !refresh || settings.google_account.toLowerCase() !== GOOGLE_ACCOUNT) {
+    await releaseEventSlot(db, fingerprint);
+    if (idemId) await releaseEventSlot(db, idemId);
     throw new HttpError(400, 'Connect Google to add events');
   }
+  const allDay = boolOf(body.allDay);
   let googleId = '';
   try {
     const access = await googleAccessToken(creds, refresh);
     googleId = await insertGoogleEvent(access, googleEventBody({
       title,
-      allDay: boolOf(body.allDay),
+      allDay,
       startMs: range.startMs,
       endMs: range.endMs
     }));
   } catch (error) {
+    await releaseEventSlot(db, fingerprint);
+    if (idemId) await releaseEventSlot(db, idemId);
     const message = error instanceof Error ? error.message : '';
     if (message === 'reconnect') {
       await db.prepare(`UPDATE glance_settings SET google_refresh_token = '', google_account = '' WHERE id = 'default'`).run();
@@ -396,7 +434,6 @@ glance.post('/events', async (c) => {
     console.error('[glance] google event', scrub(message || 'error'));
     throw new HttpError(502, 'Google Calendar did not accept that event');
   }
-  const allDay = boolOf(body.allDay);
   const color = await personalColor(db);
   await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
   await forgetPrefix('glance:cal:');
@@ -405,8 +442,12 @@ glance.post('/events', async (c) => {
     source: 'glance' as const
   };
   const notify = await notifyGlanceEvent(c.env, settings, event);
+  const save = { event, googleId, notify };
+  const stored = JSON.stringify(save);
+  await storeEventSlot(db, fingerprint, stored, Date.now() + EVENT_DEDUPE_MS);
+  if (idemId) await storeEventSlot(db, idemId, stored, Date.now() + EVENT_IDEM_MS);
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, event, googleId, notify });
+  return c.json({ ok: true, ...save });
 });
 
 glance.delete('/events/:id', async (c) => {
@@ -1751,6 +1792,65 @@ function glanceEvent(input: { title: string; allDay: boolean; startMs: number; e
     color: input.color,
     date: phoenixDate(input.startMs)
   };
+}
+
+const EVENT_DEDUPE_MS = 60_000;
+const EVENT_IDEM_MS = 10 * 60_000;
+
+function eventIdempotencyKey(value: unknown): string {
+  if (value == null || value === '') return '';
+  const key = String(value).trim();
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) throw new HttpError(400, 'That event could not be saved');
+  return key;
+}
+
+type StoredEvent = {
+  event: ReturnType<typeof glanceEvent> & { source: 'glance' };
+  googleId: string;
+  notify: NotifyResult;
+};
+
+async function savedEvent(db: D1Database, id: string): Promise<StoredEvent | null> {
+  const row = await db
+    .prepare(`SELECT value, expires_at FROM glance_cache WHERE id = ?`)
+    .bind(id)
+    .first<{ value: string; expires_at: number }>();
+  if (!row || row.expires_at <= Date.now() || row.value === 'pending') return null;
+  try {
+    const parsed = JSON.parse(row.value) as StoredEvent;
+    if (!parsed?.event || typeof parsed.googleId !== 'string' || !parsed.notify) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** One writer wins. A pending or fresh row means this submission should not create another event. */
+async function claimEventSlot(db: D1Database, id: string, until: number): Promise<boolean> {
+  const inserted = await db
+    .prepare(`INSERT INTO glance_cache (id, value, expires_at) VALUES (?, 'pending', ?) ON CONFLICT(id) DO NOTHING`)
+    .bind(id, until)
+    .run();
+  if ((inserted.meta?.changes || 0) > 0) return true;
+  const taken = await db
+    .prepare(`UPDATE glance_cache SET value = 'pending', expires_at = ? WHERE id = ? AND expires_at <= ?`)
+    .bind(until, id, Date.now())
+    .run();
+  return (taken.meta?.changes || 0) > 0;
+}
+
+async function releaseEventSlot(db: D1Database, id: string): Promise<void> {
+  await db.prepare(`DELETE FROM glance_cache WHERE id = ? AND value = 'pending'`).bind(id).run();
+}
+
+async function storeEventSlot(db: D1Database, id: string, value: string, until: number): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO glance_cache (id, value, expires_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`
+    )
+    .bind(id, value, until)
+    .run();
 }
 
 async function rememberAdded(

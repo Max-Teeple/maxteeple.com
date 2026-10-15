@@ -827,7 +827,7 @@ describe('Google Calendar events', () => {
       `UPDATE glance_settings SET google_refresh_token = ?, google_account = ? WHERE id = 'default'`
     ).bind(await sealSecret('refresh-token-value', material), 'max.teeple@gmail.com').run();
 
-    const seen = { authorization: '', payload: '' };
+    const seen = { authorization: '', payload: '', notifies: 0, googleWrites: 0 };
     fetchMock.activate();
     fetchMock.disableNetConnect();
     try {
@@ -838,17 +838,28 @@ describe('Google Calendar events', () => {
       fetchMock.get('https://www.googleapis.com').intercept({
         path: '/calendar/v3/calendars/primary/events?sendUpdates=none',
         method: 'POST'
-      }).reply(200, { id: 'testeventid1' });
+      }).reply(() => {
+        seen.googleWrites += 1;
+        return { statusCode: 200, data: '{"id":"testeventid1"}', responseOptions: {} };
+      });
       fetchMock.get('https://notify.example').intercept({ path: '/hook', method: 'POST' }).reply((opts: { headers?: unknown; body?: unknown }) => {
+        seen.notifies += 1;
         const headerText = JSON.stringify(opts.headers);
         seen.authorization = headerText.match(/Bearer [^"\\]+/)?.[0] || '';
         seen.payload = typeof opts.body === 'string' ? opts.body : new TextDecoder().decode(opts.body as Uint8Array);
         return { statusCode: 200, data: '{"ok":true}', responseOptions: {} };
       });
+      const eventBody = {
+        title: 'Glance notify test',
+        date: '2026-10-15',
+        start: '16:00',
+        durationMinutes: 5,
+        idempotencyKey: 'submit-key-1'
+      };
       const created = await withSession('/glance/api/events', session, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Glance notify test', date: '2026-10-15', start: '16:00', durationMinutes: 5 })
+        body: JSON.stringify(eventBody)
       });
       expect(created.status).toBe(200);
       const createdBody = await created.json() as {
@@ -871,6 +882,31 @@ describe('Google Calendar events', () => {
       expect(payload.start.startsWith('2026-10-15T16:00:00')).toBe(true);
       expect(payload.end.startsWith('2026-10-15T16:05:00')).toBe(true);
       expect(Object.keys(payload).sort()).toEqual(['allDay', 'end', 'source', 'start', 'title']);
+      expect(seen.notifies).toBe(1);
+      expect(seen.googleWrites).toBe(1);
+
+      const replay = await withSession('/glance/api/events', session, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventBody)
+      });
+      expect(replay.status).toBe(200);
+      const replayBody = await replay.json() as { duplicate?: boolean; googleId: string; notify: { attempted: boolean } };
+      expect(replayBody.duplicate).toBe(true);
+      expect(replayBody.googleId).toBe('testeventid1');
+      expect(replayBody.notify.attempted).toBe(true);
+      expect(seen.notifies).toBe(1);
+      expect(seen.googleWrites).toBe(1);
+
+      const duplicate = await withSession('/glance/api/events', session, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...eventBody, idempotencyKey: 'submit-key-2' })
+      });
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json() as { message: string }).message).toBe('That event was just added');
+      expect(seen.notifies).toBe(1);
+      expect(seen.googleWrites).toBe(1);
 
       fetchMock.get('https://oauth2.googleapis.com').intercept({ path: '/token', method: 'POST' }).reply(200, {
         access_token: 'ya29.test-access',
@@ -926,5 +962,9 @@ describe('Glance KV budget', () => {
     expect(source).toContain('VERSION_POLL_MS = 5 * 60 * 1000');
     expect(source).toContain('DASHBOARD_POLL_MS = 3 * 60 * 1000');
     expect(source).toContain("fetch('/glance/api/version'");
+    expect(source).toContain('addSaving');
+    expect(source).toContain("button.textContent = busy ? 'Saving' : 'Add'");
+    expect(source).toContain('idempotencyKey: crypto.randomUUID()');
+    expect(source).toContain('function resetAddForm');
   });
 });
