@@ -282,6 +282,8 @@ describe('LiveView on maxteeple.com', () => {
       body: JSON.stringify({ email: badEmail, password: 'not-the-password' })
     });
     expect(limited.response.status).toBe(429);
+    const kv = await env.LIVEVIEW_MEDIA.list();
+    expect(kv.keys.map((key) => key.name).filter((name) => name.startsWith('login-fail:'))).toEqual([]);
 
     const reset = await json('/liveview/admin/reset-password', {
       method: 'POST',

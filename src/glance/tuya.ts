@@ -87,16 +87,27 @@ function hex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function clearTuyaToken(accessId: string) {
+export async function clearTuyaToken(db: D1Database, accessId: string) {
   memoryTokens.delete(tokenKey(accessId));
+  if (!accessId) return;
+  try {
+    await db.prepare(`DELETE FROM glance_cache WHERE id = ?`).bind(await tokenRowId(accessId)).run();
+  } catch {
+    /* The in-memory token is already gone. */
+  }
+}
+
+async function tokenRowId(accessId: string): Promise<string> {
+  return `tuya:token:${await sha256Hex(accessId)}`;
 }
 
 function tokenKey(accessId: string): string {
   return accessId;
 }
 
-export async function listLights(creds: TuyaCreds, kv: KVNamespace): Promise<LightDevice[]> {
-  const token = await getToken(creds, kv);
+/** Device list and switch status. This path only sends GET requests. */
+export async function listLights(creds: TuyaCreds, db: D1Database): Promise<LightDevice[]> {
+  const token = await getToken(creds, db);
   const devices = await discoverDevices(creds, token);
   const unique = new Map<string, RawDevice>();
   for (const device of devices) {
@@ -106,7 +117,7 @@ export async function listLights(creds: TuyaCreds, kv: KVNamespace): Promise<Lig
   const withStatus = await Promise.all(
     listed.map(async (device) => {
       try {
-        const status = await readStatus(creds, token, device.id, kv);
+        const status = await readStatus(creds, token, device.id);
         return { ...device, ...status };
       } catch {
         return device;
@@ -122,27 +133,32 @@ export async function listLights(creds: TuyaCreds, kv: KVNamespace): Promise<Lig
   }));
 }
 
-export async function setLight(creds: TuyaCreds, kv: KVNamespace, deviceId: string, on: boolean): Promise<void> {
+export async function setLight(creds: TuyaCreds, db: D1Database, deviceId: string, on: boolean): Promise<void> {
   if (!/^[A-Za-z0-9]{6,40}$/.test(deviceId)) throw new TuyaError(0, 'Unknown plug');
-  const token = await getToken(creds, kv);
-  const current = await readStatus(creds, token, deviceId, kv);
+  const token = await getToken(creds, db);
+  const current = await readStatus(creds, token, deviceId);
   const code = current.code || 'switch_1';
   const body = JSON.stringify({ commands: [{ code, value: on }] });
   await tuyaFetch(creds, token.accessToken, 'POST', `/v1.0/devices/${deviceId}/commands`, body);
 }
 
-async function getToken(creds: TuyaCreds, kv: KVNamespace): Promise<Token> {
+async function getToken(creds: TuyaCreds, db: D1Database): Promise<Token> {
   const cached = memoryTokens.get(tokenKey(creds.accessId));
   if (cached && cached.expireAt > Date.now() + 30_000) return cached;
   try {
-    const stored = await kv.get(`glance:tuya:token:${await sha256Hex(creds.accessId)}`, 'json');
-    const row = stored as Token | null;
-    if (row?.accessToken && row.expireAt > Date.now() + 30_000) {
-      memoryTokens.set(tokenKey(creds.accessId), row);
-      return row;
+    const row = await db
+      .prepare(`SELECT value, expires_at FROM glance_cache WHERE id = ?`)
+      .bind(await tokenRowId(creds.accessId))
+      .first<{ value: string; expires_at: number }>();
+    if (row?.value && row.expires_at > Date.now() + 30_000) {
+      const stored = JSON.parse(row.value) as Token;
+      if (stored?.accessToken && stored.expireAt > Date.now() + 30_000) {
+        memoryTokens.set(tokenKey(creds.accessId), stored);
+        return stored;
+      }
     }
   } catch {
-    /* KV is only a cache. */
+    /* D1 is only a shared cache. A fresh token still works. */
   }
   const envelope = await tuyaFetch(creds, '', 'GET', '/v1.0/token?grant_type=1', '');
   const result = (envelope.result || {}) as Record<string, unknown>;
@@ -156,8 +172,13 @@ async function getToken(creds: TuyaCreds, kv: KVNamespace): Promise<Token> {
   };
   memoryTokens.set(tokenKey(creds.accessId), token);
   try {
-    const ttl = Math.max(60, Math.floor((token.expireAt - Date.now()) / 1000));
-    await kv.put(`glance:tuya:token:${await sha256Hex(creds.accessId)}`, JSON.stringify(token), { expirationTtl: ttl });
+    await db
+      .prepare(
+        `INSERT INTO glance_cache (id, value, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`
+      )
+      .bind(await tokenRowId(creds.accessId), JSON.stringify(token), token.expireAt)
+      .run();
   } catch {
     /* Memory cache still covers this isolate. */
   }
@@ -209,8 +230,7 @@ async function discoverDevices(creds: TuyaCreds, token: Token): Promise<RawDevic
 async function readStatus(
   creds: TuyaCreds,
   token: Token,
-  deviceId: string,
-  _kv: KVNamespace
+  deviceId: string
 ): Promise<{ on: boolean | null; code: string | null }> {
   const envelope = await tuyaFetch(creds, token.accessToken, 'GET', `/v1.0/devices/${deviceId}/status`, '');
   const rows = Array.isArray(envelope.result) ? envelope.result : [];
