@@ -9,6 +9,7 @@ import layoutSql from '../migrations/0008_glance_layout.sql';
 import googleSql from '../migrations/0009_glance_google.sql';
 import notifySql from '../migrations/0010_glance_event_notify.sql';
 import notifyKeySql from '../migrations/0011_glance_event_notify_key.sql';
+import cacheSql from '../migrations/0012_glance_cache.sql';
 import { GLANCE_INITIAL_PASSWORD_HASH } from './glance/defaults';
 
 function statements(sql: string): string[] {
@@ -22,11 +23,38 @@ function statements(sql: string): string[] {
     .filter(Boolean);
 }
 
+const LATEST_MIGRATION = '0012_glance_cache';
+
 /**
  * Create tables if they are missing, then apply additive migrations.
- * Checked on every request so a fresh database still self-initializes.
+ * Once the latest migration is recorded, later requests do a single primary-key
+ * read instead of walking every migration.
  */
+let migrating: Promise<void> | null = null;
+
 export async function ensureSchema(db: D1Database): Promise<void> {
+  if (await latestApplied(db)) return;
+  if (!migrating) {
+    migrating = ensureSchemaOnce(db).finally(() => {
+      migrating = null;
+    });
+  }
+  await migrating;
+}
+
+async function latestApplied(db: D1Database): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare(`SELECT id FROM schema_migrations WHERE id = ?`)
+      .bind(LATEST_MIGRATION)
+      .first<{ id: string }>();
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureSchemaOnce(db: D1Database): Promise<void> {
   const existing = await db
     .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'courses'`)
     .first<{ name: string }>();
@@ -59,6 +87,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   await applyMigration(db, '0009_glance_google', googleSql);
   await applyMigration(db, '0010_glance_event_notify', notifySql);
   await applyMigration(db, '0011_glance_event_notify_key', notifyKeySql);
+  await applyMigration(db, '0012_glance_cache', cacheSql);
   await db
     .prepare(
       `INSERT OR IGNORE INTO glance_settings (id, password_hash, updated_at) VALUES ('default', ?, ?)`

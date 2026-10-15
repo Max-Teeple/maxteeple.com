@@ -1605,7 +1605,12 @@
     }
   });
   window.addEventListener('focus', function () { checkVersion(); });
-  setInterval(checkVersion, 60 * 1000);
+  // The board stays open on the iPad. Version still reloads after a deploy,
+  // and waking the screen checks immediately. The slower timer avoids a
+  // request every minute while the page is already visible.
+  var VERSION_POLL_MS = 5 * 60 * 1000;
+  var DASHBOARD_POLL_MS = 3 * 60 * 1000;
+  setInterval(checkVersion, VERSION_POLL_MS);
   checkVersion();
 
   async function bootApp() {
@@ -1635,7 +1640,7 @@
   scheduleClock();
   setInterval(function () {
     if (!board.hidden) refresh().catch(function () {});
-  }, 60 * 1000);
+  }, DASHBOARD_POLL_MS);
 
   window.addEventListener('glance-fit', function (event) {
     var detail = event.detail || {};

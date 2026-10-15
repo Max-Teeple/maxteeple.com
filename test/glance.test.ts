@@ -894,3 +894,37 @@ describe('Google Calendar events', () => {
     }
   });
 });
+
+describe('Glance KV budget', () => {
+  it('serves the polling routes without Workers KV', async () => {
+    const session = await signIn();
+    const paths = [
+      '/glance/api/dashboard',
+      '/glance/api/dashboard',
+      '/glance/api/calendar',
+      '/glance/api/weather',
+      '/glance/api/lights',
+      '/glance/api/location',
+      '/glance/api/session'
+    ];
+    for (const path of paths) {
+      const response = await withSession(path, session);
+      expect(response.status, path).toBe(200);
+    }
+    const version = await api('/glance/api/version');
+    expect(version.status).toBe(200);
+    const listed = await env.LIVEVIEW_MEDIA.list();
+    const names = listed.keys.map((key) => key.name);
+    expect(names.filter((name) => name.startsWith('glance:') || name.startsWith('login-fail:'))).toEqual([]);
+    const table = await env.LIVEVIEW_DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'glance_cache'`
+    ).first<{ name: string }>();
+    expect(table?.name).toBe('glance_cache');
+    const script = await api('/glance/app.js');
+    expect(script.status).toBe(200);
+    const source = await script.text();
+    expect(source).toContain('VERSION_POLL_MS = 5 * 60 * 1000');
+    expect(source).toContain('DASHBOARD_POLL_MS = 3 * 60 * 1000');
+    expect(source).toContain("fetch('/glance/api/version'");
+  });
+});

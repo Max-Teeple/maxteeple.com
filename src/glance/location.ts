@@ -1,11 +1,12 @@
+import { remember } from './cache';
+
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const OSRM = 'https://router.project-osrm.org/route/v1/driving';
 const USER_AGENT = 'Glance/1.0 (https://maxteeple.com/glance/)';
+const ETA_TTL_SEC = 15 * 60;
 
 export type Place = { id: string; name: string; lat: number; lon: number; radiusM: number; home: boolean };
 export type Fix = { lat: number; lon: number; acc: number | null; vel: number | null; regions: string[]; recordedAt: number };
-
-const etaMemory = new Map<string, { at: number; minutes: number }>();
 
 export function haversineMeters(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const r = 6371000;
@@ -93,7 +94,6 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; lo
 }
 
 export async function minutesFromHome(
-  kv: KVNamespace,
   personId: string,
   from: { lat: number; lon: number },
   home: { lat: number; lon: number }
@@ -101,42 +101,24 @@ export async function minutesFromHome(
   const distance = haversineMeters(from.lat, from.lon, home.lat, home.lon);
   if (distance < 80) return 0;
   const key = `glance:eta:${personId}:${from.lat.toFixed(3)}:${from.lon.toFixed(3)}:${home.lat.toFixed(3)}:${home.lon.toFixed(3)}`;
-  const hit = etaMemory.get(key);
-  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.minutes;
-  try {
-    const stored = await kv.get(key);
-    if (stored) {
-      const minutes = Number(stored);
-      if (Number.isFinite(minutes)) {
-        etaMemory.set(key, { at: Date.now(), minutes });
-        return minutes;
+  return remember(key, ETA_TTL_SEC, async () => {
+    let minutes = estimateMinutes(distance);
+    try {
+      const url = `${OSRM}/${home.lon},${home.lat};${from.lon},${from.lat}?overview=false`;
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (response.ok) {
+        const body = (await response.json()) as { routes?: { duration?: number }[] };
+        const duration = body.routes?.[0]?.duration;
+        if (typeof duration === 'number' && duration >= 0) minutes = Math.max(1, Math.round(duration / 60));
       }
+    } catch {
+      /* Straight-line estimate still gives a number. */
     }
-  } catch {
-    /* KV is only a cache. */
-  }
-  let minutes = estimateMinutes(distance);
-  try {
-    const url = `${OSRM}/${home.lon},${home.lat};${from.lon},${from.lat}?overview=false`;
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (response.ok) {
-      const body = (await response.json()) as { routes?: { duration?: number }[] };
-      const duration = body.routes?.[0]?.duration;
-      if (typeof duration === 'number' && duration >= 0) minutes = Math.max(1, Math.round(duration / 60));
-    }
-  } catch {
-    /* Straight-line estimate still gives a number. */
-  }
-  etaMemory.set(key, { at: Date.now(), minutes });
-  try {
-    await kv.put(key, String(minutes), { expirationTtl: 300 });
-  } catch {
-    /* Memory cache still covers this isolate. */
-  }
-  return minutes;
+    return minutes;
+  });
 }
 
 export function estimateMinutes(meters: number): number {

@@ -31,6 +31,7 @@ import {
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
+import { forgetPrefix, remember } from './cache';
 import {
   GOOGLE_ACCOUNT,
   cleanEventTitle,
@@ -88,7 +89,12 @@ type TodoRow = {
 
 type Widgets = typeof DEFAULT_WIDGETS;
 
-const memory = new Map<string, { at: number; raw: string }>();
+const googleAccess = new Map<string, { at: number; raw: string }>();
+const WEATHER_TTL_SEC = 15 * 60;
+const CALENDAR_TTL_SEC = 150;
+const LIGHTS_TTL_SEC = 150;
+let locationsPurgedAt = 0;
+let addedPurgedAt = 0;
 
 const CSP = [
   "default-src 'self'",
@@ -105,7 +111,7 @@ const CSP = [
 const glance = new Hono<GlanceEnv>();
 
 glance.use('*', async (c, next) => {
-  await ensureSchema(c.env.LIVEVIEW_DB);
+  if (c.req.path !== '/version') await ensureSchema(c.env.LIVEVIEW_DB);
   await next();
 });
 
@@ -159,17 +165,12 @@ glance.use('*', async (c, next) => {
     if (c.req.path === '/google/callback') return c.redirect('/glance/?google=login');
     return c.json({ ok: false, message: 'Login required' }, 401);
   }
-  const tokenHash = await sha256Hex(token);
-  const row = await c.env.LIVEVIEW_DB.prepare(
-    `SELECT id, expires_at FROM glance_sessions WHERE token_hash = ?`
-  )
-    .bind(tokenHash)
-    .first<{ id: string; expires_at: string }>();
-  if (!row || Date.parse(row.expires_at) <= Date.now()) {
+  const session = await readGlanceSession(c.env.LIVEVIEW_DB, token);
+  if (!session) {
     if (c.req.path === '/google/callback') return c.redirect('/glance/?google=login');
     return c.json({ ok: false, message: 'Login required' }, 401);
   }
-  c.set('sessionId', row.id);
+  c.set('sessionId', session.id);
   await next();
 });
 
@@ -207,8 +208,8 @@ glance.put('/settings', async (c) => {
   const tuyaAccessId = secretField(body.tuyaAccessId, current.tuya_access_id);
   const tuyaAccessSecret = secretField(body.tuyaAccessSecret, current.tuya_access_secret);
   if (tuyaAccessId !== current.tuya_access_id || tuyaAccessSecret !== current.tuya_access_secret) {
-    clearTuyaToken(current.tuya_access_id);
-    clearTuyaToken(tuyaAccessId);
+    await clearTuyaToken(db, current.tuya_access_id);
+    await clearTuyaToken(db, tuyaAccessId);
   }
   await db
     .prepare(
@@ -254,7 +255,7 @@ glance.put('/settings', async (c) => {
       .run();
   }
   c.header('Cache-Control', 'no-store');
-  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  await forgetPrefix('glance:');
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
@@ -398,7 +399,7 @@ glance.post('/events', async (c) => {
   const allDay = boolOf(body.allDay);
   const color = await personalColor(db);
   await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
-  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  await forgetPrefix('glance:cal:');
   const event = {
     ...glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color }),
     source: 'glance' as const
@@ -433,7 +434,7 @@ glance.delete('/events/:id', async (c) => {
   }
   const title = cleanOptionalTitle(c.req.query('title'));
   if (title) await db.prepare(`DELETE FROM glance_added_events WHERE title = ?`).bind(title).run();
-  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  await forgetPrefix('glance:cal:');
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true });
 });
@@ -455,7 +456,7 @@ glance.post('/lights/:id', async (c) => {
   try {
     await setLight(
       { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
-      c.env.LIVEVIEW_MEDIA,
+      c.env.LIVEVIEW_DB,
       id,
       body.on
     );
@@ -463,7 +464,7 @@ glance.post('/lights/:id', async (c) => {
     console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
     throw new HttpError(502, friendlyTuyaMessage(error));
   }
-  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  await forgetPrefix('glance:lights:');
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, id, on: body.on });
 });
@@ -564,6 +565,7 @@ glance.put('/location/places', async (c) => {
   }
   if (body.home !== undefined) await saveHome(db, body.home);
   if (Array.isArray(body.places)) await savePlaces(db, body.places);
+  await forgetPrefix('glance:eta:');
   c.header('Cache-Control', 'no-store');
   return c.json(await locationView(c.env, c.req.url));
 });
@@ -764,7 +766,7 @@ async function weatherPayload(env: Bindings) {
   const settings = await loadSettings(env.LIVEVIEW_DB);
   const key = `glance:wx:${settings.lat.toFixed(3)}:${settings.lon.toFixed(3)}`;
   try {
-    return await remember<WeatherPayload>(env.LIVEVIEW_MEDIA, key, 600, () => loadWeather(settings.lat, settings.lon));
+    return await remember<WeatherPayload>(key, WEATHER_TTL_SEC, () => loadWeather(settings.lat, settings.lon));
   } catch (error) {
     console.error('[glance] weather', scrub(error instanceof Error ? error.message : 'error'));
     return { ok: false as const, message: 'Weather is unavailable' };
@@ -778,8 +780,10 @@ async function calendarPayload(env: Bindings, startDate: string | null) {
     .all<FeedRow>()
   ).results.filter((feed) => feed.url);
   if (!feeds.length) return withAddedEvents(db, present([], Date.now(), [], startDate));
-  const key = `glance:cal:v3:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
-  const payload = await remember(env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds, startDate));
+  const key = `glance:cal:v4:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
+  const payload = await remember(key, CALENDAR_TTL_SEC, () => buildCalendar(feeds, startDate), {
+    cache: (value) => value.feeds.every((feed) => feed.ok)
+  });
   return withAddedEvents(db, payload);
 }
 
@@ -788,13 +792,16 @@ async function lightsPayload(env: Bindings) {
   if (!settings.tuya_access_id || !settings.tuya_access_secret) {
     return { ok: true as const, configured: false, lights: [], message: 'Add the Tuya cloud keys in settings.' };
   }
+  const key = `glance:lights:${await sha256Hex(settings.tuya_access_id)}`;
   try {
-    const devices = await listLights(
-      { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
-      env.LIVEVIEW_MEDIA
-    );
-    const prefs = await lightPrefs(env.LIVEVIEW_DB);
-    return { ok: true as const, configured: true, lights: mergeLights(devices, prefs) };
+    const lights = await remember(key, LIGHTS_TTL_SEC, async () => {
+      const devices = await listLights(
+        { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
+        env.LIVEVIEW_DB
+      );
+      return mergeLights(devices, await lightPrefs(env.LIVEVIEW_DB));
+    });
+    return { ok: true as const, configured: true, lights };
   } catch (error) {
     console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
     return { ok: false as const, configured: true, lights: [], message: friendlyTuyaMessage(error) };
@@ -802,33 +809,14 @@ async function lightsPayload(env: Bindings) {
 }
 
 async function dashboardPayload(env: Bindings, requestUrl: string) {
-  const settings = await loadSettings(env.LIVEVIEW_DB);
-  const key = `glance:dash:v1:${await sha256Hex([
-    settings.lat.toFixed(3),
-    settings.lon.toFixed(3),
-    settings.layout,
-    settings.theme,
-    settings.widgets_json,
-    settings.location_name
-  ].join('|'))}`;
-  return remember(env.LIVEVIEW_MEDIA, key, 45, async () => {
-    const [pub, weather, calendar, lights, location] = await Promise.all([
-      publicSettings(env),
-      weatherPayload(env),
-      calendarPayload(env, null),
-      lightsPayload(env),
-      locationView(env, requestUrl)
-    ]);
-    return { ok: true, settings: { ok: true, ...pub }, weather, calendar, lights, location };
-  });
-}
-
-async function forgetDashboard(kv: KVNamespace) {
-  const keys = [...memory.keys()].filter((key) => key.startsWith('glance:dash:'));
-  await Promise.all(keys.map(async (key) => {
-    memory.delete(key);
-    try { await kv.delete(key); } catch { /* The next read rebuilds the cache. */ }
-  }));
+  const [pub, weather, calendar, lights, location] = await Promise.all([
+    publicSettings(env),
+    weatherPayload(env),
+    calendarPayload(env, null),
+    lightsPayload(env),
+    locationView(env, requestUrl)
+  ]);
+  return { ok: true, settings: { ok: true, ...pub }, weather, calendar, lights, location };
 }
 
 function calendarStart(raw: string | undefined): string | null {
@@ -1109,6 +1097,12 @@ async function storeFix(db: D1Database, personId: string, fix: Fix) {
   await purgeLocations(db, personId);
 }
 
+async function purgeLocationsIfDue(db: D1Database) {
+  if (Date.now() - locationsPurgedAt < 60 * 60 * 1000) return;
+  await purgeLocations(db);
+  locationsPurgedAt = Date.now();
+}
+
 async function purgeLocations(db: D1Database, personId?: string) {
   const cutoff = new Date(Date.now() - 48 * 3600000).toISOString();
   await db.prepare(`DELETE FROM glance_location_points WHERE recorded_at < ?`).bind(cutoff).run();
@@ -1129,7 +1123,7 @@ type PlaceRow = { id: string; name: string; lat: number; lon: number; radius_m: 
 
 async function locationView(env: Bindings, _requestUrl: string) {
   const db = env.LIVEVIEW_DB;
-  await purgeLocations(db);
+  await purgeLocationsIfDue(db);
   const staleRow = await db
     .prepare(`SELECT location_stale_hours AS hours FROM glance_settings WHERE id = 'default'`)
     .first<{ hours: number }>();
@@ -1170,7 +1164,7 @@ async function locationView(env: Bindings, _requestUrl: string) {
     const here = fix ? matchPlace(fix, places) : null;
     let minutes: number | null = null;
     if (fix && home && !here?.home && now - fix.recordedAt < staleHours * 3600000) {
-      minutes = await minutesFromHome(env.LIVEVIEW_MEDIA, person.id, fix, home);
+      minutes = await minutesFromHome(person.id, fix, home);
     }
     cards.push({
       id: person.id,
@@ -1583,7 +1577,7 @@ async function googleAccessToken(
   refresh: string
 ): Promise<string> {
   const cacheKey = `glance:google:${await sha256Hex(refresh)}`;
-  const hit = memory.get(cacheKey);
+  const hit = googleAccess.get(cacheKey);
   if (hit && Date.now() - hit.at < 50 * 60_000) {
     const parsed = JSON.parse(hit.raw) as { token?: string; exp?: number };
     if (parsed.token && parsed.exp && parsed.exp > Date.now() + 60_000) return parsed.token;
@@ -1602,7 +1596,7 @@ async function googleAccessToken(
   if (data.error === 'invalid_grant') throw new Error('reconnect');
   if (!response.ok || !data.access_token) throw new Error('refresh');
   const exp = Date.now() + (Number(data.expires_in) || 3600) * 1000;
-  memory.set(cacheKey, { at: Date.now(), raw: JSON.stringify({ token: data.access_token, exp }) });
+  googleAccess.set(cacheKey, { at: Date.now(), raw: JSON.stringify({ token: data.access_token, exp }) });
   return data.access_token;
 }
 
@@ -1782,12 +1776,18 @@ type CardEvent = {
   started?: boolean;
 };
 
+async function purgeAddedEvents(db: D1Database) {
+  if (Date.now() - addedPurgedAt < 60 * 60 * 1000) return;
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  await db.prepare(`DELETE FROM glance_added_events WHERE created_at < ?`).bind(cutoff).run();
+  addedPurgedAt = Date.now();
+}
+
 async function withAddedEvents<T extends { days?: { date: string; events: CardEvent[] }[]; upcoming?: CardEvent | null }>(
   db: D1Database,
   payload: T
 ): Promise<T> {
-  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  await db.prepare(`DELETE FROM glance_added_events WHERE created_at < ?`).bind(cutoff).run();
+  await purgeAddedEvents(db);
   const rows = (
     await db
       .prepare(`SELECT title, all_day, start_ms, end_ms FROM glance_added_events ORDER BY start_ms`)
@@ -1916,25 +1916,12 @@ function normalizeColor(value: unknown): string {
   return '#8eb6ff';
 }
 
-async function remember<T>(kv: KVNamespace, key: string, ttlSec: number, load: () => Promise<T>): Promise<T> {
-  const hit = memory.get(key);
-  if (hit && Date.now() - hit.at < ttlSec * 1000) return JSON.parse(hit.raw) as T;
-  try {
-    const stored = await kv.get(key);
-    if (stored) {
-      memory.set(key, { at: Date.now(), raw: stored });
-      return JSON.parse(stored) as T;
-    }
-  } catch {
-    /* KV is a cache. The live fetch still works. */
-  }
-  const value = await load();
-  const raw = JSON.stringify(value);
-  memory.set(key, { at: Date.now(), raw });
-  try {
-    await kv.put(key, raw, { expirationTtl: Math.max(60, ttlSec) });
-  } catch {
-    /* Memory cache still covers this isolate. */
-  }
-  return value;
+/** Read-only. A valid session is not refreshed or written back. */
+async function readGlanceSession(db: D1Database, token: string): Promise<{ id: string } | null> {
+  const row = await db
+    .prepare(`SELECT id, expires_at FROM glance_sessions WHERE token_hash = ?`)
+    .bind(await sha256Hex(token))
+    .first<{ id: string; expires_at: string }>();
+  if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
+  return { id: row.id };
 }
