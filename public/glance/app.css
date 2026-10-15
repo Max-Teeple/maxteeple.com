@@ -262,7 +262,10 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 .date { margin: 0.35rem 0 0; font-size: clamp(1.25rem, 2.1vh, 1.8rem); font-weight: 500; }
 .summary { margin: 0.35rem 0 0; max-width: 36rem; color: var(--muted); font-size: 1.05rem; line-height: 1.35; }
 
-.now-card { padding: 0.9rem 1rem 0.85rem; display: grid; grid-template-columns: auto 1fr; gap: 0.75rem 0.9rem; align-items: center; min-height: 8.5rem; }
+.now-card { padding: 0.9rem 1rem 0.85rem; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem 1rem; align-items: center; min-height: 8.5rem; }
+.now-facts { display: flex; gap: 0.9rem; align-items: flex-end; justify-content: flex-end; min-width: 0; }
+.now-facts .fact { text-align: left; }
+.now-facts .fact em { display: block; }
 .now-copy { display: grid; gap: 0.15rem; }
 .temp { font-size: clamp(2.8rem, 5vh, 4rem); font-weight: 500; letter-spacing: -0.04em; line-height: 0.9; }
 .cond { font-size: 1.15rem; }
@@ -398,34 +401,40 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   color: var(--ink);
 }
 .check[aria-pressed="true"] { background: var(--ink); color: #16181c; }
-.add-card { gap: 0.4rem; }
-.add-card form, .add-quiet { display: grid; gap: 0.4rem; }
+.add-card { gap: 0.35rem; }
+.add-card form, .add-quiet { display: grid; gap: 0.35rem; }
+.add-card form {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr) auto auto;
+}
+.add-times, .add-foot { display: contents; }
+#add-title, .add-days, #add-end, .add-note { grid-column: 1 / -1; }
 .add-card input, .add-card select {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  max-width: 100%;
+  min-height: 42px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.28);
-  padding: 0 0.7rem;
-  font-size: 1.05rem;
+  padding: 0 0.55rem;
+  font-size: 1rem;
 }
-.add-days { display: flex; gap: 0.35rem; }
+.add-days { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 0.35rem; min-width: 0; }
 .add-days button, .add-go, .add-card .text-btn {
-  min-height: 44px;
+  min-height: 42px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.08);
-  padding: 0 0.75rem;
+  padding: 0 0.7rem;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.add-days button { flex: 1; }
+.add-days button { min-width: 0; }
 .add-days button[aria-pressed="true"] { background: var(--ink); color: #16181c; }
-.add-days input { flex: 1.3; }
-.add-times { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+.add-days input[type="date"] { width: 100%; min-width: 0; font-size: 0.92rem; }
+#add-start, #add-duration, #add-end { min-width: 0; overflow: hidden; }
 .add-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem; }
 .add-allday { display: flex; align-items: center; gap: 0.45rem; min-height: 44px; font-size: 1.02rem; }
 .add-go { font-weight: 600; }
@@ -561,6 +570,10 @@ body[data-layout="calendar"] .hourly { display: none; }
 body[data-layout="calendar"] .top { grid-template-columns: auto minmax(12rem, 16rem) minmax(0, 1fr); align-items: center; }
 body[data-layout="calendar"] #time { font-size: clamp(2.8rem, 6vh, 3.6rem); }
 body[data-layout="calendar"] .date, body[data-layout="calendar"] .summary { font-size: 0.95rem; }
+body[data-layout="calendar"] .now-card,
+body[data-layout="home"] .now-card { grid-template-columns: auto minmax(0, 1fr); }
+body[data-layout="calendar"] .now-facts,
+body[data-layout="home"] .now-facts { grid-column: 1 / -1; justify-content: space-between; }
 body[data-layout="calendar"] .now-card { min-height: 0; padding: 0.45rem 0.7rem; }
 body[data-layout="calendar"] .temp { font-size: 2rem; }
 body[data-layout="calendar"] .wx { width: 2.4rem; height: 2.4rem; }
@@ -623,8 +636,9 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .family-meta { font-size: 0.98rem; }
   .fact strong { font-size: 1.12rem; }
   .day-facts { padding-top: 0.35rem; padding-bottom: 0.35rem; }
-  .rail { gap: 0.22rem; }
-  .add-card form { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr) auto auto; gap: 0.25rem; }
+  .rail { gap: 0.18rem; }
+  .add-card { gap: 0.2rem; padding-top: 0.35rem; padding-bottom: 0.28rem; }
+  .add-card form { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr) auto auto; gap: 0.2rem; }
   .add-times, .add-foot { display: contents; }
   #add-title, .add-days, #add-end { grid-column: 1 / -1; }
   .add-card input, .add-card select, .add-days button, .add-go, .add-allday { min-height: 32px; font-size: 0.95rem; }
@@ -679,7 +693,8 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   }
   .forecast { grid-column: 1 / -1; }
   .summary { max-width: none; }
-  .now-card { min-height: 0; padding: 0.5rem 0.65rem; }
+  .now-card { min-height: 0; padding: 0.5rem 0.65rem; grid-template-columns: auto minmax(0, 1fr); }
+  .now-facts { grid-column: 1 / -1; justify-content: space-between; gap: 0.4rem; }
   .temp { font-size: 2.5rem; }
   .wx { width: 2.8rem; height: 2.8rem; }
   .hourly { display: none; }

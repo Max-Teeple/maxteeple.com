@@ -229,6 +229,8 @@
     });
     copy.append(temp, cond, stats);
     now.append(mark, copy);
+    var facts = weatherFacts(clock24);
+    if (facts) now.appendChild(facts);
 
     (state.weather.daily || []).forEach(function (day, index) {
       var card = document.createElement('article');
@@ -394,7 +396,6 @@
       rail.appendChild(next);
       renderCountdown();
     }
-    renderDayFacts(rail, widgets);
     renderAdd(rail, draft);
   }
 
@@ -537,15 +538,16 @@
     return { status: phrase || '', detail: '' };
   }
 
-  function renderDayFacts(rail, widgets) {
+  function weatherFacts(clock24) {
+    var widgets = (state.settings && state.settings.widgets) || {};
     var showSun = widgets.sun !== false && state.weather && state.weather.sun;
     var showAir = widgets.air !== false && state.weather && state.weather.air;
-    if (!showSun && !showAir) return;
-    var card = document.createElement('section');
-    card.className = 'rail-card day-facts';
+    if (!showSun && !showAir) return null;
+    var row = document.createElement('div');
+    row.className = 'now-facts';
     if (showSun) {
-      card.appendChild(factBit('Sunrise', state.weather.sun.sunrise ? formatShort(state.weather.sun.sunrise, state.settings && state.settings.clock24) : '—'));
-      card.appendChild(factBit('Sunset', state.weather.sun.sunset ? formatShort(state.weather.sun.sunset, state.settings && state.settings.clock24) : '—'));
+      row.appendChild(factBit('Sunrise', state.weather.sun.sunrise ? formatShort(state.weather.sun.sunrise, clock24) : '—'));
+      row.appendChild(factBit('Sunset', state.weather.sun.sunset ? formatShort(state.weather.sun.sunset, clock24) : '—'));
     }
     if (showAir) {
       var aqi = state.weather.air.aqi;
@@ -556,9 +558,9 @@
         note.textContent = state.weather.air.label;
         air.appendChild(note);
       }
-      card.appendChild(air);
+      row.appendChild(air);
     }
-    rail.appendChild(card);
+    return row;
   }
 
   function factBit(label, value) {
