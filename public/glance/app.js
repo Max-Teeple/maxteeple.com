@@ -524,24 +524,20 @@
       var dot = document.createElement('i');
       dot.style.background = person.color || '#f6f3ec';
       var copy = document.createElement('div');
-      var parts = splitPhrase(person.phrase);
       var status = document.createElement('p');
       status.className = 'family-status';
-      status.textContent = parts.status;
+      status.textContent = person.phrase || '';
       var meta = document.createElement('p');
       meta.className = 'family-meta';
-      meta.textContent = [parts.detail, person.age].filter(Boolean).join(' · ');
+      var detail = [];
+      if (person.minutes > 0) detail.push(person.minutes + ' min from home');
+      if (person.age) detail.push(person.age);
+      meta.textContent = detail.join(' · ');
       copy.append(status, meta);
       line.append(dot, copy);
       card.appendChild(line);
     });
     rail.appendChild(card);
-  }
-
-  function splitPhrase(phrase) {
-    var match = String(phrase || '').match(/^(.*?),\s*(\d+\s+min from home)$/);
-    if (match) return { status: match[1], detail: match[2] };
-    return { status: phrase || '', detail: '' };
   }
 
   function weatherFacts(clock24) {

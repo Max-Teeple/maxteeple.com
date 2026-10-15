@@ -343,13 +343,20 @@ describe('family location', () => {
     const atHome = { lat: 33.4502, lon: -112.0702, acc: 10, vel: 0, regions: [], recordedAt: now - 60000 };
     expect(haversineMeters(atHome.lat, atHome.lon, home.lat, home.lon)).toBeLessThan(150);
     expect(matchPlace(atHome, [home, work])?.home).toBe(true);
-    expect(familyPhrase({ name: 'Max', fix: atHome, places: [home, work], staleHours: 6, now, minutes: 0, driving: false })).toBe('Max is home');
+    expect(familyPhrase({ name: 'Max', fix: atHome, places: [home, work], staleHours: 6, now, minutes: 0, driving: false })).toBe('Max is at home');
     const atWork = { lat: 33.5004, lon: -112.1004, acc: 12, vel: 0, regions: [], recordedAt: now - 120000 };
-    expect(familyPhrase({ name: 'Max', fix: atWork, places: [home, work], staleHours: 6, now, minutes: 24, driving: false })).toBe('Max is at Work, 24 min from home');
+    expect(familyPhrase({ name: 'Max', fix: atWork, places: [home, work], staleHours: 6, now, minutes: 24, driving: false })).toBe('Max is at work');
+    const named = { ...work, name: "Max's Work" };
+    expect(familyPhrase({ name: 'Max', fix: atWork, places: [home, named], staleHours: 6, now, minutes: 24, driving: false })).toBe('Max is at work');
+    const gym = { id: 'gym', name: 'Gym', lat: 33.46, lon: -112.08, radiusM: 120, home: false };
+    const atGym = { lat: 33.4601, lon: -112.0801, acc: 10, vel: 0, regions: [], recordedAt: now - 60000 };
+    expect(familyPhrase({ name: 'Amy', fix: atGym, places: [home, gym], staleHours: 6, now, minutes: 8, driving: false })).toBe('Amy is at the gym');
     const road = { lat: 33.47, lon: -112.09, acc: 20, vel: 40, regions: [], recordedAt: now - 30000 };
-    expect(familyPhrase({ name: 'Max', fix: road, places: [home, work], staleHours: 6, now, minutes: 12, driving: true })).toBe('Max is driving, 12 min from home');
+    expect(familyPhrase({ name: 'Max', fix: road, places: [home, work], staleHours: 6, now, minutes: 12, driving: true })).toBe('Max is driving');
+    const paused = { ...road, vel: 0 };
+    expect(familyPhrase({ name: 'Max', fix: paused, places: [home, work], staleHours: 6, now, minutes: 12, driving: false })).toBe('Max is on the way');
     const stale = { ...atWork, recordedAt: now - 8 * 3600000 };
-    expect(familyPhrase({ name: 'Max', fix: stale, places: [home, work], staleHours: 6, now, minutes: null, driving: false })).toBe('Max last seen at Work, 8h ago');
+    expect(familyPhrase({ name: 'Max', fix: stale, places: [home, work], staleHours: 6, now, minutes: null, driving: false })).toBe('Max last seen at work');
   });
 
   it('accepts OwnTracks and Shortcuts posts, then forgets them', async () => {
@@ -387,7 +394,7 @@ describe('family location', () => {
     expect(homePost.status).toBe(200);
     const atHome = await withSession('/glance/api/location', session);
     const homeBody = await atHome.json() as { people: { phrase: string }[] };
-    expect(homeBody.people[0].phrase).toBe('Ada is home');
+    expect(homeBody.people[0].phrase).toBe('Ada is at home');
 
     const driving = await api('/glance/api/location', {
       method: 'POST',
@@ -397,7 +404,7 @@ describe('family location', () => {
     expect(driving.status).toBe(200);
     const away = await withSession('/glance/api/location', session);
     const awayBody = await away.json() as { people: { phrase: string; lat: number }[] };
-    expect(awayBody.people[0].phrase).toMatch(/Ada is (driving|out), \d+ min from home/);
+    expect(awayBody.people[0].phrase).toMatch(/^Ada is (driving|on the way)$/);
     expect(awayBody.people[0].lat).toBeCloseTo(33.47, 2);
 
     const rejected = await api('/glance/api/location/owntracks', {

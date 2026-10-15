@@ -507,14 +507,27 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 
 .tools { position: absolute; top: 1rem; right: 1rem; display: flex; gap: 0.4rem; z-index: 2; }
 .tools button, .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 44px;
   height: 44px;
+  padding: 0;
+  line-height: 0;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(12, 14, 18, 0.92);
   color: var(--ink);
+  -webkit-appearance: none;
+  appearance: none;
 }
-.tools svg { width: 20px; height: 20px; }
+.tools button svg, .icon-btn svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 20px;
+}
 
 .settings {
   position: fixed;

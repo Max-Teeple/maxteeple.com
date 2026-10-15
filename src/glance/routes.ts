@@ -64,6 +64,7 @@ type SettingsRow = {
   google_client_secret: string;
   google_refresh_token: string;
   google_account: string;
+  event_notify_url?: string;
 };
 
 type FeedRow = {
@@ -385,11 +386,13 @@ glance.post('/events', async (c) => {
   const color = await personalColor(db);
   await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
   await forgetDashboard(c.env.LIVEVIEW_MEDIA);
+  const event = {
+    ...glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color }),
+    source: 'glance' as const
+  };
+  await notifyGlanceEvent(c.env, settings, event);
   c.header('Cache-Control', 'no-store');
-  return c.json({
-    ok: true,
-    event: glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color })
-  });
+  return c.json({ ok: true, event });
 });
 
 glance.get('/lights', async (c) => {
@@ -1352,7 +1355,7 @@ async function loadSettings(db: D1Database): Promise<SettingsRow> {
   const row = await db
     .prepare(
       `SELECT location_name, lat, lon, theme, layout, clock_24h, night_start, night_end, widgets_json, password_hash,
-              tuya_access_id, tuya_access_secret, google_client_id, google_client_secret, google_refresh_token, google_account
+              tuya_access_id, tuya_access_secret, google_client_id, google_client_secret, google_refresh_token, google_account, event_notify_url
        FROM glance_settings WHERE id = 'default'`
     )
     .first<SettingsRow>();
@@ -1592,6 +1595,51 @@ async function personalColor(db: D1Database): Promise<string> {
     .prepare(`SELECT color FROM glance_feeds WHERE enabled = 1 AND lower(label) = 'personal' ORDER BY sort_order LIMIT 1`)
     .first<{ color: string }>();
   return row?.color || '#7dcea0';
+}
+
+/**
+ * Calendar Manager notify payload. POST this JSON only. Do not add tokens,
+ * the notify URL, or any other secret.
+ * { title: string, start: string, end: string, allDay: boolean, source: "glance" }
+ */
+function glanceNotifyBody(event: { title: string; start: string; end: string; allDay: boolean }) {
+  return {
+    title: event.title,
+    start: event.start,
+    end: event.end,
+    allDay: event.allDay,
+    source: 'glance' as const
+  };
+}
+
+async function notifyGlanceEvent(
+  env: Bindings,
+  settings: SettingsRow,
+  event: { title: string; start: string; end: string; allDay: boolean }
+): Promise<void> {
+  const configured = (env.GLANCE_EVENT_NOTIFY_URL || settings.event_notify_url || '').trim();
+  if (!configured) return;
+  let target: URL;
+  try {
+    target = new URL(configured);
+  } catch {
+    console.error('[glance] event notify skipped');
+    return;
+  }
+  if (target.protocol !== 'https:') {
+    console.error('[glance] event notify skipped');
+    return;
+  }
+  try {
+    await fetch(target.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(glanceNotifyBody(event)),
+      signal: AbortSignal.timeout(4000)
+    });
+  } catch {
+    console.error('[glance] event notify failed');
+  }
 }
 
 function glanceEvent(input: { title: string; allDay: boolean; startMs: number; endMs: number; color: string }) {

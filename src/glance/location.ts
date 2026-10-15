@@ -39,6 +39,17 @@ export function formatAge(ms: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/** Informal place words: Home, Work, Gym, and names like "Max's Work". */
+export function shortPlaceLabel(name: string, home = false): string {
+  if (home) return 'home';
+  const stripped = name.replace(/^(?:the\s+)?(?:\S+['’]s\s+)?/i, '').trim() || name.trim();
+  const words = stripped.toLowerCase();
+  if (/\bgym\b/.test(words)) return 'the gym';
+  if (/\b(work|office)\b/.test(words)) return 'work';
+  if (/\bhome\b/.test(words)) return 'home';
+  return words;
+}
+
 export function familyPhrase(input: {
   name: string;
   fix: Fix | null;
@@ -48,21 +59,20 @@ export function familyPhrase(input: {
   minutes: number | null;
   driving: boolean;
 }): string {
-  const { name, fix, places, staleHours, now, minutes, driving } = input;
+  const { name, fix, places, staleHours, now, driving } = input;
   if (!fix) return `${name} has no location yet`;
   const age = now - fix.recordedAt;
   const place = matchPlace(fix, places);
+  const where = place ? shortPlaceLabel(place.name, place.home) : '';
   if (age >= staleHours * 3600000) {
-    const when = formatAge(age);
-    if (place) return `${name} last seen at ${place.name}, ${when}`;
-    return `${name} last seen ${when}`;
+    return place ? `${name} last seen at ${where}` : `${name} last seen`;
   }
-  if (place?.home) return `${name} is home`;
-  const eta = minutes != null && minutes > 0 ? `, ${minutes} min from home` : '';
-  if (place) return `${name} is at ${place.name}${eta}`;
-  if (driving) return `${name} is driving${eta}`;
-  if (eta) return `${name} is out${eta}`;
-  return `${name} is out`;
+  if (where === 'home') return `${name} is at home`;
+  if (where === 'work') return `${name} is at work`;
+  if (where === 'the gym') return `${name} is at the gym`;
+  if (where) return `${name} is at ${where}`;
+  if (driving) return `${name} is driving`;
+  return `${name} is on the way`;
 }
 
 export async function geocodeAddress(address: string): Promise<{ lat: number; lon: number; label: string } | null> {
