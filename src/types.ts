@@ -22,11 +22,16 @@ export type Bindings = {
   /** Optional key for encrypting the Google refresh token. Falls back to the stored server secret. */
   GLANCE_DATA_KEY?: string;
   /**
-   * Optional HTTPS URL for Calendar Manager.
+   * Optional HTTPS URL for Calendar Manager. Leave unset until Max provides one.
    * After Glance creates an event it POSTs { title, start, end, allDay, source: "glance" }.
-   * A glance_settings.event_notify_url value is used when this secret is unset.
+   * glance_settings.event_notify_url is used when this secret is unset.
    */
   GLANCE_EVENT_NOTIFY_URL?: string;
+  /**
+   * Optional secret sent only as Authorization: Bearer, never in the JSON body.
+   * Used only when GLANCE_EVENT_NOTIFY_URL (or the D1 URL) is set.
+   */
+  GLANCE_EVENT_NOTIFY_KEY?: string;
 };
 
 export type Variables = {

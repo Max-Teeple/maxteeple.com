@@ -1598,9 +1598,11 @@ async function personalColor(db: D1Database): Promise<string> {
 }
 
 /**
- * Calendar Manager notify payload. POST this JSON only. Do not add tokens,
- * the notify URL, or any other secret.
+ * Calendar Manager notify payload. POST this JSON only:
  * { title: string, start: string, end: string, allDay: boolean, source: "glance" }
+ * The URL is GLANCE_EVENT_NOTIFY_URL or glance_settings.event_notify_url, and stays unset
+ * until Max provides one. GLANCE_EVENT_NOTIFY_KEY, when set, is sent only as
+ * Authorization: Bearer. Neither the URL nor the key is included in the body.
  */
 function glanceNotifyBody(event: { title: string; start: string; end: string; allDay: boolean }) {
   return {
@@ -1630,10 +1632,13 @@ async function notifyGlanceEvent(
     console.error('[glance] event notify skipped');
     return;
   }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const key = (env.GLANCE_EVENT_NOTIFY_KEY || '').trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
   try {
     await fetch(target.toString(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(glanceNotifyBody(event)),
       signal: AbortSignal.timeout(4000)
     });
