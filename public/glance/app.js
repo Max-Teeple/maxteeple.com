@@ -30,7 +30,9 @@
   var login = document.getElementById('login');
   var board = document.getElementById('board');
   var boot = document.getElementById('boot');
-  var settingsEl = document.getElementById('settings');
+  var settingsEl = null;
+  var weekEl = null;
+  var panelsMounted = false;
 
   function phoenixParts(date) {
     var fmt = new Intl.DateTimeFormat('en-US', {
@@ -62,11 +64,6 @@
     var h = parts.hour % 12;
     if (h === 0) h = 12;
     return { hh: String(h), mm: mm, ap: ap };
-  }
-
-  function formatWhen(iso, clock24) {
-    if (!iso) return '';
-    return clockText(phoenixParts(new Date(iso)), clock24).hh + ':' + clockText(phoenixParts(new Date(iso)), clock24).mm + (clock24 ? '' : ' ' + clockText(phoenixParts(new Date(iso)), clock24).ap);
   }
 
   function formatShort(iso, clock24) {
@@ -113,7 +110,7 @@
   function showLogin() {
     boot.hidden = true;
     board.hidden = true;
-    settingsEl.hidden = true;
+    if (settingsEl) settingsEl.hidden = true;
     login.hidden = false;
     state.open = false;
     document.body.classList.remove('settings-open');
@@ -159,7 +156,7 @@
     var widgets = (state.settings && state.settings.widgets) || {};
     summary.hidden = widgets.summary === false;
     if (!summary.hidden) summary.textContent = summaryLine();
-    renderCountdown();
+    renderNextLine();
   }
 
   function summaryLine() {
@@ -170,9 +167,21 @@
       bits.push('High ' + current.high + '°');
       bits.push('Low ' + current.low + '°');
     }
-    var next = state.calendar && state.calendar.upcoming;
-    if (next) bits.push('Next, ' + next.title + (next.allDay ? '' : ', ' + formatRange(next, state.settings && state.settings.clock24)));
     return bits.join('  ·  ') || 'A quiet day so far.';
+  }
+
+  function renderNextLine() {
+    var line = document.getElementById('next-line');
+    if (!line) return;
+    var widgets = (state.settings && state.settings.widgets) || {};
+    var next = state.calendar && state.calendar.upcoming;
+    if (widgets.countdown === false || !next) {
+      line.hidden = true;
+      line.textContent = '';
+      return;
+    }
+    line.hidden = false;
+    line.textContent = 'Next, ' + next.title + (next.allDay ? '' : ', ' + formatRange(next, state.settings && state.settings.clock24));
   }
 
   function icon(name, isDay) {
@@ -357,31 +366,6 @@
     }
   }
 
-  function renderCountdown() {
-    var card = document.getElementById('next-card');
-    if (!card) return;
-    var next = state.calendar && state.calendar.upcoming;
-    var title = card.querySelector('.count-title');
-    var when = card.querySelector('.count-when');
-    if (!next) {
-      title.textContent = 'Nothing ahead';
-      when.textContent = '—';
-      return;
-    }
-    title.textContent = next.title;
-    if (next.started) when.textContent = 'Now';
-    else {
-      var delta = new Date(next.start).getTime() - Date.now();
-      var mins = Math.max(0, Math.round(delta / 60000));
-      if (mins < 60) when.textContent = (mins <= 1 ? '1' : String(mins)) + 'm';
-      else if (mins < 60 * 48) {
-        var h = Math.floor(mins / 60);
-        var rem = mins % 60;
-        when.textContent = rem ? h + 'h ' + rem + 'm' : h + 'h';
-      } else when.textContent = Math.round(mins / 1440) + 'd';
-    }
-  }
-
   function renderRail() {
     var rail = document.getElementById('rail');
     var draft = readAddDraft();
@@ -389,20 +373,6 @@
     var widgets = (state.settings && state.settings.widgets) || { countdown: true, sun: true, air: true, summary: true, lights: true, family: true };
     renderLights(rail, widgets);
     renderFamily(rail, widgets);
-    if (widgets.countdown !== false) {
-      var next = document.createElement('section');
-      next.className = 'rail-card';
-      next.id = 'next-card';
-      var h = document.createElement('h3');
-      h.textContent = 'Up next';
-      var title = document.createElement('p');
-      title.className = 'count-title';
-      var when = document.createElement('p');
-      when.className = 'count-when';
-      next.append(h, title, when);
-      rail.appendChild(next);
-      renderCountdown();
-    }
     renderAdd(rail, draft);
   }
 
@@ -577,16 +547,6 @@
     span.textContent = label;
     var strong = document.createElement('strong');
     strong.textContent = value;
-    wrap.append(span, strong);
-    return wrap;
-  }
-
-  function sunBit(label, iso) {
-    var wrap = document.createElement('div');
-    var span = document.createElement('span');
-    span.textContent = label;
-    var strong = document.createElement('strong');
-    strong.textContent = iso ? formatShort(iso, state.settings && state.settings.clock24) : '—';
     wrap.append(span, strong);
     return wrap;
   }
@@ -780,7 +740,7 @@
       if (start < current) state.calendar.upcoming = Object.assign({ started: start <= Date.now() }, event);
     }
     renderDays();
-    renderCountdown();
+    renderNextLine();
   }
 
   function removeOptimistic(event) {
@@ -789,7 +749,7 @@
       day.events = day.events.filter(function (item) { return !(item.title === event.title && item.start === event.start); });
     });
     renderDays();
-    renderCountdown();
+    renderNextLine();
   }
 
   async function submitEvent(form) {
@@ -867,55 +827,55 @@
 
   function renderParty() {
     var banner = document.getElementById('party');
-    var board = document.getElementById('board');
     var today = ((state.calendar && state.calendar.days) || []).filter(function (day) { return day.label === 'Today'; })[0];
     var events = (today && today.events) || [];
     var names = birthdayNames(events);
-    var untitled = events.some(function (event) { return isBirthdayEvent(event) && !birthdayName(event.title); });
-    if (!names.length && !untitled) {
+    if (!names.length) {
       banner.hidden = true;
       banner.replaceChildren();
-      board.classList.remove('has-party');
       return;
     }
     banner.hidden = false;
-    board.classList.add('has-party');
     banner.replaceChildren();
+    var icon = document.createElement('span');
+    icon.className = 'party-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 9c1.2-1.6 2-2.6 2-3.6a2 2 0 0 0-4 0c0 1 0.8 2 2 3.6z" fill="#f3d48a"/><path d="M5 11h14l-1.2 8H6.2L5 11z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 11c.8 1.2 1.6 1.2 2.4 0S12 9.8 12.8 11s1.6 1.2 2.4 0 1.6-1.2 2.4 0" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
     var copy = document.createElement('p');
-    copy.className = 'party-copy';
-    copy.textContent = names.length ? 'Happy birthday, ' + joinNames(names) : 'Happy birthday';
-    var sub = document.createElement('span');
-    sub.textContent = names.length > 1 ? 'A few celebrations today' : 'Today on the calendar';
-    copy.appendChild(sub);
-    ['a', 'b', 'c'].forEach(function (mark) {
-      var balloon = document.createElement('i');
-      balloon.className = 'balloon ' + mark;
-      balloon.setAttribute('aria-hidden', 'true');
-      banner.appendChild(balloon);
-    });
-    var colors = ['#f0b4c8', '#9fd0ff', '#f3d48a', '#b7f0c8', '#e2c2ff'];
-    for (var i = 0; i < 14; i++) {
-      var bit = document.createElement('i');
-      bit.className = 'confetti';
-      bit.style.left = (6 + (i * 6.4) % 88) + '%';
-      bit.style.background = colors[i % colors.length];
-      bit.style.animationDelay = (i * 0.28) + 's';
-      bit.setAttribute('aria-hidden', 'true');
-      banner.appendChild(bit);
-    }
-    banner.appendChild(copy);
+    copy.textContent = names.length === 1
+      ? "It's " + names[0] + "'s birthday today"
+      : "It's " + joinNames(names) + "'s birthday today";
+    banner.append(icon, copy);
+  }
+
+  function isPersonName(title) {
+    var text = String(title || '').replace(/\s+/g, ' ').trim();
+    if (/\b(?:get|buy|pick|call|grab|make|bring|shop|grocer\w*|for|with|about|the|task|todo|remind|meeting)\b/i.test(text)) return false;
+    return /^[\p{L}][\p{L}.'’-]{0,30}(?:\s+[\p{L}][\p{L}.'’-]{0,30}){0,2}$/u.test(text);
   }
 
   function isBirthdayEvent(event) {
-    return !!(event && (event.birthday || /\b(?:birthdays?|b-?days?)\b/i.test(event.title || '')));
+    if (!event) return false;
+    if (birthdayName(event.title)) return true;
+    if (/^(?:happy\s+)?(?:birthdays?|b-?days?)$/i.test(String(event.title || '').trim())) return false;
+    return !!(event.birthday && event.allDay && isPersonName(event.title));
   }
 
   function birthdayName(title) {
     var text = String(title || '').replace(/\s+/g, ' ').trim();
-    var leading = text.match(/^(.*?)(?:['’]s)?\s+(?:birthday|b-?day)\b/i);
-    if (leading && leading[1].replace(/^happy\s+/i, '').trim()) return leading[1].replace(/^happy\s+/i, '').replace(/[!,.]+$/g, '').trim();
-    var trailing = text.match(/\b(?:birthday|b-?day)\b[:\-\s]+(.+)/i);
-    if (trailing && trailing[1].trim()) return trailing[1].replace(/[!,.]+$/g, '').trim();
+    var patterns = [
+      /^(?:happy\s+)?(.+?)['’]s\s+birthdays?$/i,
+      /^(?:happy\s+)?(.+?)['’]s\s+b-?days?$/i,
+      /^(?:happy\s+)?(.+?)\s+b-?days?$/i,
+      /^birthdays?\s*[:\-]\s*(.+)$/i,
+      /^b-?days?\s*[:\-]\s*(.+)$/i
+    ];
+    for (var i = 0; i < patterns.length; i++) {
+      var match = text.match(patterns[i]);
+      if (!match) continue;
+      var name = String(match[1] || '').replace(/^happy\s+/i, '').replace(/[!,.]+$/g, '').trim();
+      if (isPersonName(name)) return name;
+    }
     return '';
   }
 
@@ -923,14 +883,10 @@
     var names = [];
     events.forEach(function (event) {
       if (!isBirthdayEvent(event)) return;
-      var name = birthdayName(event.title);
+      var name = birthdayName(event.title) || (isPersonName(event.title) ? String(event.title).trim() : '');
       if (name && names.indexOf(name) < 0) names.push(name);
     });
     return names;
-  }
-
-  function birthdayUntitled(events) {
-    return events.some(function (event) { return isBirthdayEvent(event) && !birthdayName(event.title); });
   }
 
   function joinNames(names) {
@@ -974,22 +930,22 @@
     state.calendar = body;
     renderDays();
     renderParty();
-    if (document.getElementById('next-card')) renderCountdown();
+    renderNextLine();
     return body;
   }
 
   async function refresh() {
-    var calendarPromise = refreshCalendar();
-    var results = await Promise.all([
-      api('/glance/api/weather'),
-      api('/glance/api/lights'),
-      api('/glance/api/location')
-    ]);
-    state.weather = results[0];
-    state.lights = results[1];
-    state.family = results[2];
-    await calendarPromise;
+    var body = await api('/glance/api/dashboard');
+    state.settings = body.settings;
+    state.weather = body.weather;
+    state.calendar = body.calendar;
+    state.lights = body.lights;
+    state.family = body.location;
+    if (state.settings) {
+      document.body.dataset.layout = state.settings.layout || document.body.dataset.layout || 'balanced';
+    }
     renderAll();
+    return body;
   }
 
   function hourOptions(select, selected) {
@@ -1150,6 +1106,7 @@
   }
 
   function openSettings() {
+    mountPanels();
     state.open = true;
     settingsEl.hidden = false;
     document.body.classList.add('settings-open');
@@ -1186,7 +1143,6 @@
     }
   });
 
-  var weekEl = document.getElementById('week');
   var weekStartKey = '';
   var weekTimer = 0;
   var weekToken = 0;
@@ -1226,6 +1182,7 @@
   }
 
   function openWeek() {
+    mountPanels();
     if (state.open) return;
     weekStartKey = thisSunday();
     weekEl.hidden = false;
@@ -1309,36 +1266,44 @@
     loadWeek();
   }
 
-  document.getElementById('week-open').addEventListener('click', openWeek);
-  document.getElementById('week-back').addEventListener('click', closeWeek);
-  document.getElementById('week-prev').addEventListener('click', function () { moveWeek(-1); });
-  document.getElementById('week-next').addEventListener('click', function () { moveWeek(1); });
-  document.getElementById('week-this').addEventListener('click', function () {
-    weekStartKey = thisSunday();
-    bumpWeek();
-    loadWeek();
-  });
-  var weekX = 0;
-  var weekY = 0;
-  weekEl.addEventListener('pointerdown', function (event) {
-    bumpWeek();
-    weekX = 0;
-    if (event.target.closest('button')) return;
-    weekX = event.clientX;
-    weekY = event.clientY;
-  });
-  weekEl.addEventListener('pointerup', function (event) {
-    if (!weekX) return;
-    var dx = event.clientX - weekX;
-    var dy = event.clientY - weekY;
-    weekX = 0;
-    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy)) return;
-    moveWeek(dx < 0 ? 1 : -1);
-  });
+  function mountPanels() {
+    if (panelsMounted) return;
+    var weekTemplate = document.getElementById('week-template');
+    var settingsTemplate = document.getElementById('settings-template');
+    if (weekTemplate) document.body.appendChild(weekTemplate.content.cloneNode(true));
+    if (settingsTemplate) document.body.appendChild(settingsTemplate.content.cloneNode(true));
+    weekEl = document.getElementById('week');
+    settingsEl = document.getElementById('settings');
+    document.getElementById('week-back').addEventListener('click', closeWeek);
+    document.getElementById('week-prev').addEventListener('click', function () { moveWeek(-1); });
+    document.getElementById('week-next').addEventListener('click', function () { moveWeek(1); });
+    document.getElementById('week-this').addEventListener('click', function () {
+      weekStartKey = thisSunday();
+      bumpWeek();
+      loadWeek();
+    });
+    var weekX = 0;
+    var weekY = 0;
+    weekEl.addEventListener('pointerdown', function (event) {
+      bumpWeek();
+      weekX = 0;
+      if (event.target.closest('button')) return;
+      weekX = event.clientX;
+      weekY = event.clientY;
+    });
+    weekEl.addEventListener('pointerup', function (event) {
+      if (!weekX) return;
+      var dx = event.clientX - weekX;
+      var dy = event.clientY - weekY;
+      weekX = 0;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy)) return;
+      moveWeek(dx < 0 ? 1 : -1);
+    });
+    bindSettings();
+    panelsMounted = true;
+  }
 
-  document.getElementById('layout-next').addEventListener('click', function () { cycleLayout(1); });
-  document.getElementById('gear').addEventListener('click', openSettings);
-  document.getElementById('settings-close').addEventListener('click', closeSettings);
+  function bindSettings() {
   document.getElementById('save-home').addEventListener('click', function () { saveHome(); });
   document.getElementById('save-places').addEventListener('click', function () { savePlaces(); });
   document.getElementById('add-place').addEventListener('click', function () { addPlaceRow(); });
@@ -1418,6 +1383,12 @@
     try { await api('/glance/api/logout', { method: 'POST' }); } catch (err) { /* still leave */ }
     showLogin();
   });
+  document.getElementById('settings-close').addEventListener('click', closeSettings);
+  }
+
+  document.getElementById('week-open').addEventListener('click', openWeek);
+  document.getElementById('layout-next').addEventListener('click', function () { cycleLayout(1); });
+  document.getElementById('gear').addEventListener('click', openSettings);
   document.getElementById('full').addEventListener('click', function () {
     var root = document.documentElement;
     if (document.fullscreenElement) {
@@ -1448,7 +1419,7 @@
     if (event.altKey || event.metaKey || event.ctrlKey) return;
     var typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
     if (typing || state.open) return;
-    if (!weekEl.hidden) {
+    if (weekEl && !weekEl.hidden) {
       if (event.key === 'ArrowRight') { event.preventDefault(); moveWeek(1); }
       if (event.key === 'ArrowLeft') { event.preventDefault(); moveWeek(-1); }
       if (event.key === 'Escape') closeWeek();
@@ -1526,7 +1497,7 @@
     checkVersion();
     if (!board.hidden) {
       wake();
-      refreshCalendar().catch(function () {});
+      refresh().catch(function () {});
     }
   });
   window.addEventListener('focus', function () { checkVersion(); });
@@ -1534,30 +1505,34 @@
   checkVersion();
 
   async function bootApp() {
-    var session = await api('/glance/api/session');
-    state.settings = session;
-    showBoard();
-    await wake();
     await refresh();
+    showBoard();
+    wake();
     bump();
   }
 
-  setInterval(function () {
+  function scheduleClock() {
     if (!board.hidden) applyChrome();
-  }, 1000);
-  setInterval(function () {
-    if (!board.hidden) refreshCalendar().catch(function () {});
-  }, 60 * 1000);
+    var wait = 60000 - (Date.now() % 60000) + 50;
+    setTimeout(scheduleClock, wait);
+  }
+  scheduleClock();
   setInterval(function () {
     if (!board.hidden) refresh().catch(function () {});
-  }, 5 * 60 * 1000);
-  setInterval(function () {
-    if (board.hidden) return;
-    api('/glance/api/lights').then(function (body) {
-      state.lights = body;
-      renderRail();
-    }).catch(function () {});
-  }, 30000);
+  }, 60 * 1000);
+
+  window.addEventListener('glance-fit', function (event) {
+    var detail = event.detail || {};
+    if (!state.settings) state.settings = {};
+    if (detail.layout) state.settings.layout = detail.layout;
+    if (detail.theme) state.settings.theme = detail.theme;
+    document.body.dataset.layout = state.settings.layout || 'balanced';
+    document.body.dataset.theme = state.settings.theme === 'auto' ? resolvedTheme() : (state.settings.theme || 'aurora');
+    renderDays();
+    renderParty();
+    renderRail();
+    renderNextLine();
+  });
 
   function fillFamily() {
     var data = state.family || {};

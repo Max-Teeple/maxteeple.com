@@ -16,49 +16,9 @@
     <link rel="canonical" href="https://maxteeple.com/glance/" />
     <link rel="icon" href="/glance/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/glance/apple-touch-icon.png" sizes="180x180" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="/glance/app.css?v=__GLANCE_BUILD__" />
   </head>
   <body data-theme="aurora">
-    <div class="scenery" aria-hidden="true">
-      <div class="scene scene-aurora">
-        <div class="stars"></div>
-        <div class="band band-a"></div>
-        <div class="band band-b"></div>
-        <div class="band band-c"></div>
-        <svg class="pines" viewBox="0 0 1600 360" preserveAspectRatio="xMidYMax slice">
-          <path fill="#07150f" d="M0 360V250l40-90 30 70 50-120 36 90 28-70 44 100 20-50 48 90 34-110 40 80 26-60 52 100 30-80 46 90 38-120 42 100 24-40 50 80 36-90 48 110 30-70 60 100 40-90 70 120V360Z"/>
-          <path fill="#04110c" d="M0 360V300l70-80 40 50 80-110 50 70 60-90 46 80 70-120 54 90 80-70 40 50 90-100 60 80 70-90 50 70 80-110 60 90 90-60 70 80 80-100 66 90V360Z"/>
-        </svg>
-      </div>
-      <div class="scene scene-desert">
-        <div class="sun"></div>
-        <svg class="mesas" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice">
-          <path fill="#6d3a46" d="M0 620l180-80 120 40 160-120 140 70 200-150 180 90 220-130 200 110 200-70V900H0Z"/>
-          <path fill="#3d2430" d="M0 760l140-40 100 30 180-70 160 50 220-90 200 60 240-80 160 40 200-50V900H0Z"/>
-          <path fill="#24151c" d="M0 840l200-30 160 20 240-40 300 24 280-36 420 28V900H0Z"/>
-        </svg>
-      </div>
-      <div class="scene scene-golf">
-        <div class="sun morning"></div>
-        <div class="mist"></div>
-        <svg class="fairway" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice">
-          <path fill="#8fb58a" d="M0 520C180 470 280 560 460 530C660 496 760 400 980 430C1180 456 1320 390 1600 430V900H0Z"/>
-          <path fill="#5e8a58" d="M0 640C220 580 340 700 560 660C820 612 900 540 1140 590C1320 626 1420 560 1600 600V900H0Z"/>
-          <path fill="#2f5a34" d="M0 780C260 720 420 820 700 770C980 720 1100 800 1600 740V900H0Z"/>
-        </svg>
-      </div>
-      <div class="scene scene-glass">
-        <div class="glass-glow"></div>
-      </div>
-      <div class="dimmer"></div>
-    </div>
-
     <p id="boot" class="boot">Glance</p>
 
     <main id="login" class="login" hidden>
@@ -77,7 +37,6 @@
     <p class="privacy-public"><a href="/glance/privacy.html">Privacy policy</a></p>
 
     <div id="board" class="app" hidden>
-      <div id="party" class="party" hidden role="status"></div>
       <header class="top">
         <section class="clock-block">
           <p id="place" class="place">Phoenix</p>
@@ -86,6 +45,8 @@
             <span id="ampm"></span>
           </p>
           <p id="date" class="date"></p>
+          <p id="next-line" class="next-line" hidden></p>
+          <p id="party" class="party" hidden role="status"></p>
           <p id="summary" class="summary"></p>
         </section>
         <section id="now" class="now-card glass" aria-label="Current weather"></section>
@@ -112,6 +73,7 @@
       </div>
     </div>
 
+    <template id="week-template">
     <section id="week" class="week" hidden aria-label="Week view">
       <header class="week-bar">
         <button id="week-back" type="button">Back</button>
@@ -122,7 +84,9 @@
       </header>
       <div id="week-days" class="week-days"></div>
     </section>
+    </template>
 
+    <template id="settings-template">
     <div id="settings" class="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <form id="settings-form" class="settings-card glass">
         <header class="settings-head">
@@ -233,10 +197,11 @@
             <p id="pw-msg" class="hint" role="status"></p>
           </section>
           <button id="sign-out" type="button" class="text-btn danger">Sign out</button>
-          <p class="hint credit">Scenes are original artwork. Weather and air quality come from Open-Meteo.</p>
+          <p class="hint credit">Weather and air quality come from Open-Meteo.</p>
         </div>
       </form>
     </div>
-    <script src="/glance/app.js?v=__GLANCE_BUILD__"></script>
+    </template>
+    <script src="/glance/app.js?v=__GLANCE_BUILD__" defer></script>
   </body>
 </html>

@@ -1,7 +1,7 @@
 import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth';
-import { birthdayName, dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
+import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
@@ -428,6 +428,11 @@ describe('layouts and birthdays', () => {
     expect(birthdayName("Amy's birthday")).toBe('Amy');
     expect(birthdayName('bday: Nora')).toBe('Nora');
     expect(titleIsBirthday('Daily JIRA Prep')).toBe(false);
+    expect(titleIsBirthday("Get groceries for Amy's birthday")).toBe(false);
+    expect(birthdayName("Get groceries for Amy's birthday")).toBe('');
+    expect(eventIsBirthday({ title: "Get groceries for Amy's birthday", allDay: true, birthday: true })).toBe(false);
+    expect(eventIsBirthday({ title: 'Amy', allDay: true, birthday: true })).toBe(true);
+    expect(eventIsBirthday({ title: 'Amy', allDay: false, birthday: true })).toBe(false);
 
     const session = await signIn();
     const saved = await withSession('/glance/api/settings', session, {
@@ -451,6 +456,19 @@ END:VCALENDAR`;
     const events = eventsFromIcs(ics, { id: 'p', label: 'Personal', color: '#7dcea0' }, start, start + 86400000);
     expect(events[0]?.birthday).toBe(true);
     expect(events[0]?.title).toBe('Amy');
+
+    const task = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:groceries
+SUMMARY:Get groceries for Amy's birthday
+DESCRIPTION:Birthday cake and candles
+DTSTART;VALUE=DATE:20261014
+DTEND;VALUE=DATE:20261015
+END:VEVENT
+END:VCALENDAR`;
+    const tasks = eventsFromIcs(task, { id: 'p', label: 'Personal', color: '#7dcea0' }, start, start + 86400000);
+    expect(tasks[0]?.birthday).toBe(false);
+    expect(tasks[0]?.title).toBe("Get groceries for Amy's birthday");
   });
 });
 
@@ -614,6 +632,28 @@ END:VCALENDAR`;
     expect(weather.hourly[0].time.endsWith('-07:00')).toBe(true);
     expect(weather.sun.sunrise).toBe('2026-10-14T06:42:00-07:00');
     expect(weather.air.label).toBe('Good');
+  });
+});
+
+describe('Glance dashboard', () => {
+  it('returns weather, calendar, lights, and family in one response', async () => {
+    const session = await signIn();
+    const response = await withSession('/glance/api/dashboard', session);
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      ok: boolean;
+      settings: { locationName?: string };
+      weather: { ok?: boolean };
+      calendar: { days?: unknown[] };
+      lights: { ok?: boolean };
+      location: { people?: unknown[] };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.settings.locationName).toBeTruthy();
+    expect(body.weather.ok).toBe(true);
+    expect(Array.isArray(body.calendar.days)).toBe(true);
+    expect(body.lights.ok).toBe(true);
+    expect(Array.isArray(body.location.people)).toBe(true);
   });
 });
 

@@ -241,6 +241,7 @@ glance.put('/settings', async (c) => {
       .run();
   }
   c.header('Cache-Control', 'no-store');
+  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
@@ -267,34 +268,18 @@ glance.post('/password', async (c) => {
 });
 
 glance.get('/weather', async (c) => {
-  const settings = await loadSettings(c.env.LIVEVIEW_DB);
-  const key = `glance:wx:${settings.lat.toFixed(3)}:${settings.lon.toFixed(3)}`;
-  try {
-    const payload = await remember<WeatherPayload>(c.env.LIVEVIEW_MEDIA, key, 600, () =>
-      loadWeather(settings.lat, settings.lon)
-    );
-    c.header('Cache-Control', 'no-store');
-    return c.json(payload);
-  } catch (error) {
-    console.error('[glance] weather', scrub(error instanceof Error ? error.message : 'error'));
-    return c.json({ ok: false, message: 'Weather is unavailable' }, 200);
-  }
+  c.header('Cache-Control', 'no-store');
+  return c.json(await weatherPayload(c.env));
 });
 
 glance.get('/calendar', async (c) => {
-  const db = c.env.LIVEVIEW_DB;
-  const startDate = calendarStart(c.req.query('start'));
-  const feeds = (await db
-    .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
-    .all<FeedRow>()
-  ).results.filter((feed) => feed.url);
   c.header('Cache-Control', 'no-store');
-  if (!feeds.length) {
-    return c.json(await withAddedEvents(db, present([], Date.now(), [], startDate)));
-  }
-  const key = `glance:cal:v3:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
-  const payload = await remember(c.env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds, startDate));
-  return c.json(await withAddedEvents(c.env.LIVEVIEW_DB, payload));
+  return c.json(await calendarPayload(c.env, calendarStart(c.req.query('start'))));
+});
+
+glance.get('/dashboard', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json(await dashboardPayload(c.env, c.req.url));
 });
 
 glance.get('/google/start', async (c) => {
@@ -399,6 +384,7 @@ glance.post('/events', async (c) => {
   const allDay = boolOf(body.allDay);
   const color = await personalColor(db);
   await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
+  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
   c.header('Cache-Control', 'no-store');
   return c.json({
     ok: true,
@@ -408,21 +394,7 @@ glance.post('/events', async (c) => {
 
 glance.get('/lights', async (c) => {
   c.header('Cache-Control', 'no-store');
-  const settings = await loadSettings(c.env.LIVEVIEW_DB);
-  if (!settings.tuya_access_id || !settings.tuya_access_secret) {
-    return c.json({ ok: true, configured: false, lights: [], message: 'Add the Tuya cloud keys in settings.' });
-  }
-  try {
-    const devices = await listLights(
-      { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
-      c.env.LIVEVIEW_MEDIA
-    );
-    const prefs = await lightPrefs(c.env.LIVEVIEW_DB);
-    return c.json({ ok: true, configured: true, lights: mergeLights(devices, prefs) });
-  } catch (error) {
-    console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
-    return c.json({ ok: false, configured: true, lights: [], message: friendlyTuyaMessage(error) });
-  }
+  return c.json(await lightsPayload(c.env));
 });
 
 glance.post('/lights/:id', async (c) => {
@@ -445,6 +417,7 @@ glance.post('/lights/:id', async (c) => {
     console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
     throw new HttpError(502, friendlyTuyaMessage(error));
   }
+  await forgetDashboard(c.env.LIVEVIEW_MEDIA);
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, id, on: body.on });
 });
@@ -739,6 +712,77 @@ function copyResponse(response: Response, extra: Record<string, string>): Respon
   for (const cookie of cookies) headers.append('Set-Cookie', cookie);
   for (const [key, value] of Object.entries(extra)) headers.set(key, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function weatherPayload(env: Bindings) {
+  const settings = await loadSettings(env.LIVEVIEW_DB);
+  const key = `glance:wx:${settings.lat.toFixed(3)}:${settings.lon.toFixed(3)}`;
+  try {
+    return await remember<WeatherPayload>(env.LIVEVIEW_MEDIA, key, 600, () => loadWeather(settings.lat, settings.lon));
+  } catch (error) {
+    console.error('[glance] weather', scrub(error instanceof Error ? error.message : 'error'));
+    return { ok: false as const, message: 'Weather is unavailable' };
+  }
+}
+
+async function calendarPayload(env: Bindings, startDate: string | null) {
+  const db = env.LIVEVIEW_DB;
+  const feeds = (await db
+    .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
+    .all<FeedRow>()
+  ).results.filter((feed) => feed.url);
+  if (!feeds.length) return withAddedEvents(db, present([], Date.now(), [], startDate));
+  const key = `glance:cal:v3:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
+  const payload = await remember(env.LIVEVIEW_MEDIA, key, 60, () => buildCalendar(feeds, startDate));
+  return withAddedEvents(db, payload);
+}
+
+async function lightsPayload(env: Bindings) {
+  const settings = await loadSettings(env.LIVEVIEW_DB);
+  if (!settings.tuya_access_id || !settings.tuya_access_secret) {
+    return { ok: true as const, configured: false, lights: [], message: 'Add the Tuya cloud keys in settings.' };
+  }
+  try {
+    const devices = await listLights(
+      { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
+      env.LIVEVIEW_MEDIA
+    );
+    const prefs = await lightPrefs(env.LIVEVIEW_DB);
+    return { ok: true as const, configured: true, lights: mergeLights(devices, prefs) };
+  } catch (error) {
+    console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
+    return { ok: false as const, configured: true, lights: [], message: friendlyTuyaMessage(error) };
+  }
+}
+
+async function dashboardPayload(env: Bindings, requestUrl: string) {
+  const settings = await loadSettings(env.LIVEVIEW_DB);
+  const key = `glance:dash:v1:${await sha256Hex([
+    settings.lat.toFixed(3),
+    settings.lon.toFixed(3),
+    settings.layout,
+    settings.theme,
+    settings.widgets_json,
+    settings.location_name
+  ].join('|'))}`;
+  return remember(env.LIVEVIEW_MEDIA, key, 45, async () => {
+    const [pub, weather, calendar, lights, location] = await Promise.all([
+      publicSettings(env),
+      weatherPayload(env),
+      calendarPayload(env, null),
+      lightsPayload(env),
+      locationView(env, requestUrl)
+    ]);
+    return { ok: true, settings: { ok: true, ...pub }, weather, calendar, lights, location };
+  });
+}
+
+async function forgetDashboard(kv: KVNamespace) {
+  const keys = [...memory.keys()].filter((key) => key.startsWith('glance:dash:'));
+  await Promise.all(keys.map(async (key) => {
+    memory.delete(key);
+    try { await kv.delete(key); } catch { /* The next read rebuilds the cache. */ }
+  }));
 }
 
 function calendarStart(raw: string | undefined): string | null {

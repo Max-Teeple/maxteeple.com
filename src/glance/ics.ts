@@ -30,21 +30,42 @@ export type AgendaEvent = {
   work?: boolean;
 };
 
-const BIRTHDAY_TITLE = /\b(?:birthdays?|b-?days?)\b/i;
+const PERSON_NAME = /^[\p{L}][\p{L}.'’-]{0,30}(?:\s+[\p{L}][\p{L}.'’-]{0,30}){0,2}$/u;
+const NOT_A_NAME = /\b(?:get|buy|pick|call|grab|make|bring|shop|grocer\w*|for|with|about|the|task|todo|remind|meeting)\b/i;
 
+export function isPersonName(title: string): boolean {
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  return PERSON_NAME.test(text) && !NOT_A_NAME.test(text);
+}
+
+/** A title that is only a birthday, not a task that mentions one. */
 export function titleIsBirthday(title: string): boolean {
-  return BIRTHDAY_TITLE.test(title || '');
+  const text = String(title || '').replace(/\s+/g, ' ').trim();
+  if (/^(?:happy\s+)?(?:birthdays?|b-?days?)$/i.test(text)) return true;
+  return birthdayName(text) !== '';
 }
 
 export function birthdayName(title: string): string {
   const text = String(title || '').replace(/\s+/g, ' ').trim();
-  const leading = text.match(/^(.*?)(?:['’]s)?\s+(?:birthday|b-?day)\b/i);
-  if (leading && leading[1].replace(/^happy\s+/i, '').trim()) {
-    return cleanBirthdayName(leading[1]);
+  const patterns = [
+    /^(?:happy\s+)?(.+?)['’]s\s+birthdays?$/i,
+    /^(?:happy\s+)?(.+?)['’]s\s+b-?days?$/i,
+    /^(?:happy\s+)?(.+?)\s+b-?days?$/i,
+    /^birthdays?\s*[:\-]\s*(.+)$/i,
+    /^b-?days?\s*[:\-]\s*(.+)$/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const name = cleanBirthdayName(match[1] || '');
+    if (isPersonName(name)) return name;
   }
-  const trailing = text.match(/\b(?:birthday|b-?day)\b[:\-\s]+(.+)/i);
-  if (trailing && trailing[1].trim()) return cleanBirthdayName(trailing[1]);
   return '';
+}
+
+export function eventIsBirthday(input: { title: string; allDay: boolean; birthday?: boolean }): boolean {
+  if (titleIsBirthday(input.title)) return true;
+  return !!(input.birthday && input.allDay && isPersonName(input.title));
 }
 
 function cleanBirthdayName(value: string): string {
@@ -179,7 +200,7 @@ export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, 
     start: occ.start,
     end: occ.end,
     allDay: occ.allDay,
-    birthday: occ.birthday || titleIsBirthday(occ.title),
+    birthday: eventIsBirthday({ title: occ.title, allDay: occ.allDay, birthday: occ.birthday }),
     feedId: feed.id,
     feedLabel: feed.label,
     color: feed.color
@@ -380,7 +401,6 @@ function parseIcs(ics: string): RawEvent[] {
     if (prop.name === 'UID' && prop.value.trim()) current.uid = prop.value.trim();
     else if (prop.name === 'SUMMARY') current.summary = unescapeText(prop.value);
     else if (prop.name === 'CATEGORIES' && /birthday/i.test(prop.value)) current.birthday = true;
-    else if (prop.name === 'DESCRIPTION' && prop.value.length < 120 && /\bbirthday\b/i.test(prop.value)) current.birthday = true;
     else if (/^X-/.test(prop.name) && /birthday|cake\.gif/i.test(`${prop.name} ${prop.value}`)) current.birthday = true;
     else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
     else if (prop.name === 'DTSTART') {
@@ -429,7 +449,13 @@ function singleOcc(raw: RawEvent): Occ | null {
   if (!raw.start || raw.start.y < 1970) return null;
   const start = stampUtc(raw.start);
   const end = start + durationOf(raw);
-  return { title: raw.summary || 'Busy', start, end, allDay: raw.start.allDay, birthday: raw.birthday || titleIsBirthday(raw.summary) };
+  return {
+    title: raw.summary || 'Busy',
+    start,
+    end,
+    allDay: raw.start.allDay,
+    birthday: eventIsBirthday({ title: raw.summary || 'Busy', allDay: raw.start.allDay, birthday: !!raw.birthday })
+  };
 }
 
 function minuteKey(ms: number): number {
@@ -484,7 +510,13 @@ function expandRule(raw: RawEvent, windowStart: number, windowEnd: number): Occ[
     emitted.n++;
     const end = allDay ? start + duration : start + duration;
     if (overlaps(start, end, windowStart, windowEnd)) {
-      out.push({ title, start, end, allDay, birthday: raw.birthday || titleIsBirthday(title) });
+      out.push({
+        title,
+        start,
+        end,
+        allDay,
+        birthday: eventIsBirthday({ title, allDay, birthday: !!raw.birthday })
+      });
     }
     return true;
   };
