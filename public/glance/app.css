@@ -363,6 +363,33 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   margin-bottom: 0.22rem;
 }
 .event.all-day { grid-template-columns: minmax(0, 1fr); }
+.event.is-past { opacity: 0.38; }
+.event.is-now {
+  background: rgba(226, 75, 74, 0.14);
+  border-radius: 8px;
+}
+.now-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.05rem 0 0.28rem;
+  padding: 0;
+  list-style: none;
+}
+.now-line span {
+  color: #e24b4a;
+  font-size: 0.875rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.now-line i {
+  display: block;
+  height: 2px;
+  background: #e24b4a;
+  border-radius: 1px;
+}
 .event-time {
   font-family: var(--mono);
   font-size: 0.875rem;

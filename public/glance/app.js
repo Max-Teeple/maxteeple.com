@@ -93,6 +93,11 @@
     return text.hh + ':' + text.mm;
   }
 
+  function formatNowLabel(date, clock24) {
+    var text = clockText(phoenixParts(date), !!clock24);
+    return text.hh + ':' + text.mm + (text.ap ? ' ' + text.ap : '');
+  }
+
   function formatRange(event, clock24) {
     if (!event || event.allDay) return 'All day';
     var start = clockText(phoenixParts(new Date(event.start)), !!clock24);
@@ -338,7 +343,7 @@
     var limit = layout === 'today' || layout === 'home' ? 1 : layout === 'threeday' ? 3 : 7;
     (calendar.days || []).slice(0, limit).forEach(function (day) {
       var col = document.createElement('article');
-      col.className = 'day' + (day.label === 'Today' ? ' is-today' : '');
+      col.className = 'day' + (day.label === 'Today' || day.date === phoenixDateKey(new Date()) ? ' is-today' : '');
       var head = document.createElement('div');
       head.className = 'day-head';
       var name = document.createElement('strong');
@@ -358,6 +363,9 @@
           var item = document.createElement('li');
           item.className = 'event' + (event.allDay ? ' all-day' : '');
           item.style.setProperty('--feed', event.color || '#f6f3ec');
+          item.dataset.start = event.start || '';
+          item.dataset.end = event.end || '';
+          if (event.allDay) item.dataset.allDay = '1';
           var time = document.createElement('span');
           time.className = 'event-time';
           time.textContent = formatRange(event, clock24);
@@ -374,6 +382,7 @@
       }
       root.appendChild(col);
     });
+    syncTodayColumns(root);
     var failed = (calendar.feeds || []).filter(function (feed) { return !feed.ok; });
     if (failed.length) {
       var host = root.querySelector('.day') || root;
@@ -1284,6 +1293,9 @@
           var item = document.createElement('li');
           item.className = 'event' + (event.allDay ? ' all-day' : '');
           item.style.setProperty('--feed', event.color || '#f6f3ec');
+          item.dataset.start = event.start || '';
+          item.dataset.end = event.end || '';
+          if (event.allDay) item.dataset.allDay = '1';
           var time = document.createElement('span');
           time.className = 'event-time';
           time.textContent = formatRange(event, clock24);
@@ -1300,6 +1312,63 @@
       }
       root.appendChild(col);
     });
+    syncTodayColumns(root);
+  }
+
+  function syncNow(list) {
+    var now = Date.now();
+    var todayKey = phoenixDateKey(new Date());
+    var clock24 = !!(state.settings && state.settings.clock24);
+    var items = Array.prototype.filter.call(list.children, function (el) {
+      return el.classList.contains('event');
+    });
+    var rangeStart = Infinity;
+    var rangeEnd = -Infinity;
+    var anchor = null;
+    items.forEach(function (item) {
+      var allDay = item.dataset.allDay === '1';
+      var start = new Date(item.dataset.start).getTime();
+      var end = new Date(item.dataset.end).getTime();
+      item.classList.remove('is-past', 'is-now');
+      if (allDay) {
+        var startKey = (item.dataset.start || '').slice(0, 10);
+        if (startKey && startKey < todayKey) item.classList.add('is-past');
+        return;
+      }
+      if (!isNaN(start) && start < rangeStart) rangeStart = start;
+      if (!isNaN(end) && end > rangeEnd) rangeEnd = end;
+      if (end <= now) item.classList.add('is-past');
+      else if (start <= now) {
+        item.classList.add('is-now');
+        if (!anchor) anchor = item;
+      } else if (!anchor) anchor = item;
+    });
+    var line = list.querySelector('.now-line');
+    var show = rangeStart !== Infinity && now >= rangeStart && now < rangeEnd;
+    if (!show) {
+      if (line) line.remove();
+      return;
+    }
+    if (!line) {
+      line = document.createElement('li');
+      line.className = 'now-line';
+      line.setAttribute('aria-hidden', 'true');
+      var label = document.createElement('span');
+      var rule = document.createElement('i');
+      line.append(label, rule);
+    }
+    line.querySelector('span').textContent = formatNowLabel(new Date(now), clock24);
+    if (anchor) list.insertBefore(line, anchor);
+    else list.appendChild(line);
+    var lineTop = line.offsetTop;
+    var viewBottom = list.scrollTop + list.clientHeight;
+    if (lineTop < list.scrollTop + 8 || lineTop > viewBottom - 28) {
+      list.scrollTop = Math.max(0, lineTop - 28);
+    }
+  }
+
+  function syncTodayColumns(root) {
+    (root || document).querySelectorAll('.day.is-today .events').forEach(syncNow);
   }
 
   function moveWeek(delta) {
@@ -1560,7 +1629,10 @@
   }
 
   function scheduleClock() {
-    if (!board.hidden) applyChrome();
+    if (!board.hidden) {
+      applyChrome();
+      syncTodayColumns(document);
+    }
     var wait = 60000 - (Date.now() % 60000) + 50;
     setTimeout(scheduleClock, wait);
   }
