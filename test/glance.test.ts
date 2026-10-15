@@ -980,6 +980,7 @@ describe('Daily verse', () => {
     const today = verseFor(Date.parse('2026-01-01T12:00:00-07:00'));
     expect(today.date).toBe('2026-01-01');
     expect(today.reference).toBe('Philippians 4:13');
+    expect(today.text).toBe('I can do all things through Christ who strengthens me.');
     const session = await signIn();
     const verse = await withSession('/glance/api/verse', session);
     expect(verse.status).toBe(200);

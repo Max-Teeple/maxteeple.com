@@ -517,7 +517,7 @@
     title.textContent = "Today's Verse";
     var ref = document.createElement('p');
     ref.className = 'sheet-kicker';
-    ref.textContent = verse.reference + ' · ' + (verse.theme || '');
+    ref.textContent = verse.reference + ' (WEB) · ' + (verse.theme || '');
     node.body.append(title, ref);
     if (!verse.text) return;
     var text = document.createElement('p');

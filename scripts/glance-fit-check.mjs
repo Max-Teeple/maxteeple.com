@@ -72,7 +72,7 @@ if (process.env.GLANCE_FIT_TIMING === '1') {
         const full = request.url().includes('full=1');
         const body = { ok: true, date: '2026-01-01', reference: 'Philippians 4:13', theme: 'Strength' };
         if (full) {
-          body.text = 'I can do all things through Christ which strengtheneth me.';
+          body.text = 'I can do all things through Christ who strengthens me.';
           body.devotional = 'Before the kitchen gets noisy, this verse is enough for one honest minute.';
         }
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -192,7 +192,7 @@ if (assets) {
           theme: 'Strength'
         };
         if (full) {
-          body.text = 'I can do all things through Christ which strengtheneth me.';
+          body.text = 'I can do all things through Christ who strengthens me.';
           body.devotional = 'Before the kitchen gets noisy, this verse is enough for one honest minute. You do not have to solve the whole day. Let one true sentence land, then do the next simple thing with a steadier voice.';
         }
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
