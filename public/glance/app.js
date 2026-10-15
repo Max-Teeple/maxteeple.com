@@ -419,7 +419,8 @@
 
   function renderVerse(rail) {
     rail.appendChild(verseCard());
-    if (!state.verse || state.verse.date !== phoenixDateKey(new Date())) ensureVerse();
+    var today = phoenixDateKey(new Date());
+    if (!state.verse || state.verse.date !== today) ensureVerse();
   }
 
   function verseCard() {
@@ -454,10 +455,12 @@
   var verseLoad = '';
   async function ensureVerse() {
     var today = phoenixDateKey(new Date());
-    if ((state.verse && state.verse.date === today) || verseLoad === today) return;
+    if (state.verse && state.verse.date === today) return;
+    if (verseLoad === today) return;
     verseLoad = today;
     try {
-      state.verse = await api('/glance/api/verse');
+      var summary = await api('/glance/api/verse');
+      state.verse = { date: summary.date, reference: summary.reference, theme: summary.theme };
       var rail = document.getElementById('rail');
       var current = rail && rail.querySelector('.verse-card');
       if (current) current.replaceWith(verseCard());
@@ -466,56 +469,70 @@
     }
   }
 
-  function makeSheet(label) {
+  var sheetNode;
+  function overlay() {
+    if (sheetNode) return sheetNode;
     var root = document.createElement('div');
     root.className = 'sheet';
     root.hidden = true;
     root.addEventListener('click', function (event) {
-      if (event.target === root) closeSheet(root);
+      if (event.target === root) closeSheet();
     });
     var panel = document.createElement('section');
     panel.className = 'sheet-card';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'true');
-    panel.setAttribute('aria-label', label);
     var close = document.createElement('button');
     close.type = 'button';
     close.className = 'sheet-close';
     close.textContent = 'Close';
-    close.addEventListener('click', function () { closeSheet(root); });
+    close.addEventListener('click', closeSheet);
     var body = document.createElement('div');
     body.className = 'sheet-body';
     panel.append(close, body);
     root.appendChild(panel);
     document.body.appendChild(root);
-    return { root: root, body: body };
+    sheetNode = { root: root, panel: panel, body: body };
+    return sheetNode;
   }
 
-  var verseSheet;
-  var eventSheet;
   function openVerse() {
     var verse = state.verse;
     if (!verse || !verse.reference) return;
-    if (!verseSheet) verseSheet = makeSheet("Today's Verse");
-    verseSheet.body.replaceChildren();
+    paintVerse(verse);
+    showSheet();
+    if (verse.text) return;
+    api('/glance/api/verse?full=1').then(function (full) {
+      if (!full || !state.verse || full.date !== state.verse.date) return;
+      state.verse = full;
+      if (sheetNode && !sheetNode.root.hidden && sheetNode.panel.getAttribute('aria-label') === "Today's Verse") paintVerse(full);
+    }).catch(function () { /* the reference stays up */ });
+  }
+
+  function paintVerse(verse) {
+    var node = overlay();
+    node.panel.setAttribute('aria-label', "Today's Verse");
+    node.body.replaceChildren();
     var title = document.createElement('h2');
     title.textContent = "Today's Verse";
     var ref = document.createElement('p');
     ref.className = 'sheet-kicker';
     ref.textContent = verse.reference + ' · ' + (verse.theme || '');
+    node.body.append(title, ref);
+    if (!verse.text) return;
     var text = document.createElement('p');
     text.className = 'verse-text';
-    text.textContent = verse.text || '';
+    text.textContent = verse.text;
     var copy = document.createElement('p');
     copy.className = 'verse-devotional';
     copy.textContent = verse.devotional || '';
-    verseSheet.body.append(title, ref, text, copy);
-    showSheet(verseSheet.root);
+    node.body.append(text, copy);
   }
 
   function openEvent(event) {
-    if (!eventSheet) eventSheet = makeSheet('Event');
-    var body = eventSheet.body;
+    var node = overlay();
+    node.panel.setAttribute('aria-label', 'Event');
+    var body = node.body;
     body.replaceChildren();
     var title = document.createElement('h2');
     title.textContent = event.title || 'Event';
@@ -542,7 +559,7 @@
       });
       if (event.deletable && event.googleId) body.appendChild(deleteControl(event));
     }
-    showSheet(eventSheet.root);
+    showSheet();
   }
 
   function detailLine(label, value) {
@@ -581,7 +598,7 @@
       button.disabled = true;
       try {
         await api('/glance/api/events/' + encodeURIComponent(event.googleId) + '?title=' + encodeURIComponent(event.title || ''), { method: 'DELETE' });
-        closeSheet(eventSheet.root);
+        closeSheet();
         await refreshCalendar();
         if (weekEl && !weekEl.hidden) await loadWeek();
       } catch (err) {
@@ -599,14 +616,16 @@
     return box;
   }
 
-  function showSheet(root) {
+  function showSheet() {
+    var root = overlay().root;
     root.hidden = false;
     root.classList.add('is-on');
   }
 
-  function closeSheet(root) {
-    root.classList.remove('is-on');
-    root.hidden = true;
+  function closeSheet() {
+    if (!sheetNode) return;
+    sheetNode.root.classList.remove('is-on');
+    sheetNode.root.hidden = true;
   }
 
   function renderLights(rail, widgets) {

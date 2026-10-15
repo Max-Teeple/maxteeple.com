@@ -31,7 +31,7 @@ import {
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
-import { verseFor } from './verse';
+import { verseDetail, verseSummary } from './verse';
 import { forgetPrefix, remember } from './cache';
 import {
   GOOGLE_ACCOUNT,
@@ -188,9 +188,11 @@ glance.get('/session', async (c) => {
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
-glance.get('/verse', (c) => {
+glance.get('/verse', async (c) => {
+  const full = c.req.query('full') === '1';
+  const verse = full ? await verseDetail(Date.now()) : await verseSummary(Date.now());
   c.header('Cache-Control', 'no-store');
-  return c.json({ ok: true, ...verseFor(Date.now()) });
+  return c.json({ ok: true, ...verse });
 });
 
 glance.get('/settings', async (c) => {

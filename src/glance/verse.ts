@@ -1,4 +1,5 @@
 import verses from './verses.json';
+import { remember } from './cache';
 import { phoenixDate } from './time';
 
 export type Verse = {
@@ -22,4 +23,24 @@ export function verseIndex(now = Date.now()): number {
 export function verseFor(now = Date.now()): Verse & { date: string } {
   const verse = YEAR[verseIndex(now)];
   return { ...verse, date: phoenixDate(now) };
+}
+
+const VERSE_TTL_SEC = 12 * 60 * 60;
+
+/** Reference and theme only. The iPad does not download the other 365 days. */
+export function verseSummary(now = Date.now()): Promise<{ date: string; reference: string; theme: string }> {
+  const date = phoenixDate(now);
+  return remember(`glance:verse:${date}:summary`, VERSE_TTL_SEC, async () => {
+    const verse = YEAR[verseIndex(now)];
+    return { date, reference: verse.reference, theme: verse.theme };
+  });
+}
+
+/** Full text and devotional. Fetched when the panel is opened, cached for that Phoenix date. */
+export function verseDetail(now = Date.now()): Promise<Verse & { date: string }> {
+  const date = phoenixDate(now);
+  return remember(`glance:verse:${date}:detail`, VERSE_TTL_SEC, async () => {
+    const verse = YEAR[verseIndex(now)];
+    return { date, reference: verse.reference, theme: verse.theme, text: verse.text, devotional: verse.devotional };
+  });
 }

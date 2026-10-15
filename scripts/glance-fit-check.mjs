@@ -50,6 +50,63 @@ const viewports = [
 const layouts = ['balanced', 'calendar', 'today', 'threeday', 'home'];
 const themes = ['aurora', 'desert', 'golf', 'glass', 'auto'];
 
+if (process.env.GLANCE_FIT_TIMING === '1') {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch();
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    const page = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const html = fs.readFileSync(path.join(assets || 'public/glance', 'index.html'), 'utf8').replaceAll('__GLANCE_BUILD__', 'fit');
+    const css = fs.readFileSync(path.join(assets || 'public/glance', 'app.css'), 'utf8');
+    const js = fs.readFileSync(path.join(assets || 'public/glance', 'app.js'), 'utf8');
+    await page.route('**/*', async (route) => {
+      const request = route.request();
+      const target = request.url().split('?')[0];
+      if (request.resourceType() === 'document') return route.fulfill({ status: 200, contentType: 'text/html', body: html });
+      if (target.endsWith('/glance/app.css')) return route.fulfill({ status: 200, contentType: 'text/css', body: css });
+      if (target.endsWith('/glance/app.js')) return route.fulfill({ status: 200, contentType: 'text/javascript', body: js });
+      if (target.includes('/glance/api/dashboard')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixtureDashboard()) });
+      if (target.includes('/glance/api/verse')) {
+        const full = request.url().includes('full=1');
+        const body = { ok: true, date: '2026-01-01', reference: 'Philippians 4:13', theme: 'Strength' };
+        if (full) {
+          body.text = 'I can do all things through Christ which strengtheneth me.';
+          body.devotional = 'Before the kitchen gets noisy, this verse is enough for one honest minute.';
+        }
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      }
+      if (target.endsWith('/glance/api/version')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"version":"fit"}' });
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+    });
+    const started = Date.now();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#board:not([hidden]) .verse-ref');
+    const elapsed = Date.now() - started;
+    const nav = await page.evaluate(() => {
+      const entry = performance.getEntriesByType('navigation')[0];
+      const script = performance.getEntriesByType('resource').find((item) => item.name.includes('app.js'));
+      return {
+        loadEvent: Math.round(entry.loadEventEnd),
+        jsDecoded: script ? script.decodedBodySize : 0
+      };
+    });
+    samples.push({ elapsed, ...nav });
+    await page.close();
+  }
+  await browser.close();
+  const loads = samples.map((row) => row.loadEvent).sort((a, b) => a - b);
+  const boards = samples.map((row) => row.elapsed).sort((a, b) => a - b);
+  const mid = Math.floor(loads.length / 2);
+  console.log('cpuThrottle 4x');
+  console.log('jsBytes ' + samples[0].jsDecoded);
+  console.log('loadEventMedianMs ' + loads[mid]);
+  console.log('boardMedianMs ' + boards[mid]);
+  console.log(JSON.stringify(samples));
+  process.exit(0);
+}
+
 let webkit;
 try {
   ({ webkit } = await import('playwright'));
@@ -126,19 +183,19 @@ if (assets) {
       if (target.endsWith('/glance/api/login')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
       }
-      if (target.endsWith('/glance/api/verse')) {
-        return route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            ok: true,
-            date: '2026-01-01',
-            reference: 'Philippians 4:13',
-            theme: 'Strength',
-            text: 'I can do all things through Christ which strengtheneth me.',
-            devotional: 'Before the kitchen gets noisy, this verse is enough for one honest minute. You do not have to solve the whole day. Let one true sentence land, then do the next simple thing with a steadier voice.'
-          })
-        });
+      if (target.includes('/glance/api/verse')) {
+        const full = request.url().includes('full=1');
+        const body = {
+          ok: true,
+          date: '2026-01-01',
+          reference: 'Philippians 4:13',
+          theme: 'Strength'
+        };
+        if (full) {
+          body.text = 'I can do all things through Christ which strengtheneth me.';
+          body.devotional = 'Before the kitchen gets noisy, this verse is enough for one honest minute. You do not have to solve the whole day. Let one true sentence land, then do the next simple thing with a steadier voice.';
+        }
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
       }
       if (target.endsWith('/glance/api/dashboard') || target.includes('/glance/api/calendar')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixtureDashboard()) });

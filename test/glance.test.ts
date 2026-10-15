@@ -983,10 +983,16 @@ describe('Daily verse', () => {
     const session = await signIn();
     const verse = await withSession('/glance/api/verse', session);
     expect(verse.status).toBe(200);
-    const body = await verse.json() as { reference: string; theme: string; text: string; devotional: string };
+    const body = await verse.json() as { reference: string; theme: string; text?: string; devotional?: string };
     expect(body.reference).toBeTruthy();
-    expect(body.text).toBeTruthy();
-    expect(body.devotional.split(/\s+/).length).toBeGreaterThanOrEqual(150);
+    expect(body.theme).toBeTruthy();
+    expect(body.text).toBeUndefined();
+    expect(body.devotional).toBeUndefined();
+    const full = await withSession('/glance/api/verse?full=1', session);
+    expect(full.status).toBe(200);
+    const detail = await full.json() as { text: string; devotional: string };
+    expect(detail.text.length).toBeGreaterThan(8);
+    expect(detail.devotional.split(/\s+/).length).toBeGreaterThanOrEqual(150);
   });
 });
 
