@@ -19,6 +19,23 @@ export type EventRange = { startMs: number; endMs: number };
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+const GOOGLE_FAILURES = new Set([
+  'invalid_client',
+  'redirect_uri_mismatch',
+  'invalid_grant',
+  'invalid_request',
+  'unauthorized_client',
+  'no_refresh_token',
+  'insufficient_scope',
+  'calendar_forbidden',
+  'token_exchange_failed'
+]);
+
+export function googleFailureReason(error: string | undefined): string {
+  const code = String(error || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  return GOOGLE_FAILURES.has(code) ? code : 'token_exchange_failed';
+}
+
 export function redirectUri(originOrHost: string): string {
   let host = originOrHost;
   try {

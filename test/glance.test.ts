@@ -5,7 +5,7 @@ import { birthdayName, dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, titleIs
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
-import { eventRange, googleAuthUrl, googleEventBody, openSecret, sealSecret } from '../src/glance/google';
+import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -683,5 +683,10 @@ describe('Google Calendar events', () => {
     const authUrl = googleAuthUrl({ clientId, redirectUri: 'https://maxteeple.com/glance/api/google/callback', state: 'abc' });
     expect(authUrl).toContain('prompt=consent');
     expect(authUrl).toContain('access_type=offline');
+    expect(redirectUri('https://maxteeple.com/google/callback?code=1')).toBe('https://maxteeple.com/glance/api/google/callback');
+    expect(redirectUri('https://www.maxteeple.com/glance/api/google/callback')).toBe('https://maxteeple.com/glance/api/google/callback');
+    expect(googleFailureReason('invalid_client')).toBe('invalid_client');
+    expect(googleFailureReason('redirect_uri_mismatch')).toBe('redirect_uri_mismatch');
+    expect(googleFailureReason('bad secret GOCSPX-nope')).toBe('token_exchange_failed');
   });
 });

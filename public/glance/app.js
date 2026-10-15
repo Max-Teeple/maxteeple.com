@@ -1641,18 +1641,33 @@
     renderLightPrefs();
   }
 
-  var googleCode = new URLSearchParams(window.location.search).get('google');
+  var googleParams = new URLSearchParams(window.location.search);
+  var googleCode = googleParams.get('google');
   if (googleCode) {
+    var googleReasons = {
+      invalid_client: 'Google rejected the client ID or secret. Re-enter both in settings with no extra spaces, save, and connect again.',
+      redirect_uri_mismatch: 'The redirect address did not match. In Google Cloud it must be exactly https://maxteeple.com/glance/api/google/callback.',
+      invalid_grant: 'That Google sign-in expired. Connect again from settings.',
+      invalid_request: 'Google sent the connection back without a code. Connect again from settings.',
+      unauthorized_client: 'The OAuth client must be a Web application. Check the client type in Google Cloud.',
+      no_refresh_token: 'Google did not return a refresh token. Connect again and accept the consent screen.',
+      insufficient_scope: 'Google did not allow calendar events. Connect again and allow access.',
+      calendar_forbidden: 'Google Calendar refused the connection. Connect again from settings.',
+      token_exchange_failed: 'Google could not be connected. Try again from settings.'
+    };
     var googleMessages = {
       connected: 'Google Calendar is connected.',
       denied: 'Google was not connected.',
       expired: 'That connection link expired. Try again from settings.',
-      account: 'Connect max.teeple@gmail.com. That was a different Google account.',
+      account: 'Connect while signed in to Google as max.teeple@gmail.com.',
       setup: 'Add the Google client ID and secret in settings, or store them as Worker secrets.',
       login: 'Sign in, then connect Google Calendar.',
-      error: 'Google could not be connected. Try again from settings.'
+      error: googleReasons.token_exchange_failed
     };
-    state.googleNotice = googleMessages[googleCode] || googleMessages.error;
+    var reason = googleParams.get('reason') || '';
+    state.googleNotice = googleCode === 'error'
+      ? (googleReasons[reason] || (reason ? googleMessages.error + ' (' + reason.replace(/[^a-z0-9_]/g, '') + ')' : googleMessages.error))
+      : (googleMessages[googleCode] || googleMessages.error);
     if (googleCode === 'login') document.getElementById('login-error').textContent = state.googleNotice;
     history.replaceState({}, '', '/glance/');
   }

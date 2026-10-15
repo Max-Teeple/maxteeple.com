@@ -37,6 +37,7 @@ import {
   eventRange,
   googleAuthUrl,
   googleEventBody,
+  googleFailureReason,
   openSecret,
   redirectUri,
   safeEqual,
@@ -304,7 +305,7 @@ glance.get('/google/start', async (c) => {
   c.header('Set-Cookie', stateCookie(state), { append: true });
   return c.redirect(googleAuthUrl({
     clientId: creds.clientId,
-    redirectUri: redirectUri(c.req.url),
+    redirectUri: publicGoogleRedirect(c.req.raw),
     state
   }));
 });
@@ -318,27 +319,23 @@ glance.get('/google/callback', async (c) => {
   if (url.searchParams.get('error') === 'access_denied') return c.redirect('/glance/?google=denied');
   if (!state || !expected || !safeEqual(state, expected)) return c.redirect('/glance/?google=expired');
   const code = url.searchParams.get('code') || '';
-  if (!code) return c.redirect('/glance/?google=error');
+  if (!code) return googleFail(c, 'invalid_request');
   const settings = await loadSettings(c.env.LIVEVIEW_DB);
   const creds = await googleCreds(c.env, settings);
   if (!creds) return c.redirect('/glance/?google=setup');
   try {
-    const tokens = await exchangeGoogleCode(creds, redirectUri(c.req.url), code);
-    if (!tokens.refreshToken) return c.redirect('/glance/?google=error');
-    const account = await googlePrimaryEmail(tokens.accessToken);
-    if (account.toLowerCase() !== GOOGLE_ACCOUNT) {
-      await revokeGoogle(tokens.refreshToken);
-      return c.redirect('/glance/?google=account');
-    }
+    const tokens = await exchangeGoogleCode(creds, publicGoogleRedirect(c.req.raw), code);
+    await confirmCalendarAccess(tokens.accessToken);
     const key = await tokenKey(c.env);
     await c.env.LIVEVIEW_DB
       .prepare(`UPDATE glance_settings SET google_refresh_token = ?, google_account = ?, updated_at = ? WHERE id = 'default'`)
-      .bind(await sealSecret(tokens.refreshToken, key), account, new Date().toISOString())
+      .bind(await sealSecret(tokens.refreshToken, key), GOOGLE_ACCOUNT, new Date().toISOString())
       .run();
     return c.redirect('/glance/?google=connected');
   } catch (error) {
-    console.error('[glance] google connect', error instanceof Error ? scrub(error.message) : 'error');
-    return c.redirect('/glance/?google=error');
+    const reason = googleFailureReason(error instanceof Error ? error.message : '');
+    console.error('[glance] google connect', reason);
+    return googleFail(c, reason);
   }
 });
 
@@ -1406,14 +1403,25 @@ function stateCookie(state: string, maxAge = 600): string {
   return `glance_google_state=${state}; HttpOnly; Secure; Path=/glance; Max-Age=${maxAge}; SameSite=Lax`;
 }
 
+function publicGoogleRedirect(request: Request): string {
+  const host = (request.headers.get('host') || new URL(request.url).host).split(':')[0].toLowerCase();
+  if (host === 'maxteeple.com' || host === 'www.maxteeple.com') return redirectUri('https://maxteeple.com');
+  const proto = (request.headers.get('x-forwarded-proto') || new URL(request.url).protocol.replace(':', '')).split(',')[0].trim();
+  return redirectUri(`${proto}://${request.headers.get('host') || host}`);
+}
+
+function googleFail(c: { redirect: (location: string) => Response }, reason: string): Response {
+  return c.redirect(`/glance/?google=error&reason=${googleFailureReason(reason)}`);
+}
+
 async function tokenKey(env: Bindings): Promise<string> {
   return env.GLANCE_DATA_KEY?.trim() || jwtSecret(env);
 }
 
 async function googleCreds(env: Bindings, settings: SettingsRow): Promise<{ clientId: string; clientSecret: string } | null> {
   const key = await tokenKey(env);
-  const clientId = env.GOOGLE_CLIENT_ID?.trim() || (await openSecret(settings.google_client_id || '', key));
-  const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim() || (await openSecret(settings.google_client_secret || '', key));
+  const clientId = (env.GOOGLE_CLIENT_ID || '').trim() || (await openSecret(settings.google_client_id || '', key)).trim();
+  const clientSecret = (env.GOOGLE_CLIENT_SECRET || '').trim() || (await openSecret(settings.google_client_secret || '', key)).trim();
   if (!clientId || !clientSecret) return null;
   return { clientId, clientSecret };
 }
@@ -1452,9 +1460,10 @@ async function exchangeGoogleCode(
       grant_type: 'authorization_code'
     })
   });
-  const data = (await response.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string };
-  if (!response.ok || !data.access_token) throw new Error('token');
-  return { accessToken: data.access_token, refreshToken: data.refresh_token || '' };
+  const data = (await response.json().catch(() => ({}))) as { access_token?: string; refresh_token?: string; error?: string };
+  if (!response.ok || !data.access_token) throw new Error(googleFailureReason(data.error));
+  if (!data.refresh_token) throw new Error('no_refresh_token');
+  return { accessToken: data.access_token, refreshToken: data.refresh_token };
 }
 
 async function googleAccessToken(
@@ -1485,13 +1494,13 @@ async function googleAccessToken(
   return data.access_token;
 }
 
-async function googlePrimaryEmail(access: string): Promise<string> {
-  const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary', {
+async function confirmCalendarAccess(access: string): Promise<void> {
+  const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1&showDeleted=false', {
     headers: { Authorization: `Bearer ${access}` }
   });
-  const data = (await response.json().catch(() => ({}))) as { id?: string };
-  if (!response.ok || !data.id) throw new Error('calendar');
-  return data.id;
+  await response.arrayBuffer().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) throw new Error('insufficient_scope');
+  if (!response.ok) throw new Error('calendar_forbidden');
 }
 
 async function insertGoogleEvent(access: string, body: unknown): Promise<void> {
