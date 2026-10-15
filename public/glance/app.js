@@ -359,25 +359,7 @@
         quiet.textContent = 'Open';
         col.append(head, quiet);
       } else {
-        day.events.forEach(function (event) {
-          var item = document.createElement('li');
-          item.className = 'event' + (event.allDay ? ' all-day' : '');
-          item.style.setProperty('--feed', event.color || '#f6f3ec');
-          item.dataset.start = event.start || '';
-          item.dataset.end = event.end || '';
-          if (event.allDay) item.dataset.allDay = '1';
-          var time = document.createElement('span');
-          time.className = 'event-time';
-          time.textContent = formatRange(event, clock24);
-          var title = document.createElement('span');
-          title.className = 'event-title';
-          title.textContent = event.title;
-          var feed = document.createElement('span');
-          feed.className = 'feed-name';
-          feed.textContent = event.feed || '';
-          item.append(time, title, feed);
-          list.appendChild(item);
-        });
+        day.events.forEach(function (event) { list.appendChild(paintEvent(event, clock24)); });
         col.append(head, list);
       }
       root.appendChild(col);
@@ -403,6 +385,228 @@
     renderLights(rail, widgets);
     renderFamily(rail, widgets);
     renderAdd(rail, draft);
+    renderVerse(rail);
+  }
+
+  function paintEvent(event, clock24) {
+    var item = document.createElement('li');
+    item.className = 'event' + (event.allDay ? ' all-day' : '');
+    item.style.setProperty('--feed', event.color || '#f6f3ec');
+    item.dataset.start = event.start || '';
+    item.dataset.end = event.end || '';
+    if (event.allDay) item.dataset.allDay = '1';
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', (event.title || 'Event') + ', details');
+    var time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatRange(event, clock24);
+    var title = document.createElement('span');
+    title.className = 'event-title';
+    title.textContent = event.title;
+    var feed = document.createElement('span');
+    feed.className = 'feed-name';
+    feed.textContent = event.feed || '';
+    item.append(time, title, feed);
+    item.addEventListener('click', function () { openEvent(event); });
+    item.addEventListener('keydown', function (keyEvent) {
+      if (keyEvent.key !== 'Enter' && keyEvent.key !== ' ') return;
+      keyEvent.preventDefault();
+      openEvent(event);
+    });
+    return item;
+  }
+
+  function renderVerse(rail) {
+    rail.appendChild(verseCard());
+    if (!state.verse || state.verse.date !== phoenixDateKey(new Date())) ensureVerse();
+  }
+
+  function verseCard() {
+    var card = document.createElement('section');
+    card.className = 'rail-card verse-card';
+    var head = document.createElement('div');
+    head.className = 'verse-head';
+    var heading = document.createElement('h3');
+    heading.textContent = "Today's Verse";
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'verse-open';
+    open.setAttribute('aria-label', 'Open verse');
+    open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M10 7h7v7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    head.append(heading, open);
+    var ref = document.createElement('p');
+    ref.className = 'verse-ref';
+    var theme = document.createElement('p');
+    theme.className = 'verse-theme';
+    var verse = state.verse;
+    if (verse && verse.reference) {
+      ref.textContent = verse.reference;
+      theme.textContent = verse.theme || '';
+      card.addEventListener('click', openVerse);
+    } else {
+      ref.textContent = 'Loading verse';
+    }
+    card.append(head, ref, theme);
+    return card;
+  }
+
+  var verseLoad = '';
+  async function ensureVerse() {
+    var today = phoenixDateKey(new Date());
+    if ((state.verse && state.verse.date === today) || verseLoad === today) return;
+    verseLoad = today;
+    try {
+      state.verse = await api('/glance/api/verse');
+      var rail = document.getElementById('rail');
+      var current = rail && rail.querySelector('.verse-card');
+      if (current) current.replaceWith(verseCard());
+    } catch (err) {
+      verseLoad = '';
+    }
+  }
+
+  function makeSheet(label) {
+    var root = document.createElement('div');
+    root.className = 'sheet';
+    root.hidden = true;
+    root.addEventListener('click', function (event) {
+      if (event.target === root) closeSheet(root);
+    });
+    var panel = document.createElement('section');
+    panel.className = 'sheet-card';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', label);
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'sheet-close';
+    close.textContent = 'Close';
+    close.addEventListener('click', function () { closeSheet(root); });
+    var body = document.createElement('div');
+    body.className = 'sheet-body';
+    panel.append(close, body);
+    root.appendChild(panel);
+    document.body.appendChild(root);
+    return { root: root, body: body };
+  }
+
+  var verseSheet;
+  var eventSheet;
+  function openVerse() {
+    var verse = state.verse;
+    if (!verse || !verse.reference) return;
+    if (!verseSheet) verseSheet = makeSheet("Today's Verse");
+    verseSheet.body.replaceChildren();
+    var title = document.createElement('h2');
+    title.textContent = "Today's Verse";
+    var ref = document.createElement('p');
+    ref.className = 'sheet-kicker';
+    ref.textContent = verse.reference + ' · ' + (verse.theme || '');
+    var text = document.createElement('p');
+    text.className = 'verse-text';
+    text.textContent = verse.text || '';
+    var copy = document.createElement('p');
+    copy.className = 'verse-devotional';
+    copy.textContent = verse.devotional || '';
+    verseSheet.body.append(title, ref, text, copy);
+    showSheet(verseSheet.root);
+  }
+
+  function openEvent(event) {
+    if (!eventSheet) eventSheet = makeSheet('Event');
+    var body = eventSheet.body;
+    body.replaceChildren();
+    var title = document.createElement('h2');
+    title.textContent = event.title || 'Event';
+    var when = document.createElement('p');
+    when.className = 'sheet-kicker';
+    when.textContent = formatRange(event, !!(state.settings && state.settings.clock24)) + (event.feed ? ' · ' + event.feed : '');
+    body.append(title, when);
+    if (event.masked) {
+      var quiet = document.createElement('p');
+      quiet.className = 'verse-devotional';
+      quiet.textContent = 'Details stay on the work calendar.';
+      body.appendChild(quiet);
+    } else {
+      if (event.location) body.appendChild(detailLine('Where', event.location));
+      if (event.description) body.appendChild(detailLine('Notes', event.description));
+      (event.links || []).forEach(function (link) {
+        var a = document.createElement('a');
+        a.className = 'event-link';
+        a.href = link;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = link.replace(/^https:\/\//, '');
+        body.appendChild(a);
+      });
+      if (event.deletable && event.googleId) body.appendChild(deleteControl(event));
+    }
+    showSheet(eventSheet.root);
+  }
+
+  function detailLine(label, value) {
+    var row = document.createElement('p');
+    row.className = 'event-detail';
+    var name = document.createElement('span');
+    name.textContent = label;
+    var text = document.createElement('span');
+    text.textContent = value;
+    row.append(name, text);
+    return row;
+  }
+
+  function deleteControl(event) {
+    var box = document.createElement('div');
+    box.className = 'event-delete';
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'danger-btn';
+    button.textContent = 'Delete';
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'text-btn';
+    cancel.textContent = 'Cancel';
+    cancel.hidden = true;
+    var note = document.createElement('p');
+    note.className = 'add-note';
+    button.addEventListener('click', async function () {
+      if (!box.classList.contains('is-confirm')) {
+        box.classList.add('is-confirm');
+        button.textContent = 'Confirm delete';
+        cancel.hidden = false;
+        note.textContent = 'Delete this event from Google Calendar?';
+        return;
+      }
+      button.disabled = true;
+      try {
+        await api('/glance/api/events/' + encodeURIComponent(event.googleId) + '?title=' + encodeURIComponent(event.title || ''), { method: 'DELETE' });
+        closeSheet(eventSheet.root);
+        await refreshCalendar();
+        if (weekEl && !weekEl.hidden) await loadWeek();
+      } catch (err) {
+        button.disabled = false;
+        note.textContent = err.message || 'That event was not deleted';
+      }
+    });
+    cancel.addEventListener('click', function () {
+      box.classList.remove('is-confirm');
+      button.textContent = 'Delete';
+      cancel.hidden = true;
+      note.textContent = '';
+    });
+    box.append(button, cancel, note);
+    return box;
+  }
+
+  function showSheet(root) {
+    root.hidden = false;
+    root.classList.add('is-on');
+  }
+
+  function closeSheet(root) {
+    root.classList.remove('is-on');
+    root.hidden = true;
   }
 
   function renderLights(rail, widgets) {
@@ -1323,25 +1527,7 @@
         quiet.textContent = 'Open';
         col.append(head, quiet);
       } else {
-        day.events.forEach(function (event) {
-          var item = document.createElement('li');
-          item.className = 'event' + (event.allDay ? ' all-day' : '');
-          item.style.setProperty('--feed', event.color || '#f6f3ec');
-          item.dataset.start = event.start || '';
-          item.dataset.end = event.end || '';
-          if (event.allDay) item.dataset.allDay = '1';
-          var time = document.createElement('span');
-          time.className = 'event-time';
-          time.textContent = formatRange(event, clock24);
-          var label = document.createElement('span');
-          label.className = 'event-title';
-          label.textContent = event.title;
-          var feed = document.createElement('span');
-          feed.className = 'feed-name';
-          feed.textContent = event.feed || '';
-          item.append(time, label, feed);
-          list.appendChild(item);
-        });
+        day.events.forEach(function (event) { list.appendChild(paintEvent(event, clock24)); });
         col.append(head, list);
       }
       root.appendChild(col);
@@ -1671,6 +1857,7 @@
     if (!board.hidden) {
       applyChrome();
       syncTodayColumns(document);
+      ensureVerse();
     }
     var wait = 60000 - (Date.now() % 60000) + 50;
     setTimeout(scheduleClock, wait);

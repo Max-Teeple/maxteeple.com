@@ -19,9 +19,10 @@ import path from 'path';
 
 const url = process.env.GLANCE_URL || 'https://maxteeple.com/glance/';
 const password = process.env.GLANCE_PASSWORD || '';
+const fixture = process.env.GLANCE_FIT_FIXTURE === '1';
 const outDir = process.env.GLANCE_FIT_OUT || path.join(process.cwd(), 'glance-fit-out');
 const assets = process.env.GLANCE_ASSETS || '';
-if (!password) {
+if (!password && !fixture) {
   console.error('Set GLANCE_PASSWORD');
   process.exit(2);
 }
@@ -61,6 +62,54 @@ const browser = await webkit.launch();
 const page = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
 page.setDefaultTimeout(30000);
 
+function fixtureDashboard() {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Phoenix', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const event = (title, feed, extra) => ({
+    title,
+    allDay: false,
+    birthday: false,
+    start: today + 'T15:00:00-07:00',
+    end: today + 'T16:00:00-07:00',
+    feed,
+    color: feed === 'Work' ? '#8eb6ff' : '#7dcea0',
+    location: '',
+    description: '',
+    links: [],
+    googleId: '',
+    deletable: false,
+    masked: feed === 'Work',
+    ...extra
+  });
+  const day = { date: today, label: 'Today', weekday: 'Today', day: Number(today.slice(-2)), events: [
+    event('Family dinner', 'Personal', { location: 'Home', description: 'Bring dessert', links: ['https://example.com/menu'], googleId: 'abc123event', deletable: true, masked: false }),
+    event('Max Work Meeting', 'Work', { masked: true })
+  ] };
+  return {
+    ok: true,
+    settings: {
+      ok: true,
+      locationName: 'Phoenix',
+      theme: 'auto',
+      layout: 'threeday',
+      clock24: false,
+      nightStart: 21,
+      nightEnd: 6,
+      widgets: { countdown: false, sun: false, air: false, summary: false, lights: true, family: true },
+      google: { connected: true },
+      feeds: []
+    },
+    weather: {
+      ok: true,
+      current: { temp: 84, label: 'Clear', icon: 'sun', isDay: true, high: 91, low: 64, feels: 82, wind: 6, windDir: 220, uv: 7, precip: 0, code: 0 },
+      daily: [0, 1, 2, 3, 4].map((offset) => ({ date: today, icon: 'sun', high: 90, low: 64, precip: 0 })),
+      hourly: [15, 16, 17, 18].map((hour) => ({ time: today + 'T' + hour + ':00:00-07:00', icon: 'sun', isDay: true, temp: 84, precip: 0 }))
+    },
+    calendar: { ok: true, days: [day, { ...day, label: 'Tomorrow', events: [] }, { ...day, label: 'Wed', events: day.events }] },
+    lights: { ok: true, configured: true, lights: [{ id: 'plug1', name: 'Lamp', online: true, on: false, code: 'switch_1', enabled: true }] },
+    location: { ok: true, people: [{ id: 'p1', name: 'Max', color: '#f6f3ec', phrase: 'Max is at home', stale: false }] }
+  };
+}
+
 if (assets) {
   const html = fs.readFileSync(path.join(assets, 'index.html'), 'utf8').replaceAll('__GLANCE_BUILD__', 'fit');
   const css = fs.readFileSync(path.join(assets, 'app.css'), 'utf8');
@@ -73,6 +122,34 @@ if (assets) {
     }
     if (target.endsWith('/glance/app.css')) return route.fulfill({ status: 200, contentType: 'text/css', body: css });
     if (target.endsWith('/glance/app.js')) return route.fulfill({ status: 200, contentType: 'text/javascript', body: js });
+    if (fixture && target.includes('/glance/api/')) {
+      if (target.endsWith('/glance/api/login')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      }
+      if (target.endsWith('/glance/api/verse')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            date: '2026-01-01',
+            reference: 'Philippians 4:13',
+            theme: 'Strength',
+            text: 'I can do all things through Christ which strengtheneth me.',
+            devotional: 'Before the kitchen gets noisy, this verse is enough for one honest minute. You do not have to solve the whole day. Let one true sentence land, then do the next simple thing with a steadier voice.'
+          })
+        });
+      }
+      if (target.endsWith('/glance/api/dashboard') || target.includes('/glance/api/calendar')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixtureDashboard()) });
+      }
+      if (target.endsWith('/glance/api/settings') && request.method() === 'PUT') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, layout: 'threeday', theme: 'auto', google: { connected: true } }) });
+      }
+      if (target.endsWith('/glance/api/version')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"version":"fit"}' });
+      }
+    }
     if (target.endsWith('/glance/api/dashboard') && process.env.GLANCE_DASHBOARD_SHIM === '1') {
       const origin = new URL(request.url()).origin;
       const jar = await page.context().cookies('https://maxteeple.com');
@@ -125,10 +202,14 @@ page.on('request', (request) => {
 });
 
 await page.goto(url, { waitUntil: 'domcontentloaded' });
-await page.waitForSelector('#login-password');
-await page.fill('#login-password', password);
-await page.click('#login-form button[type="submit"]');
-await page.waitForSelector('#board:not([hidden]) .event-title', { timeout: 20000 });
+if (fixture) {
+  await page.waitForSelector('#board:not([hidden]) .event-title', { timeout: 20000 });
+} else {
+  await page.waitForSelector('#login-password');
+  await page.fill('#login-password', password);
+  await page.click('#login-form button[type="submit"]');
+  await page.waitForSelector('#board:not([hidden]) .event-title', { timeout: 20000 });
+}
 console.error('signed in');
 
 const rows = [];
@@ -271,6 +352,33 @@ for (const viewport of viewports) {
     }
   }
 }
+
+await page.setViewportSize({ width: 1024, height: 1366 });
+await page.evaluate(() => {
+  document.body.dataset.layout = 'threeday';
+  document.body.dataset.theme = 'aurora';
+  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'threeday', theme: 'aurora' } }));
+});
+await page.screenshot({ path: path.join(outDir, 'ipad-12.9-collapsed.png') });
+const verse = page.locator('.verse-card');
+if (await verse.count()) {
+  await verse.click();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(outDir, 'ipad-12.9-verse-expanded.png') });
+  await page.locator('.sheet:not([hidden]) .sheet-close').click();
+}
+const event = page.locator('#days .event').first();
+if (await event.count()) {
+  await event.click();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(outDir, 'ipad-12.9-event-expanded.png') });
+  await page.locator('.sheet:not([hidden]) .sheet-close').click();
+}
+await page.setViewportSize({ width: 1366, height: 1024 });
+await page.evaluate(() => {
+  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'threeday', theme: 'aurora' } }));
+});
+await page.screenshot({ path: path.join(outDir, 'ipad-12.9-landscape-collapsed.png') });
 
 await browser.close();
 if (posts.length) {

@@ -20,7 +20,9 @@ declare module 'cloudflare:test' {
     };
   };
 }
-import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
+import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, googleEventId, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
+import { verseFor, verseIndex } from '../src/glance/verse';
+import verses from '../src/glance/verses.json';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
@@ -66,7 +68,7 @@ function withSession(path: string, session: string, init?: RequestInit) {
 
 describe('Glance kitchen board', () => {
   it('requires a login before any data route', async () => {
-    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights', '/glance/api/location'];
+    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights', '/glance/api/location', '/glance/api/verse'];
     for (const path of paths) {
       const response = await api(path);
       expect(response.status, path).toBe(401);
@@ -618,6 +620,11 @@ END:VCALENDAR`;
       'Work:Max Work Meeting:#8eb6ff',
       'Personal:Family picnic:#7dcea0'
     ]);
+    expect(masked[0].location || '').toBe('');
+    expect(masked[0].description || '').toBe('');
+    expect(masked[0].googleId || '').toBe('');
+    expect(googleEventId('abc123event@google.com')).toBe('abc123event');
+    expect(googleEventId('not-google')).toBe('');
     const onlyMirror = maskWorkEvents([
       { title: '[Work] Planning', start: startMs, end: endMs, allDay: false, feedId: 'p', feedLabel: 'Personal', color: '#7dcea0' }
     ]);
@@ -625,6 +632,31 @@ END:VCALENDAR`;
     expect(onlyMirror[0].feedLabel).toBe('Work');
     expect(onlyMirror[0].color).toBe('#8eb6ff');
     expect(JSON.stringify(onlyMirror)).not.toContain('Planning');
+  });
+
+  it('keeps personal details and strips work details', () => {
+    const start = zonedToUtc(2026, 10, 14, 0, 0, 0, 'America/Phoenix');
+    const end = zonedToUtc(2026, 10, 16, 0, 0, 0, 'America/Phoenix');
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:abc123event@google.com
+SUMMARY:Dentist
+LOCATION:Main St
+DESCRIPTION:Bring notes https://example.com/notes
+URL:https://example.com/map
+DTSTART;TZID=America/Phoenix:20261014T090000
+DTEND;TZID=America/Phoenix:20261014T100000
+END:VEVENT
+END:VCALENDAR`;
+    const personal = eventsFromIcs(ics, { id: 'p', label: 'Personal', color: '#7dcea0' }, start, end)[0];
+    expect(personal.location).toBe('Main St');
+    expect(personal.description).toContain('Bring notes');
+    expect(personal.googleId).toBe('abc123event');
+    const work = maskWorkEvents(eventsFromIcs(ics, { id: 'w', label: 'Work', color: '#8eb6ff' }, start, end));
+    expect(work[0].title).toBe('Max Work Meeting');
+    expect(work[0].location).toBe('');
+    expect(work[0].description).toBe('');
+    expect(work[0].googleId).toBe('');
   });
 
   it('shapes an Open-Meteo payload', () => {
@@ -928,6 +960,33 @@ describe('Google Calendar events', () => {
         `UPDATE glance_settings SET google_refresh_token = '', google_account = '', event_notify_url = '', event_notify_key = '' WHERE id = 'default'`
       ).run();
     }
+  });
+});
+
+describe('Daily verse', () => {
+  it('keeps 366 public-domain entries and changes with the Phoenix day', async () => {
+    expect(verses).toHaveLength(366);
+    for (const row of verses as { reference: string; theme: string; text: string; devotional: string }[]) {
+      expect(row.reference).toMatch(/\d+:\d+$/);
+      expect(row.theme).toMatch(/^[A-Za-z]+$/);
+      expect(row.text.length).toBeGreaterThan(8);
+      const words = row.devotional.trim().split(/\s+/).length;
+      expect(words).toBeGreaterThanOrEqual(150);
+      expect(words).toBeLessThanOrEqual(250);
+    }
+    expect(verseIndex(Date.parse('2026-01-01T12:00:00-07:00'))).toBe(0);
+    expect(verseIndex(Date.parse('2024-02-29T12:00:00-07:00'))).toBe(59);
+    expect(verseIndex(Date.parse('2026-03-01T12:00:00-07:00'))).toBe(60);
+    const today = verseFor(Date.parse('2026-01-01T12:00:00-07:00'));
+    expect(today.date).toBe('2026-01-01');
+    expect(today.reference).toBe('Philippians 4:13');
+    const session = await signIn();
+    const verse = await withSession('/glance/api/verse', session);
+    expect(verse.status).toBe(200);
+    const body = await verse.json() as { reference: string; theme: string; text: string; devotional: string };
+    expect(body.reference).toBeTruthy();
+    expect(body.text).toBeTruthy();
+    expect(body.devotional.split(/\s+/).length).toBeGreaterThanOrEqual(150);
   });
 });
 

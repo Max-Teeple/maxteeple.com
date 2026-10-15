@@ -31,6 +31,7 @@ import {
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
+import { verseFor } from './verse';
 import { forgetPrefix, remember } from './cache';
 import {
   GOOGLE_ACCOUNT,
@@ -185,6 +186,11 @@ glance.post('/logout', async (c) => {
 glance.get('/session', async (c) => {
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
+});
+
+glance.get('/verse', (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, ...verseFor(Date.now()) });
 });
 
 glance.get('/settings', async (c) => {
@@ -439,7 +445,13 @@ glance.post('/events', async (c) => {
   await forgetPrefix('glance:cal:');
   const event = {
     ...glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color }),
-    source: 'glance' as const
+    source: 'glance' as const,
+    googleId,
+    deletable: !!googleId,
+    masked: false,
+    location: '',
+    description: '',
+    links: [] as string[]
   };
   const notify = await notifyGlanceEvent(c.env, settings, event);
   const save = { event, googleId, notify };
@@ -941,7 +953,23 @@ function present(events: AgendaEvent[], now: number, feeds: { id: string; label:
   };
 }
 
+function eventLinks(event: AgendaEvent): string[] {
+  if (event.work) return [];
+  const found: string[] = [];
+  const add = (value: string) => {
+    const link = value.trim().replace(/[.,)]+$/, '');
+    if (!/^https:\/\//i.test(link) || found.includes(link) || found.length >= 4) return;
+    found.push(link);
+  };
+  add(event.url || '');
+  for (const match of (event.description || '').matchAll(/https:\/\/[^\s]+/g)) add(match[0]);
+  return found;
+}
+
 function serializeEvent(event: AgendaEvent) {
+  const masked = !!event.work;
+  const personal = event.feedLabel.trim().toLowerCase() === 'personal';
+  const googleId = masked ? '' : event.googleId || '';
   return {
     title: event.title,
     allDay: event.allDay,
@@ -949,7 +977,13 @@ function serializeEvent(event: AgendaEvent) {
     start: formatPhoenix(event.start),
     end: formatPhoenix(event.end),
     feed: event.feedLabel,
-    color: event.color
+    color: event.color,
+    location: masked ? '' : event.location || '',
+    description: masked ? '' : event.description || '',
+    links: eventLinks(event),
+    googleId,
+    deletable: !masked && personal && !!googleId,
+    masked
   };
 }
 
