@@ -398,7 +398,73 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
+.event { cursor: pointer; }
 .event-title { font-size: 0.95rem; line-height: 1.25; }
+.verse-card { margin-top: auto; cursor: pointer; gap: 0.12rem; }
+.verse-head { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; }
+.verse-open {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+}
+.verse-open svg { width: 1rem; height: 1rem; display: block; margin: auto; }
+.verse-ref { margin: 0; font-size: 0.95rem; line-height: 1.25; }
+.verse-theme { margin: 0; font-size: 0.875rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(6, 8, 12, 0.72);
+}
+.sheet[hidden] { display: none; }
+.sheet.is-on { animation: sheet-in 120ms ease; }
+@keyframes sheet-in { from { opacity: 0; } to { opacity: 1; } }
+.sheet-card {
+  width: min(40rem, 100%);
+  max-height: min(86vh, 100%);
+  overflow: auto;
+  background: #10161c;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem 1.1rem;
+}
+.sheet-close {
+  display: block;
+  margin-left: auto;
+  min-height: 2rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.sheet-body h2 { margin: 0 0 0.35rem; font-size: 1.45rem; line-height: 1.2; }
+.sheet-kicker { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.95rem; }
+.verse-text { margin: 0 0 0.8rem; font-size: 1.15rem; line-height: 1.45; }
+.verse-devotional { margin: 0; font-size: 1rem; line-height: 1.45; color: var(--muted); }
+.event-detail { display: grid; gap: 0.15rem; margin: 0 0 0.7rem; font-size: 1rem; line-height: 1.35; }
+.event-detail span:first-child { color: var(--faint); font-size: 0.875rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.event-link { display: block; margin: 0 0 0.45rem; color: var(--accent); font-size: 0.95rem; word-break: break-all; }
+.event-delete { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 0.8rem; }
+.danger-btn {
+  min-height: 2.4rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: #9c2f2f;
+  color: #fff;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.danger-btn:disabled { opacity: 0.65; }
 .day.is-today .event-title { font-size: 1rem; }
 .feed-name, .event.all-day .feed-name { grid-column: 1; color: var(--faint); font-size: 0.875rem; }
 .setup, .quiet {

@@ -26,6 +26,12 @@ export type AgendaEvent = {
   feedId: string;
   feedLabel: string;
   color: string;
+  location?: string;
+  description?: string;
+  url?: string;
+  uid?: string;
+  /** Google Calendar event id when this personal event can be deleted. */
+  googleId?: string;
   /** True when this came from the Work feed or a "[Work]" mirror. Not sent to the browser. */
   work?: boolean;
 };
@@ -103,6 +109,9 @@ type RawEvent = {
   uid: string;
   summary: string;
   status: string;
+  location: string;
+  description: string;
+  url: string;
   start: Stamp;
   end: Stamp | null;
   durationMs: number | null;
@@ -112,7 +121,17 @@ type RawEvent = {
   birthday: boolean;
 };
 
-type Occ = { title: string; start: number; end: number; allDay: boolean; birthday: boolean };
+type Occ = {
+  title: string;
+  start: number;
+  end: number;
+  allDay: boolean;
+  birthday: boolean;
+  location: string;
+  description: string;
+  url: string;
+  uid: string;
+};
 
 export function stripWorkPrefix(title: string): string {
   const stripped = title.replace(WORK_PREFIX, '').trim();
@@ -187,7 +206,11 @@ export function maskWorkEvents(events: AgendaEvent[]): AgendaEvent[] {
       feedLabel: 'Work',
       color,
       birthday: false,
-      work: true
+      work: true,
+      location: '',
+      description: '',
+      url: '',
+      googleId: ''
     };
   });
 }
@@ -195,16 +218,30 @@ export function maskWorkEvents(events: AgendaEvent[]): AgendaEvent[] {
 export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, windowEnd: number): AgendaEvent[] {
   const raws = parseIcs(ics);
   const occs = expandAll(raws, windowStart, windowEnd);
-  return occs.map((occ) => ({
-    title: occ.title,
-    start: occ.start,
-    end: occ.end,
-    allDay: occ.allDay,
-    birthday: eventIsBirthday({ title: occ.title, allDay: occ.allDay, birthday: occ.birthday }),
-    feedId: feed.id,
-    feedLabel: feed.label,
-    color: feed.color
-  }));
+  return occs.map((occ) => {
+    const personal = feed.label.trim().toLowerCase() === 'personal';
+    return {
+      title: occ.title,
+      start: occ.start,
+      end: occ.end,
+      allDay: occ.allDay,
+      birthday: eventIsBirthday({ title: occ.title, allDay: occ.allDay, birthday: occ.birthday }),
+      feedId: feed.id,
+      feedLabel: feed.label,
+      color: feed.color,
+      location: occ.location,
+      description: occ.description,
+      url: occ.url,
+      uid: occ.uid,
+      googleId: personal ? googleEventId(occ.uid) : ''
+    };
+  });
+}
+
+/** Google Calendar ICS uids look like `{eventId}@google.com`. calendar.events may delete that id. */
+export function googleEventId(uid: string): string {
+  const match = String(uid || '').trim().match(/^([A-Za-z0-9_-]{4,256})@google\.com$/i);
+  return match ? match[1] : '';
 }
 
 function unfold(ics: string): string[] {
@@ -234,6 +271,11 @@ function splitProp(line: string): { name: string; params: Record<string, string>
     params[bits[i].slice(0, eq).toUpperCase()] = bits[i].slice(eq + 1).replace(/^"|"$/g, '');
   }
   return { name, params, value };
+}
+
+function clipDetail(value: string, max: number): string {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  return clean.length > max ? clean.slice(0, max) : clean;
 }
 
 function unescapeText(value: string): string {
@@ -352,6 +394,9 @@ function emptyRaw(index: number): RawEvent {
     uid: `glance-${index}`,
     summary: '',
     status: '',
+    location: '',
+    description: '',
+    url: '',
     start: { allDay: false, y: 1970, m: 1, d: 1, h: 0, mi: 0, s: 0, zone: PHOENIX },
     end: null,
     durationMs: null,
@@ -400,6 +445,9 @@ function parseIcs(ics: string): RawEvent[] {
     if (!prop) continue;
     if (prop.name === 'UID' && prop.value.trim()) current.uid = prop.value.trim();
     else if (prop.name === 'SUMMARY') current.summary = unescapeText(prop.value);
+    else if (prop.name === 'LOCATION') current.location = clipDetail(unescapeText(prop.value), 300);
+    else if (prop.name === 'DESCRIPTION') current.description = clipDetail(unescapeText(prop.value), 1500);
+    else if (prop.name === 'URL') current.url = clipDetail(prop.value.trim(), 500);
     else if (prop.name === 'CATEGORIES' && /birthday/i.test(prop.value)) current.birthday = true;
     else if (/^X-/.test(prop.name) && /birthday|cake\.gif/i.test(`${prop.name} ${prop.value}`)) current.birthday = true;
     else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
@@ -454,7 +502,11 @@ function singleOcc(raw: RawEvent): Occ | null {
     start,
     end,
     allDay: raw.start.allDay,
-    birthday: eventIsBirthday({ title: raw.summary || 'Busy', allDay: raw.start.allDay, birthday: !!raw.birthday })
+    birthday: eventIsBirthday({ title: raw.summary || 'Busy', allDay: raw.start.allDay, birthday: !!raw.birthday }),
+    location: raw.location,
+    description: raw.description,
+    url: raw.url,
+    uid: raw.uid
   };
 }
 
@@ -515,7 +567,11 @@ function expandRule(raw: RawEvent, windowStart: number, windowEnd: number): Occ[
         start,
         end,
         allDay,
-        birthday: eventIsBirthday({ title, allDay, birthday: !!raw.birthday })
+        birthday: eventIsBirthday({ title, allDay, birthday: !!raw.birthday }),
+        location: raw.location,
+        description: raw.description,
+        url: raw.url,
+        uid: raw.uid
       });
     }
     return true;

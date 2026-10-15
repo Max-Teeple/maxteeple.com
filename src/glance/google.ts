@@ -1,5 +1,6 @@
 import { PHOENIX, addDays, formatPhoenix, phoenixDate, zonedToUtc } from './time';
 
+/** Read/write events, including delete. Glance uses this for add and for the event overlay. */
 export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 export const GOOGLE_ACCOUNT = 'max.teeple@gmail.com';
 export const GOOGLE_COLOR_BASIL = '10';
