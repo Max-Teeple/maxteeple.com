@@ -232,22 +232,21 @@
     var cond = document.createElement('div');
     cond.className = 'cond';
     cond.textContent = current.label;
-    var stats = document.createElement('div');
-    stats.className = 'stats';
-    var bits = [
-      'H ' + current.high + '°  L ' + current.low + '°',
-      'Wind ' + current.wind + ' mph ' + compass(current.windDir),
-      'UV ' + current.uv
-    ];
-    if (current.precip > 0) bits.push('Rain ' + current.precip + '%');
-    if (Math.abs(current.feels - current.temp) >= 2) bits.splice(1, 0, 'Feels ' + current.feels + '°');
-    bits.forEach(function (bit) {
-      var span = document.createElement('span');
-      span.textContent = bit;
-      stats.appendChild(span);
-    });
-    copy.append(temp, cond, stats);
-    now.append(mark, copy);
+    copy.append(temp, cond);
+    var main = document.createElement('div');
+    main.className = 'now-main';
+    main.append(mark, copy);
+    var details = document.createElement('div');
+    details.className = 'now-details';
+    [
+      ['High', current.high + '°'],
+      ['Low', current.low + '°'],
+      ['Feels', current.feels + '°'],
+      ['Wind', current.wind + ' mph ' + compass(current.windDir)],
+      ['UV', String(current.uv)]
+    ].forEach(function (pair) { details.appendChild(statBit(pair[0], pair[1])); });
+    if (current.precip > 0) details.appendChild(statBit('Rain', current.precip + '%'));
+    now.append(main, details);
     var facts = weatherFacts(clock24);
     if (facts) now.appendChild(facts);
 
@@ -538,6 +537,17 @@
       row.appendChild(air);
     }
     return row;
+  }
+
+  function statBit(label, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'stat';
+    var span = document.createElement('span');
+    span.textContent = label;
+    var strong = document.createElement('strong');
+    strong.textContent = value;
+    wrap.append(span, strong);
+    return wrap;
   }
 
   function factBit(label, value) {

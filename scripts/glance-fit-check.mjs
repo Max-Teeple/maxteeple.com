@@ -191,6 +191,62 @@ for (const viewport of viewports) {
             }
           });
         }
+        function clipRect(rect, host) {
+          let box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+          const hostBox = host.getBoundingClientRect();
+          box.left = Math.max(box.left, hostBox.left);
+          box.top = Math.max(box.top, hostBox.top);
+          box.right = Math.min(box.right, hostBox.right);
+          box.bottom = Math.min(box.bottom, hostBox.bottom);
+          let el = host;
+          while (el && el !== document.body) {
+            const style = getComputedStyle(el);
+            const clipY = style.overflowY === 'hidden' || style.overflowY === 'auto' || style.overflowY === 'scroll';
+            const clipX = style.overflowX === 'hidden' || style.overflowX === 'auto' || style.overflowX === 'scroll';
+            if (clipX || clipY) {
+              const bounds = el.getBoundingClientRect();
+              if (clipX) {
+                box.left = Math.max(box.left, bounds.left);
+                box.right = Math.min(box.right, bounds.right);
+              }
+              if (clipY) {
+                box.top = Math.max(box.top, bounds.top);
+                box.bottom = Math.min(box.bottom, bounds.bottom);
+              }
+            }
+            el = el.parentElement;
+          }
+          return box;
+        }
+        const textBoxes = [];
+        const rangeWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let textNode = rangeWalker.nextNode();
+        while (textNode) {
+          const sample = textNode.textContent.replace(/\s+/g, ' ').trim();
+          const host = textNode.parentElement;
+          if (sample && host && visible(host)) {
+            const range = document.createRange();
+            range.selectNodeContents(textNode);
+            const rect = clipRect(range.getBoundingClientRect(), host);
+            if (rect.right - rect.left > 1 && rect.bottom - rect.top > 1 && rect.bottom > 0 && rect.top < window.innerHeight) {
+              textBoxes.push({ text: sample.slice(0, 28), rect: rect });
+            }
+          }
+          textNode = rangeWalker.nextNode();
+        }
+        for (let i = 0; i < textBoxes.length; i++) {
+          for (let j = i + 1; j < textBoxes.length; j++) {
+            const a = textBoxes[i].rect;
+            const b = textBoxes[j].rect;
+            const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (overlapX > 2 && overlapY > 2) {
+              problems.push('overlap ' + textBoxes[i].text + ' / ' + textBoxes[j].text);
+              j = textBoxes.length;
+            }
+          }
+          if (problems.length > 6) break;
+        }
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
         while (node) {
