@@ -105,8 +105,35 @@ function tokenKey(accessId: string): string {
   return accessId;
 }
 
+function tokenFailure(error: unknown): boolean {
+  if (!(error instanceof TuyaError)) return false;
+  if (error.code === 1010 || error.code === 1011 || error.code === 1012) return true;
+  return /token/i.test(error.message);
+}
+
+async function forgetToken(creds: TuyaCreds, db: D1Database): Promise<void> {
+  memoryTokens.delete(tokenKey(creds.accessId));
+  try {
+    await db.prepare(`DELETE FROM glance_cache WHERE id = ?`).bind(await tokenRowId(creds.accessId)).run();
+  } catch {
+    /* The next read mints a fresh token. */
+  }
+}
+
 /** Device list and switch status. This path only sends GET requests. */
 export async function listLights(creds: TuyaCreds, db: D1Database): Promise<LightDevice[]> {
+  try {
+    return await listLightsOnce(creds, db);
+  } catch (error) {
+    if (!tokenFailure(error)) throw error;
+    // A cron tick and a board poll can each mint a token. Tuya keeps one,
+    // and the loser stays in glance_cache until it expires. Drop it and retry the read once.
+    await forgetToken(creds, db);
+    return listLightsOnce(creds, db);
+  }
+}
+
+async function listLightsOnce(creds: TuyaCreds, db: D1Database): Promise<LightDevice[]> {
   const token = await getToken(creds, db);
   const devices = await discoverDevices(creds, token);
   const unique = new Map<string, RawDevice>();
