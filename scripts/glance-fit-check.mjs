@@ -137,10 +137,22 @@ function fixtureDashboard() {
     masked: feed === 'Work',
     ...extra
   });
-  const day = { date: today, label: 'Today', weekday: 'Today', day: Number(today.slice(-2)), events: [
+  const events = [
     event('Family dinner', 'Personal', { location: 'Home', description: 'Bring dessert', links: ['https://example.com/menu'], googleId: 'abc123event', deletable: true, masked: false }),
     event('Max Work Meeting', 'Work', { masked: true })
-  ] };
+  ];
+  for (let index = 0; index < 18; index += 1) {
+    const hour = String(6 + (index % 12)).padStart(2, '0');
+    const personal = index % 2 === 0;
+    events.push(event((personal ? 'Errand ' : 'Shift ') + (index + 1), personal ? 'Personal' : 'Work', {
+      start: today + 'T' + hour + ':15:00-07:00',
+      end: today + 'T' + hour + ':45:00-07:00',
+      masked: !personal,
+      googleId: personal ? 'fit-event-' + index : '',
+      deletable: personal
+    }));
+  }
+  const day = { date: today, label: 'Today', weekday: 'Today', day: Number(today.slice(-2)), events };
   return {
     ok: true,
     settings: {
@@ -310,6 +322,34 @@ for (const viewport of viewports) {
             problems.push(label + ' overflow ' + extraX + 'x' + extraY);
           }
         });
+        const verse = document.querySelector('.verse-card');
+        const addCard = document.querySelector('.add-card');
+        if (!verse || !visible(verse)) {
+          problems.push('verse missing');
+        } else {
+          const verseRect = verse.getBoundingClientRect();
+          if (verseRect.top < -1 || verseRect.left < -1 || verseRect.bottom > window.innerHeight + 1 || verseRect.right > window.innerWidth + 1) {
+            problems.push('verse offscreen ' + Math.round(verseRect.top) + '..' + Math.round(verseRect.bottom));
+          }
+          if (addCard && visible(addCard)) {
+            const addRect = addCard.getBoundingClientRect();
+            const gap = verseRect.top - addRect.bottom;
+            if (gap < -1) problems.push('verse not below add');
+            if (gap > 28) problems.push('verse gap ' + Math.round(gap));
+          }
+          const rail = verse.closest('.rail');
+          const days = document.querySelector('.days');
+          if (rail && days && visible(days)) {
+            const railRect = rail.getBoundingClientRect();
+            const daysRect = days.getBoundingClientRect();
+            if (Math.abs(railRect.top - daysRect.top) < 4 && railRect.height > daysRect.height - 4 && daysRect.height > railRect.height * 0.92) {
+              const events = document.querySelector('.day .events');
+              if (events && events.scrollHeight > events.clientHeight + 24 && railRect.bottom - verseRect.bottom > 36) {
+                problems.push('rail stretched with calendar');
+              }
+            }
+          }
+        }
         const card = document.querySelector('.add-card');
         if (card && visible(card)) {
           card.querySelectorAll('input, select, button, a, label').forEach((field) => {
