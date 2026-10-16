@@ -10,7 +10,7 @@
     ['golf', 'Golf'],
     ['glass', 'Glass']
   ];
-  var DEFAULT_LAYOUT = 'threeday';
+  var DEFAULT_LAYOUT = 'fiveday';
   var state = {
     settings: null,
     weather: null,
@@ -40,7 +40,7 @@
       sessionStorage.setItem('glance-view', raw);
       localStorage.setItem('glance-view', raw);
       localStorage.removeItem('glance-layout');
-    } catch (err) { /* private mode still shows three-day */ }
+    } catch (err) { /* private mode still shows five-day */ }
   }
 
   document.body.dataset.layout = DEFAULT_LAYOUT;
@@ -340,7 +340,7 @@
     }
     var clock24 = !!(state.settings && state.settings.clock24);
     var layout = document.body.dataset.layout || DEFAULT_LAYOUT;
-    var limit = layout === 'today' || layout === 'home' ? 1 : layout === 'threeday' ? 3 : 7;
+    var limit = layout === 'today' || layout === 'home' ? 1 : layout === 'threeday' ? 3 : layout === 'fiveday' ? 5 : 7;
     (calendar.days || []).slice(0, limit).forEach(function (day) {
       var col = document.createElement('article');
       col.className = 'day' + (day.label === 'Today' || day.date === phoenixDateKey(new Date()) ? ' is-today' : '');
@@ -846,6 +846,38 @@
     return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
   }
 
+  function formatClockInput(value, clock24) {
+    var bits = String(value || '').split(':');
+    var hour = Number(bits[0]);
+    var minute = String(bits[1] || '00').slice(0, 2);
+    if (!Number.isFinite(hour)) return '';
+    if (clock24) return String(hour).padStart(2, '0') + ':' + minute;
+    var ap = hour >= 12 ? 'PM' : 'AM';
+    var h = hour % 12 || 12;
+    return h + ':' + minute + ' ' + ap;
+  }
+
+  function timeField(id, label, value) {
+    var wrap = document.createElement('label');
+    wrap.className = 'add-time';
+    var face = document.createElement('span');
+    face.className = 'add-time-face';
+    var input = document.createElement('input');
+    input.id = id;
+    input.type = 'time';
+    input.step = '60';
+    input.value = value || '';
+    input.setAttribute('aria-label', label);
+    function paint() {
+      face.textContent = formatClockInput(input.value, state.settings && state.settings.clock24);
+    }
+    input.addEventListener('input', paint);
+    input.addEventListener('change', paint);
+    paint();
+    wrap.append(face, input);
+    return wrap;
+  }
+
   function readAddDraft() {
     var title = document.getElementById('add-title');
     if (!title) return null;
@@ -928,11 +960,7 @@
     days.appendChild(date);
     var times = document.createElement('div');
     times.className = 'add-times';
-    var start = document.createElement('input');
-    start.id = 'add-start';
-    start.type = 'time';
-    start.setAttribute('aria-label', 'Start time');
-    start.value = saved.start || defaultStart();
+    var start = timeField('add-start', 'Start time', saved.start || defaultStart());
     var duration = document.createElement('select');
     duration.id = 'add-duration';
     duration.setAttribute('aria-label', 'Duration');
@@ -943,11 +971,7 @@
       duration.appendChild(option);
     });
     duration.value = saved.duration || '60';
-    var end = document.createElement('input');
-    end.id = 'add-end';
-    end.type = 'time';
-    end.setAttribute('aria-label', 'End time');
-    end.value = saved.end || '';
+    var end = timeField('add-end', 'End time', saved.end || '');
     end.hidden = duration.value !== 'end';
     duration.addEventListener('change', function () { end.hidden = duration.value !== 'end'; });
     times.append(start, duration, end);
@@ -1020,13 +1044,17 @@
     var date = form.querySelector('#add-date');
     if (date) date.value = today;
     var start = form.querySelector('#add-start');
-    if (start) start.value = defaultStart();
+    if (start) {
+      start.value = defaultStart();
+      start.dispatchEvent(new Event('input'));
+    }
     var duration = form.querySelector('#add-duration');
     if (duration) duration.value = '60';
     var end = form.querySelector('#add-end');
     if (end) {
       end.value = '';
-      end.hidden = true;
+      end.dispatchEvent(new Event('input'));
+      if (end.parentElement) end.parentElement.hidden = true;
     }
     var box = form.querySelector('#add-allday');
     if (box) box.checked = false;
@@ -1115,6 +1143,7 @@
   }
 
   var LAYOUTS = [
+    ['fiveday', '5-Day', 'Today and the next four days'],
     ['balanced', 'Balanced', 'Clock, weather, week, and the side rail'],
     ['calendar', 'Calendar', 'A large week, with weather kept small'],
     ['today', 'Today', 'One day, large weather, lights, and family'],
@@ -1865,7 +1894,7 @@
         state.settings = saved;
         state.settings.layout = DEFAULT_LAYOUT;
         document.body.dataset.layout = DEFAULT_LAYOUT;
-      } catch (err) { /* the board still opens on three-day */ }
+      } catch (err) { /* the board still opens on five-day */ }
     }
     showBoard();
     wake();
