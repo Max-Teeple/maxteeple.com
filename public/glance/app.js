@@ -658,6 +658,12 @@
     list.className = 'lights';
     shown.forEach(function (light) { list.appendChild(lightControl(light)); });
     card.appendChild(list);
+    if (data.schedule) {
+      var schedule = document.createElement('p');
+      schedule.className = 'light-schedule';
+      schedule.textContent = data.schedule;
+      card.appendChild(schedule);
+    }
     if (shown.length) {
       var all = document.createElement('button');
       all.type = 'button';

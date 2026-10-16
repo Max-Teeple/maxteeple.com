@@ -40,5 +40,8 @@
   ],
   // Workers Builds previews run `npx wrangler preview`, which refuses to start
   // unless this block exists. Assets and compatibility stay at the top level.
-  "previews": {}
+  "previews": {},
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
 }
