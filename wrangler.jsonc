@@ -31,6 +31,14 @@
       "binding": "LIVEVIEW_MEDIA"
     }
   ],
+  // Glance photos. Workers KV is not used for pictures. If this bucket is
+  // missing, the Worker stores the JPEGs in D1 instead.
+  "r2_buckets": [
+    {
+      "binding": "GLANCE_PHOTOS",
+      "bucket_name": "glance-photos"
+    }
+  ],
   "rules": [
     {
       "type": "Text",

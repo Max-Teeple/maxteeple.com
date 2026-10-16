@@ -3,6 +3,8 @@ import type { AccountRow } from './db';
 export type Bindings = {
   LIVEVIEW_DB: D1Database;
   LIVEVIEW_MEDIA: KVNamespace;
+  /** Optional. When missing or unusable, Glance stores photo JPEGs in D1. */
+  GLANCE_PHOTOS?: R2Bucket;
   ASSETS: Fetcher;
   /** Optional override. When unset, a generated secret is stored in D1 and reused. */
   JWT_SECRET?: string;
