@@ -30,6 +30,8 @@ import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSe
 import { planLightAutomations } from '../src/glance/light-automation';
 import { runScheduledLights } from '../src/glance/light-cron';
 import { plugAlias, plugSortKey } from '../src/glance/plug-names';
+import { ensureSchema } from '../src/schema';
+import { createGlancePhoto, readGlancePhoto, removeGlancePhoto, resetPhotoStore } from '../src/glance/photos';
 import { phoenixSunsetMinutes } from '../src/glance/sunset';
 import { shapeWeather } from '../src/glance/weather';
 
@@ -72,7 +74,7 @@ function withSession(path: string, session: string, init?: RequestInit) {
 
 describe('Glance kitchen board', () => {
   it('requires a login before any data route', async () => {
-    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights', '/glance/api/location', '/glance/api/verse'];
+    const paths = ['/glance/api/weather', '/glance/api/calendar', '/glance/api/todos', '/glance/api/settings', '/glance/api/session', '/glance/api/lights', '/glance/api/location', '/glance/api/verse', '/glance/api/photos'];
     for (const path of paths) {
       const response = await api(path);
       expect(response.status, path).toBe(401);
@@ -1220,5 +1222,79 @@ describe('light schedules', () => {
       }
     });
     expect(calls).toEqual([]);
+  });
+});
+
+describe('Glance photos', () => {
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+
+  function photoForm(bytes: Uint8Array = jpeg) {
+    const form = new FormData();
+    form.set('full', new File([bytes], 'photo.jpg', { type: 'image/jpeg' }));
+    form.set('thumb', new File([bytes], 'thumb.jpg', { type: 'image/jpeg' }));
+    form.set('width', '800');
+    form.set('height', '600');
+    return form;
+  }
+
+  it('stores a jpeg, serves it, and deletes it', async () => {
+    resetPhotoStore();
+    const session = await signIn();
+    const page = await api('/glance/photos.html');
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('No photos yet');
+    expect(html).toContain('Add photos');
+    expect(html).not.toContain('__GLANCE_BUILD__');
+    const saved = await withSession('/glance/api/photos', session, { method: 'POST', body: photoForm() });
+    expect(saved.status).toBe(201);
+    const id = (await saved.json() as { id: string }).id;
+    const list = await withSession('/glance/api/photos', session);
+    const photos = (await list.json() as { photos: { id: string }[] }).photos;
+    expect(photos.some((photo) => photo.id === id)).toBe(true);
+    const image = await withSession(`/glance/api/photos/${id}`, session);
+    expect(image.status).toBe(200);
+    expect(image.headers.get('content-type')).toContain('image/jpeg');
+    expect(new Uint8Array(await image.arrayBuffer())[0]).toBe(0xff);
+    const thumb = await withSession(`/glance/api/photos/${id}/thumb`, session);
+    expect(thumb.status).toBe(200);
+    const removed = await withSession(`/glance/api/photos/${id}`, session, { method: 'DELETE' });
+    expect(removed.status).toBe(200);
+    const gone = await withSession(`/glance/api/photos/${id}`, session);
+    expect(gone.status).toBe(404);
+  });
+
+  it('rejects a file that is not a jpeg', async () => {
+    const session = await signIn();
+    const saved = await withSession('/glance/api/photos', session, {
+      method: 'POST',
+      body: photoForm(new Uint8Array([1, 2, 3, 4]))
+    });
+    expect(saved.status).toBe(400);
+  });
+
+  it('stores the jpeg in D1 when R2 is unavailable', async () => {
+    await ensureSchema(env.LIVEVIEW_DB);
+    resetPhotoStore();
+    const form = photoForm();
+    const request = new Request(`${origin}/glance/api/photos`, { method: 'POST', body: form });
+    const broken = {
+      LIVEVIEW_DB: env.LIVEVIEW_DB,
+      GLANCE_PHOTOS: {
+        async put() { throw new Error('r2 disabled'); },
+        async get() { return null; },
+        async delete() { return; }
+      }
+    } as unknown as Bindings;
+    const created = await createGlancePhoto(request, broken);
+    const bytes = await readGlancePhoto(broken, created.id, 'full');
+    expect(bytes?.[0]).toBe(0xff);
+    const row = await env.LIVEVIEW_DB
+      .prepare(`SELECT store FROM glance_photos WHERE id = ?`)
+      .bind(created.id)
+      .first<{ store: string }>();
+    expect(row?.store).toBe('d1');
+    expect(await removeGlancePhoto(broken, created.id)).toBe(true);
+    resetPhotoStore();
   });
 });

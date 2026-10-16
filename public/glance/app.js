@@ -20,8 +20,16 @@
     family: null,
     open: false,
     googleNotice: '',
-    layoutReady: false
+    layoutReady: false,
+    slides: false
   };
+  var photos = [];
+  var slideIdle = 0;
+  var slideTimer = 0;
+  var slideOrder = [];
+  var slideIndex = 0;
+  var slideSlot = 0;
+  var slidePreload = null;
 
   function savedTheme() {
     try {
@@ -134,6 +142,7 @@
   }
 
   function showLogin() {
+    hideSlideshow();
     boot.hidden = true;
     board.hidden = true;
     if (settingsEl) settingsEl.hidden = true;
@@ -1481,6 +1490,7 @@
     settingsEl.hidden = true;
     document.body.classList.remove('settings-open');
     applyLayout(DEFAULT_LAYOUT, true);
+    armSlideshow();
   }
 
   async function wake() {
@@ -1543,6 +1553,7 @@
     weekEl.hidden = true;
     clearTimeout(weekTimer);
     applyLayout(DEFAULT_LAYOUT, true);
+    armSlideshow();
   }
 
   function openWeek() {
@@ -1825,6 +1836,10 @@
     if (event.altKey || event.metaKey || event.ctrlKey) return;
     var typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
     if (typing || state.open) return;
+    if (state.slides) {
+      if (event.key === 'Escape') leaveSlideshow();
+      return;
+    }
     if (weekEl && !weekEl.hidden) {
       if (event.key === 'ArrowRight') { event.preventDefault(); moveWeek(1); }
       if (event.key === 'ArrowLeft') { event.preventDefault(); moveWeek(-1); }
@@ -1868,6 +1883,17 @@
   ['pointermove', 'pointerdown', 'keydown'].forEach(function (name) {
     window.addEventListener(name, bump, { passive: true });
   });
+  ['pointerdown', 'keydown'].forEach(function (name) {
+    window.addEventListener(name, armSlideshow, { passive: true });
+  });
+  document.getElementById('photo-open').addEventListener('click', function () {
+    if (!photos.length) {
+      window.location.href = '/glance/photos.html';
+      return;
+    }
+    startSlideshow();
+  });
+  document.getElementById('slides').addEventListener('click', leaveSlideshow);
 
   var reloading = false;
   function reloadForDeploy(remote) {
@@ -1882,7 +1908,7 @@
   }
 
   async function checkVersion() {
-    if (reloading) return;
+    if (reloading || state.slides) return;
     try {
       var res = await fetch('/glance/api/version', { cache: 'no-store', credentials: 'same-origin' });
       if (!res.ok) return;
@@ -1896,7 +1922,7 @@
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState !== 'visible') return;
+    if (document.visibilityState !== 'visible' || state.slides) return;
     checkVersion();
     if (!board.hidden) {
       wake();
@@ -1912,6 +1938,125 @@
   setInterval(checkVersion, VERSION_POLL_MS);
   checkVersion();
 
+  function slidesBlocked() {
+    return state.open || board.hidden || (weekEl && !weekEl.hidden);
+  }
+
+  function armSlideshow() {
+    clearTimeout(slideIdle);
+    if (state.slides || slidesBlocked() || !photos.length) return;
+    slideIdle = setTimeout(startSlideshow, 10 * 60 * 1000);
+  }
+
+  async function loadPhotos() {
+    try {
+      var res = await fetch('/glance/api/photos', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!res.ok) { photos = []; return; }
+      var body = await res.json();
+      photos = (body && body.photos) || [];
+    } catch (err) {
+      photos = [];
+    }
+  }
+
+  function shuffleIds(list) {
+    var copy = list.slice();
+    for (var i = copy.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var swap = copy[i];
+      copy[i] = copy[j];
+      copy[j] = swap;
+    }
+    return copy;
+  }
+
+  function slideUrl(id) { return '/glance/api/photos/' + id; }
+
+  function preloadNextSlide() {
+    slidePreload = null;
+    if (slideOrder.length < 2) return;
+    slidePreload = new Image();
+    slidePreload.src = slideUrl(slideOrder[(slideIndex + 1) % slideOrder.length]);
+  }
+
+  function paintSlideChrome() {
+    var time = document.getElementById('slide-time');
+    var date = document.getElementById('slide-date');
+    if (!time || !date) return;
+    var parts = phoenixParts(new Date());
+    var text = clockText(parts, state.settings && state.settings.clock24);
+    time.textContent = text.hh + ':' + text.mm + (text.ap ? ' ' + text.ap : '');
+    date.textContent = parts.weekday + ', ' + parts.month + ' ' + parts.day;
+    var banner = document.getElementById('slide-banner');
+    if (!banner) return;
+    var bits = [];
+    var current = state.weather && state.weather.current;
+    if (current && current.temp !== undefined && current.temp !== null) bits.push(current.temp + '° ' + (current.label || ''));
+    var next = state.calendar && state.calendar.upcoming;
+    if (next && next.title) bits.push(next.title);
+    banner.textContent = bits.join(' · ').trim();
+    banner.hidden = !banner.textContent;
+  }
+
+  function scheduleSlide() {
+    clearTimeout(slideTimer);
+    if (!state.slides || slideOrder.length < 2) return;
+    slideTimer = setTimeout(advanceSlide, 8000);
+  }
+
+  function advanceSlide() {
+    if (!state.slides || slideOrder.length < 2) return;
+    slideIndex = (slideIndex + 1) % slideOrder.length;
+    slideSlot = 1 - slideSlot;
+    var imgs = document.querySelectorAll('#slides img');
+    var incoming = imgs[slideSlot];
+    var outgoing = imgs[1 - slideSlot];
+    incoming.src = slideUrl(slideOrder[slideIndex]);
+    incoming.classList.add('is-show');
+    outgoing.classList.remove('is-show');
+    preloadNextSlide();
+    scheduleSlide();
+  }
+
+  function hideSlideshow() {
+    state.slides = false;
+    clearTimeout(slideTimer);
+    slidePreload = null;
+    var root = document.getElementById('slides');
+    if (!root) return;
+    root.hidden = true;
+    root.querySelectorAll('img').forEach(function (img) {
+      img.classList.remove('is-show');
+      img.removeAttribute('src');
+    });
+  }
+
+  function leaveSlideshow() {
+    if (!state.slides) return;
+    hideSlideshow();
+    refresh().catch(function () {});
+    armSlideshow();
+  }
+
+  function startSlideshow() {
+    if (!photos.length || slidesBlocked()) return;
+    clearTimeout(slideIdle);
+    state.slides = true;
+    slideOrder = shuffleIds(photos.map(function (photo) { return photo.id; }));
+    slideIndex = 0;
+    slideSlot = 0;
+    var root = document.getElementById('slides');
+    var imgs = root.querySelectorAll('img');
+    imgs[0].classList.remove('is-show');
+    imgs[1].classList.remove('is-show');
+    imgs[0].src = slideUrl(slideOrder[0]);
+    imgs[0].classList.add('is-show');
+    preloadNextSlide();
+    root.hidden = false;
+    paintSlideChrome();
+    scheduleSlide();
+  }
+
   async function bootApp() {
     var loaded = await refresh(true);
     rememberView(state.settings && state.settings.theme);
@@ -1923,13 +2068,16 @@
         document.body.dataset.layout = DEFAULT_LAYOUT;
       } catch (err) { /* the board still opens on five-day */ }
     }
+    try { await loadPhotos(); } catch (err) { photos = []; }
     showBoard();
     wake();
     bump();
+    armSlideshow();
   }
 
   function scheduleClock() {
-    if (!board.hidden) {
+    if (state.slides) paintSlideChrome();
+    else if (!board.hidden) {
       applyChrome();
       syncTodayColumns(document);
       ensureVerse();
@@ -1939,7 +2087,8 @@
   }
   scheduleClock();
   setInterval(function () {
-    if (!board.hidden) refresh().catch(function () {});
+    if (state.slides || board.hidden) return;
+    refresh().catch(function () {});
   }, DASHBOARD_POLL_MS);
 
   window.addEventListener('glance-fit', function (event) {

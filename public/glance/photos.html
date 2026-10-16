@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Glance photos</title>
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#07090d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="glance-build" content="__GLANCE_BUILD__" />
+    <link rel="stylesheet" href="/glance/photos.css?v=__GLANCE_BUILD__" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="head">
+        <a class="back" href="/glance/">Back to Glance</a>
+        <h1>Photos</h1>
+        <p class="hint">Choose pictures from your phone. Each one is resized on this device, then saved as a JPEG.</p>
+      </header>
+      <form id="login" class="login" hidden>
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required />
+        </label>
+        <p id="login-error" class="error" role="alert"></p>
+        <button type="submit">Enter</button>
+      </form>
+      <section id="library" hidden>
+        <label class="pick">
+          Add photos
+          <input id="files" type="file" accept="image/*" multiple />
+        </label>
+        <p id="status" class="status" role="status"></p>
+        <p id="empty" class="empty">No photos yet. Add a few and the kitchen board can show them after it sits untouched.</p>
+        <ul id="thumbs" class="thumbs"></ul>
+      </section>
+    </main>
+    <script src="/glance/photos.js?v=__GLANCE_BUILD__" defer></script>
+  </body>
+</html>

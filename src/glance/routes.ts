@@ -35,6 +35,7 @@ import { scheduleHint } from './light-automation';
 import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
+import { createGlancePhoto, listGlancePhotos, readGlancePhoto, removeGlancePhoto } from './photos';
 import { verseDetail, verseSummary } from './verse';
 import { forgetPrefix, remember } from './cache';
 import {
@@ -694,6 +695,38 @@ glance.patch('/todos/:id', async (c) => {
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true, todo: await getTodo(db, id) });
 });
+
+glance.get('/photos', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, photos: await listGlancePhotos(c.env) });
+});
+
+glance.post('/photos', async (c) => {
+  const photo = await createGlancePhoto(c.req.raw, c.env);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, id: photo.id }, 201);
+});
+
+glance.get('/photos/:id/thumb', async (c) => photoResponse(c.env, c.req.param('id'), 'thumb'));
+glance.get('/photos/:id', async (c) => photoResponse(c.env, c.req.param('id'), 'full'));
+
+glance.delete('/photos/:id', async (c) => {
+  const removed = await removeGlancePhoto(c.env, c.req.param('id'));
+  if (!removed) throw new HttpError(404, 'Photo not found');
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
+});
+
+async function photoResponse(env: Bindings, id: string, kind: 'full' | 'thumb'): Promise<Response> {
+  const bytes = await readGlancePhoto(env, id, kind);
+  if (!bytes) throw new HttpError(404, 'Photo not found');
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'private, max-age=300'
+    }
+  });
+}
 
 glance.notFound((c) => c.json({ ok: false, message: 'Not found' }, 404));
 
