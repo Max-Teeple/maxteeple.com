@@ -10,6 +10,7 @@ import googleSql from '../migrations/0009_glance_google.sql';
 import notifySql from '../migrations/0010_glance_event_notify.sql';
 import notifyKeySql from '../migrations/0011_glance_event_notify_key.sql';
 import cacheSql from '../migrations/0012_glance_cache.sql';
+import lightAutoSql from '../migrations/0013_glance_light_automation.sql';
 import { GLANCE_INITIAL_PASSWORD_HASH } from './glance/defaults';
 
 function statements(sql: string): string[] {
@@ -23,7 +24,7 @@ function statements(sql: string): string[] {
     .filter(Boolean);
 }
 
-const LATEST_MIGRATION = '0012_glance_cache';
+const LATEST_MIGRATION = '0013_glance_light_automation';
 
 /**
  * Create tables if they are missing, then apply additive migrations.
@@ -88,6 +89,7 @@ async function ensureSchemaOnce(db: D1Database): Promise<void> {
   await applyMigration(db, '0010_glance_event_notify', notifySql);
   await applyMigration(db, '0011_glance_event_notify_key', notifyKeySql);
   await applyMigration(db, '0012_glance_cache', cacheSql);
+  await applyMigration(db, '0013_glance_light_automation', lightAutoSql);
   await db
     .prepare(
       `INSERT OR IGNORE INTO glance_settings (id, password_hash, updated_at) VALUES ('default', ?, ?)`

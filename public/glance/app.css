@@ -527,6 +527,7 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 
 .lights { display: grid; gap: 0.15rem; margin-top: 0.35rem; }
 .light { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.55rem; align-items: center; min-height: 2.35rem; }
+.light-schedule { margin: 0.2rem 0 0; color: var(--faint); font-size: 0.875rem; line-height: 1.25; }
 .light-name { font-size: 1rem; line-height: 1.2; }
 .light-meta { color: var(--muted); font-size: clamp(0.95rem, 1.5vh, 1.12rem); letter-spacing: 0.04em; text-transform: uppercase; }
 .light.is-offline { opacity: 0.55; }

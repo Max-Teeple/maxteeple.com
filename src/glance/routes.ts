@@ -31,6 +31,8 @@ import {
 } from './location';
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { plugAlias, plugSortKey } from './plug-names';
+import { scheduleHint } from './light-automation';
+import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
 import { verseDetail, verseSummary } from './verse';
@@ -858,7 +860,9 @@ async function lightsPayload(env: Bindings) {
       );
       return mergeLights(devices, await lightPrefs(env.LIVEVIEW_DB));
     });
-    return { ok: true as const, configured: true, lights };
+    const parts = partsInZone(Date.now(), PHOENIX);
+    const sunset = phoenixSunsetMinutes(parts.y, parts.m, parts.d, settings.lat, settings.lon);
+    return { ok: true as const, configured: true, lights, schedule: scheduleHint(formatPhoenixClock(sunset)) };
   } catch (error) {
     console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
     return { ok: false as const, configured: true, lights: [], message: friendlyTuyaMessage(error) };

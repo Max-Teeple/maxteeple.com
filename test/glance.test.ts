@@ -27,7 +27,9 @@ import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
+import { planLightAutomations } from '../src/glance/light-automation';
 import { plugAlias, plugSortKey } from '../src/glance/plug-names';
+import { phoenixSunsetMinutes } from '../src/glance/sunset';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -1061,5 +1063,95 @@ describe('plug display names', () => {
       .sort((a, b) => a.order - b.order)
       .map((row) => row.name);
     expect(ordered.slice(0, 3)).toEqual(['Patio Lights', 'Living Room Rear', 'Living Room Left']);
+  });
+});
+
+describe('light schedules', () => {
+  const lat = 33.4484;
+  const lon = -112.074;
+  const lights = [
+    { id: 'patioplug1', name: 'Smart Plug 3', online: true, on: false, code: 'switch_1' },
+    { id: 'rearplug02', name: 'Smart Plug 2', online: true, on: true, code: 'switch_1' },
+    { id: 'leftplug03', name: 'Smart Plug', online: true, on: false, code: 'switch_1' }
+  ];
+  function phoenix(year: number, month: number, day: number, hour: number, minute: number): number {
+    return Date.UTC(year, month - 1, day, hour + 7, minute);
+  }
+
+  it('computes an October Phoenix sunset in the late afternoon', () => {
+    const minutes = phoenixSunsetMinutes(2026, 10, 16, lat, lon);
+    expect(minutes).toBeGreaterThan(17 * 60);
+    expect(minutes).toBeLessThan(19 * 60);
+    expect(phoenixSunsetMinutes(2026, 6, 21, lat, lon)).toBeGreaterThan(19 * 60);
+    expect(phoenixSunsetMinutes(2026, 12, 21, lat, lon)).toBeLessThan(18 * 60);
+  });
+
+  it('turns the patio on once after sunset and does not call plugs before sunset', () => {
+    const before = planLightAutomations({
+      nowMs: phoenix(2026, 10, 16, 16, 0),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: null,
+      lastMidnightDate: '2026-10-16'
+    });
+    expect(before.runPatio).toBe(false);
+    expect(before.patioOn).toEqual([]);
+    const after = planLightAutomations({
+      nowMs: phoenix(2026, 10, 16, 18, 10),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: null,
+      lastMidnightDate: '2026-10-16'
+    });
+    expect(after.runPatio).toBe(true);
+    expect(after.patioOn).toEqual(['patioplug1']);
+    expect(after.livingRoomOff).toEqual([]);
+    const again = planLightAutomations({
+      nowMs: phoenix(2026, 10, 16, 18, 15),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: after.date,
+      lastMidnightDate: '2026-10-16'
+    });
+    expect(again.runPatio).toBe(false);
+    expect(again.patioOn).toEqual([]);
+    const calls: string[] = [];
+    for (const id of after.patioOn) calls.push('on:' + id);
+    expect(calls).toEqual(['on:patioplug1']);
+  });
+
+  it('turns off only living-room plugs that are on, and only in the midnight window', () => {
+    const afternoon = planLightAutomations({
+      nowMs: phoenix(2026, 10, 16, 15, 0),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: '2026-10-16',
+      lastMidnightDate: null
+    });
+    expect(afternoon.runMidnight).toBe(false);
+    expect(afternoon.livingRoomOff).toEqual([]);
+    const midnight = planLightAutomations({
+      nowMs: phoenix(2026, 10, 17, 0, 5),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: '2026-10-16',
+      lastMidnightDate: null
+    });
+    expect(midnight.runMidnight).toBe(true);
+    expect(midnight.livingRoomOff).toEqual(['rearplug02']);
+    const later = planLightAutomations({
+      nowMs: phoenix(2026, 10, 17, 0, 10),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: '2026-10-16',
+      lastMidnightDate: midnight.date
+    });
+    expect(later.runMidnight).toBe(false);
   });
 });

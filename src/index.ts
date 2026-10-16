@@ -1,4 +1,5 @@
 import { app } from './app';
+import { runScheduledLights } from './glance/light-cron';
 import { handleGlance } from './glance/routes';
 import type { Bindings } from './types';
 
@@ -30,6 +31,9 @@ async function fetchSiteAsset(request: Request, env: Bindings): Promise<Response
 }
 
 export default {
+  async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduledLights(env));
+  },
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/glance' || url.pathname.startsWith('/glance/')) {
