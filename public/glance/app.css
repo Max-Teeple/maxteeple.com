@@ -435,7 +435,9 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 .event { cursor: pointer; }
 .event-title { font-size: 0.95rem; line-height: 1.25; }
 .verse-card { margin-top: 0; cursor: pointer; gap: 0.12rem; }
-.verse-head { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; }
+.verse-head { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; min-width: 0; }
+.verse-head h3 { min-width: 0; flex: 1 1 auto; letter-spacing: 0.04em; }
+.verse-card { padding: 0.36rem 0.42rem 0.32rem; }
 .verse-open {
   width: 1.75rem;
   height: 1.75rem;
@@ -508,7 +510,7 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
 }
 .day.is-today .setup { font-size: 1.15rem; }
 
-.rail { align-self: start; height: auto; max-height: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 0.4rem; overflow: hidden; }
+.rail { align-self: start; height: auto; max-height: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 0.26rem; overflow: hidden; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .card-head .text-btn { min-height: 0; margin: 0; font-size: 1rem; text-decoration: none; }
 .card-head .text-btn:disabled { opacity: 0.35; }
@@ -566,63 +568,68 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   color: var(--ink);
 }
 .check[aria-pressed="true"] { background: var(--ink); color: #16181c; }
-.add-card { gap: 0.28rem; flex: 0 0 auto; overflow: visible; }
-.add-card form, .add-quiet { display: grid; gap: 0.28rem; min-width: 0; }
-.add-card form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.add-times { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.28rem; grid-column: 1 / -1; min-width: 0; }
-.add-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; grid-column: 1 / -1; }
-#add-title, .add-days, #add-end, .add-note { grid-column: 1 / -1; }
+.add-card { gap: 0.14rem; flex: 0 0 auto; overflow: visible; padding: 0.34rem 0.4rem 0.28rem; }
+.add-card form, .add-quiet { display: grid; gap: 0.16rem; min-width: 0; }
+.add-card form { grid-template-columns: minmax(0, 1fr); }
+.add-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.95fr) minmax(0, 0.85fr); gap: 0.16rem; min-width: 0; }
+.add-when { position: relative; min-width: 0; }
+.add-card .add-date {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  max-width: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: transparent;
+}
+.add-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; }
 .add-card input, .add-card select {
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 42px;
-  border-radius: 12px;
+  min-height: 32px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.28);
-  padding: 0 0.55rem;
-  font-size: 1rem;
+  padding: 0 0.32rem;
+  font-size: 0.875rem;
 }
-.add-days { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 0.3rem; min-width: 0; }
-.add-days button, .add-go, .add-card .text-btn {
-  min-height: 42px;
+.add-go, .add-card .text-btn {
+  min-height: 32px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.08);
-  padding: 0 0.45rem;
+  padding: 0 0.7rem;
+  font-size: 0.875rem;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.add-days button {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  padding-inline: 0.4rem;
-  font-size: 0.875rem;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-.add-days button[aria-pressed="true"] { background: var(--ink); color: #16181c; }
-.add-days input[type="date"] { width: 100%; min-width: 0; grid-column: 1 / -1; font-size: 0.875rem; }
-#add-start, #add-duration, #add-end { min-width: 0; }
 .add-time {
   position: relative;
   display: flex;
   align-items: center;
   width: 100%;
   min-width: 0;
-  min-height: 42px;
-  border-radius: 12px;
+  min-height: 32px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.28);
-  padding: 0 0.55rem;
+  padding: 0 0.32rem;
 }
 .add-time-face {
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+  white-space: nowrap;
 }
 .add-time input {
   position: absolute;
@@ -637,10 +644,10 @@ body:has(#board:not([hidden])) .privacy-public { display: none; }
   min-height: 0;
 }
 .add-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem; }
-.add-allday { display: flex; align-items: center; gap: 0.45rem; min-height: 44px; font-size: 1.02rem; white-space: nowrap; }
+.add-allday { display: flex; align-items: center; gap: 0.3rem; min-height: 32px; font-size: 0.875rem; white-space: nowrap; }
 .add-go { font-weight: 600; }
 .add-go:disabled { opacity: 0.65; }
-.add-note { margin: 0; color: var(--muted); font-size: 1.02rem; line-height: 1.3; }
+.add-note { margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.25; }
 .add-card form.is-busy .add-go { opacity: 0.65; }
 
 .tools { position: absolute; top: 1rem; right: 1rem; display: flex; gap: 0.4rem; z-index: 2; }
@@ -859,14 +866,13 @@ body[data-layout="home"] .days { grid-template-columns: 1fr; }
   .day-facts { padding-top: 0.35rem; padding-bottom: 0.35rem; }
   .rail { gap: 0.18rem; }
   .add-card { gap: 0.2rem; padding-top: 0.35rem; padding-bottom: 0.28rem; }
-  .add-card form, .add-times { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.2rem; }
+  .add-card form { grid-template-columns: minmax(0, 1fr); gap: 0.16rem; }
+  .add-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.95fr) minmax(0, 0.85fr); gap: 0.16rem; }
   .add-time, .add-card input, .add-card select, .add-days button, .add-go, .add-allday { min-height: 32px; font-size: 0.875rem; }
 }
 
 @media (max-height: 900px) and (max-width: 1250px) {
-  .add-card form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .add-days { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
-  .add-days input[type="date"] { grid-column: 1 / -1; }
+  .add-card form { grid-template-columns: minmax(0, 1fr); }
   .rail { gap: 0.12rem; }
   .add-card { padding-top: 0.28rem; padding-bottom: 0.18rem; }
   .lower,
@@ -899,9 +905,9 @@ body { container-name: screen; container-type: inline-size; }
     gap: 0.3rem;
     padding:
       calc(0.35rem + max(env(safe-area-inset-top), var(--safe-top)))
-      calc(0.4rem + max(env(safe-area-inset-right), var(--safe-right)))
-      calc(0.3rem + max(env(safe-area-inset-bottom), var(--safe-bottom)))
-      calc(0.4rem + max(env(safe-area-inset-left), var(--safe-left)));
+      calc(0.75rem + max(env(safe-area-inset-right), var(--safe-right)))
+      calc(0.7rem + max(env(safe-area-inset-bottom), var(--safe-bottom)))
+      calc(0.75rem + max(env(safe-area-inset-left), var(--safe-left)));
   }
   .top {
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);

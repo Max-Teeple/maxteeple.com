@@ -344,8 +344,22 @@ for (const viewport of viewports) {
           problems.push('verse missing');
         } else {
           const verseRect = verse.getBoundingClientRect();
-          if (verseRect.top < -1 || verseRect.left < -1 || verseRect.bottom > window.innerHeight + 1 || verseRect.right > window.innerWidth + 1) {
-            problems.push('verse offscreen ' + Math.round(verseRect.top) + '..' + Math.round(verseRect.bottom));
+          const verseMargin = layout === 'fiveday' && (window.innerWidth === 1024 || window.innerWidth === 1366) ? 8 : 1;
+          if (verseRect.top < verseMargin || verseRect.left < verseMargin || verseRect.bottom > window.innerHeight - verseMargin || verseRect.right > window.innerWidth - verseMargin) {
+            problems.push('verse offscreen ' + Math.round(verseRect.top) + '..' + Math.round(verseRect.bottom) + ' right ' + Math.round(verseRect.right));
+          }
+          let host = verse.parentElement;
+          while (host && host !== document.body) {
+            const style = getComputedStyle(host);
+            const clips = /(hidden|auto|scroll|clip)/.test(style.overflowY + style.overflow);
+            if (clips) {
+              const bounds = host.getBoundingClientRect();
+              if (verseRect.bottom > bounds.bottom + 1 || verseRect.right > bounds.right + 1 || verseRect.top < bounds.top - 1) {
+                problems.push('verse clipped');
+                break;
+              }
+            }
+            host = host.parentElement;
           }
           if (addCard && visible(addCard)) {
             const addRect = addCard.getBoundingClientRect();
@@ -362,16 +376,8 @@ for (const viewport of viewports) {
               const ratio = nextWidth ? todayWidth / nextWidth : 0;
               if (ratio < 1.15 || ratio > 1.5) problems.push('today width ratio ' + ratio.toFixed(2));
             }
-            const tomorrow = document.querySelector('.add-day[data-day="tomorrow"]');
-            if (tomorrow && visible(tomorrow)) {
-              const box = tomorrow.getBoundingClientRect();
-              const range = document.createRange();
-              range.selectNodeContents(tomorrow);
-              const text = range.getBoundingClientRect();
-              if (text.width > box.width + 1 || text.right > box.right + 1 || text.left < box.left - 1) {
-                problems.push('Tomorrow overflows pill');
-              }
-            }
+            const when = document.querySelector('#add-when');
+            if (when && visible(when) && when.scrollWidth > when.clientWidth + 2) problems.push('day select overflow');
             const start = document.querySelector('#add-start');
             if (start && visible(start) && String(start.value).split(':').length > 2) problems.push('time has seconds');
           }
@@ -391,7 +397,7 @@ for (const viewport of viewports) {
         const card = document.querySelector('.add-card');
         if (card && visible(card)) {
           card.querySelectorAll('input, select, button, a, label').forEach((field) => {
-            if (!visible(field)) return;
+            if (field.getAttribute('aria-hidden') === 'true' || !visible(field)) return;
             const rect = field.getBoundingClientRect();
             const box = card.getBoundingClientRect();
             const name = field.getAttribute('aria-label') || field.id || field.textContent.trim().slice(0, 24);
@@ -496,6 +502,7 @@ await page.evaluate(() => {
 });
 await page.screenshot({ path: path.join(outDir, 'ipad-12.9-collapsed.png') });
 await page.screenshot({ path: path.join(outDir, 'glance-5day-1024x1366.png') });
+await page.locator('#rail').screenshot({ path: path.join(outDir, 'glance-rail-1024x1366.png') });
 const addCard = page.locator('.add-card');
 if (await addCard.count()) await addCard.screenshot({ path: path.join(outDir, 'glance-add-event-portrait.png') });
 const verse = page.locator('.verse-card');
@@ -518,6 +525,7 @@ await page.evaluate(() => {
 });
 await page.screenshot({ path: path.join(outDir, 'ipad-12.9-landscape-collapsed.png') });
 await page.screenshot({ path: path.join(outDir, 'glance-5day-1366x1024.png') });
+await page.locator('#rail').screenshot({ path: path.join(outDir, 'glance-rail-1366x1024.png') });
 if (await addCard.count()) await addCard.screenshot({ path: path.join(outDir, 'glance-add-event.png') });
 await page.evaluate(() => {
   document.getElementById('board').hidden = true;
