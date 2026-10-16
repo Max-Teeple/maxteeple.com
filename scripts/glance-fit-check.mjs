@@ -190,7 +190,15 @@ function fixtureDashboard() {
       hourly: [15, 16, 17, 18].map((hour) => ({ time: today + 'T' + hour + ':00:00-07:00', icon: 'sun', isDay: true, temp: 84, precip: 0 }))
     },
     calendar: { ok: true, days },
-    lights: { ok: true, configured: true, lights: [{ id: 'plug1', name: 'Lamp', online: true, on: false, code: 'switch_1', enabled: true }] },
+    lights: {
+      ok: true,
+      configured: true,
+      lights: [
+        { id: 'plugpatio1', name: 'Patio Lights', online: true, on: true, code: 'switch_1', enabled: true },
+        { id: 'plugrear02', name: 'Living Room Rear', online: true, on: false, code: 'switch_1', enabled: true },
+        { id: 'plugleft03', name: 'Living Room Left', online: true, on: false, code: 'switch_1', enabled: true }
+      ]
+    },
     location: { ok: true, people: [{ id: 'p1', name: 'Max', color: '#f6f3ec', phrase: 'Max is at home', stale: false }] }
   };
 }
