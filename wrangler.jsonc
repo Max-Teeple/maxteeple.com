@@ -31,14 +31,10 @@
       "binding": "LIVEVIEW_MEDIA"
     }
   ],
-  // Glance photos. Workers KV is not used for pictures. If this bucket is
-  // missing, the Worker stores the JPEGs in D1 instead.
-  "r2_buckets": [
-    {
-      "binding": "GLANCE_PHOTOS",
-      "bucket_name": "glance-photos"
-    }
-  ],
+  // Photos stay in D1 until R2 is enabled and the bucket glance-photos exists.
+  // A binding to a missing bucket fails the production deploy. After the
+  // bucket is created, restore:
+  // "r2_buckets": [{ "binding": "GLANCE_PHOTOS", "bucket_name": "glance-photos" }]
   "rules": [
     {
       "type": "Text",
