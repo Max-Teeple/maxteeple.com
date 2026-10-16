@@ -28,6 +28,7 @@ import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/locatio
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
 import { planLightAutomations } from '../src/glance/light-automation';
+import { runScheduledLights } from '../src/glance/light-cron';
 import { plugAlias, plugSortKey } from '../src/glance/plug-names';
 import { phoenixSunsetMinutes } from '../src/glance/sunset';
 import { shapeWeather } from '../src/glance/weather';
@@ -1052,6 +1053,52 @@ describe('Glance KV budget', () => {
 });
 
 describe('plug display names', () => {
+  it('returns the three renamed plugs from the status read', async () => {
+    const session = await signIn();
+    const accessId = 'readlights01';
+    const accessSecret = 'readlightssecret01';
+    const saved = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tuyaAccessId: accessId, tuyaAccessSecret: accessSecret })
+    });
+    expect(saved.status).toBe(200);
+    fetchMock.activate();
+    fetchMock.disableNetConnect();
+    try {
+      fetchMock.get('https://openapi.tuyaus.com').intercept({ path: '/v1.0/token?grant_type=1', method: 'GET' }).reply(200, {
+        success: true,
+        result: { access_token: 'status-read-token', expire_time: 7200, uid: '' }
+      });
+      fetchMock.get('https://openapi.tuyaus.com').intercept({ path: '/v2.0/cloud/thing/device?page_size=20', method: 'GET' }).reply(200, {
+        success: true,
+        result: [
+          { id: 'plugpatio1', name: 'Smart Plug 3', online: true },
+          { id: 'plugrear02', name: 'Smart Plug 2', online: true },
+          { id: 'plugleft03', name: 'Smart Plug', online: true }
+        ]
+      });
+      for (const id of ['plugpatio1', 'plugrear02', 'plugleft03']) {
+        fetchMock.get('https://openapi.tuyaus.com').intercept({ path: `/v1.0/devices/${id}/status`, method: 'GET' }).reply(200, {
+          success: true,
+          result: [{ code: 'switch_1', value: false }]
+        });
+      }
+      const response = await withSession('/glance/api/lights', session);
+      expect(response.status).toBe(200);
+      const body = await response.json() as { ok: boolean; lights: { name: string }[]; message?: string };
+      expect(body.ok).toBe(true);
+      expect(body.lights.map((light) => light.name)).toEqual(['Patio Lights', 'Living Room Rear', 'Living Room Left']);
+      expect(JSON.stringify(body)).not.toContain(accessId);
+      expect(JSON.stringify(body)).not.toContain(accessSecret);
+    } finally {
+      fetchMock.deactivate();
+      await env.LIVEVIEW_DB.prepare(
+        `UPDATE glance_settings SET tuya_access_id = '', tuya_access_secret = '' WHERE id = 'default'`
+      ).run();
+    }
+  });
+
   it('renames the three kitchen plugs and keeps Patio Lights first', () => {
     expect(plugAlias('Smart Plug 3')).toEqual({ name: 'Patio Lights', order: 0 });
     expect(plugAlias('Smart Plug 2')).toEqual({ name: 'Living Room Rear', order: 1 });
@@ -1153,5 +1200,25 @@ describe('light schedules', () => {
       lastMidnightDate: midnight.date
     });
     expect(later.runMidnight).toBe(false);
+  });
+
+  it('does not read or command plugs when no schedule is due', async () => {
+    const session = await signIn();
+    await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tuyaAccessId: 'abc123xyz987', tuyaAccessSecret: 'abcdef0123456789abcd' })
+    });
+    const calls: string[] = [];
+    await runScheduledLights(env as Bindings, Date.UTC(2026, 9, 16, 22, 0), {
+      async listLights() {
+        calls.push('list');
+        return [];
+      },
+      async setLight() {
+        calls.push('set');
+      }
+    });
+    expect(calls).toEqual([]);
   });
 });

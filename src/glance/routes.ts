@@ -18,7 +18,7 @@ import {
   type GlanceTheme
 } from './defaults';
 import { dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, type AgendaEvent, type FeedMeta } from './ics';
-import { PHOENIX, addDays, formatPhoenix, phoenixDate, phoenixWindow, windowFrom, zonedToUtc } from './time';
+import { PHOENIX, addDays, formatPhoenix, partsInZone, phoenixDate, phoenixWindow, windowFrom, zonedToUtc } from './time';
 import {
   familyPhrase,
   geocodeAddress,

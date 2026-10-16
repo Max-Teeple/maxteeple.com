@@ -1,7 +1,12 @@
 import { ensureSchema } from '../schema';
 import type { Bindings } from '../types';
 import { planLightAutomations, scheduleHint, type AutoLight } from './light-automation';
-import { listLights, setLight } from './tuya';
+import { listLights, setLight, type LightDevice, type TuyaCreds } from './tuya';
+
+type LightIo = {
+  listLights: (creds: TuyaCreds, db: D1Database) => Promise<LightDevice[]>;
+  setLight: (creds: TuyaCreds, db: D1Database, deviceId: string, on: boolean) => Promise<void>;
+};
 
 const PHOENIX_LAT = 33.4484;
 const PHOENIX_LON = -112.074;
@@ -28,16 +33,29 @@ async function logAction(db: D1Database, action: string, detail: string): Promis
     .run();
 }
 
-export async function runScheduledLights(env: Bindings): Promise<void> {
+export async function runScheduledLights(env: Bindings, nowMs = Date.now(), io: LightIo = { listLights, setLight }): Promise<void> {
   await ensureSchema(env.LIVEVIEW_DB);
   const db = env.LIVEVIEW_DB;
   const settings = await db
     .prepare(`SELECT lat, lon, tuya_access_id, tuya_access_secret FROM glance_settings WHERE id = 'default'`)
     .first<{ lat: number; lon: number; tuya_access_id: string; tuya_access_secret: string }>();
   if (!settings?.tuya_access_id || !settings.tuya_access_secret) return;
+  const lastPatioDate = await lastRun(db, 'patio-sunset');
+  const lastMidnightDate = await lastRun(db, 'living-room-midnight');
+  const due = planLightAutomations({
+    nowMs,
+    lat: Number.isFinite(settings.lat) ? settings.lat : PHOENIX_LAT,
+    lon: Number.isFinite(settings.lon) ? settings.lon : PHOENIX_LON,
+    lights: [],
+    lastPatioDate,
+    lastMidnightDate
+  });
+  // Stay off Tuya unless a schedule is actually due. A 5-minute poll was
+  // racing the board's status read and caching a rejected token.
+  if (!due.runPatio && !due.runMidnight) return;
   let lights: AutoLight[] = [];
   try {
-    lights = await listLights(
+    lights = await io.listLights(
       { accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret },
       db
     );
@@ -46,19 +64,19 @@ export async function runScheduledLights(env: Bindings): Promise<void> {
     return;
   }
   const plan = planLightAutomations({
-    nowMs: Date.now(),
+    nowMs,
     lat: Number.isFinite(settings.lat) ? settings.lat : PHOENIX_LAT,
     lon: Number.isFinite(settings.lon) ? settings.lon : PHOENIX_LON,
     lights,
-    lastPatioDate: await lastRun(db, 'patio-sunset'),
-    lastMidnightDate: await lastRun(db, 'living-room-midnight')
+    lastPatioDate,
+    lastMidnightDate
   });
   if (plan.runPatio) {
     let ok = true;
     if (!plan.patioOn.length) await logAction(db, 'patio-on', 'already on or offline');
     for (const id of plan.patioOn) {
       try {
-        await setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, true);
+        await io.setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, true);
         await logAction(db, 'patio-on', id);
       } catch (error) {
         ok = false;
@@ -72,7 +90,7 @@ export async function runScheduledLights(env: Bindings): Promise<void> {
     if (!plan.livingRoomOff.length) await logAction(db, 'lr-off', 'already off or offline');
     for (const id of plan.livingRoomOff) {
       try {
-        await setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, false);
+        await io.setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, false);
         await logAction(db, 'lr-off', id);
       } catch (error) {
         ok = false;
