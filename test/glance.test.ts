@@ -27,6 +27,7 @@ import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
+import { plugAlias, plugSortKey } from '../src/glance/plug-names';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -1045,5 +1046,20 @@ describe('Glance KV budget', () => {
     expect(source).toContain("button.textContent = busy ? 'Saving' : 'Add'");
     expect(source).toContain('idempotencyKey: crypto.randomUUID()');
     expect(source).toContain('function resetAddForm');
+  });
+});
+
+describe('plug display names', () => {
+  it('renames the three kitchen plugs and keeps Patio Lights first', () => {
+    expect(plugAlias('Smart Plug 3')).toEqual({ name: 'Patio Lights', order: 0 });
+    expect(plugAlias('Smart Plug 2')).toEqual({ name: 'Living Room Rear', order: 1 });
+    expect(plugAlias('Smart Plug')).toEqual({ name: 'Living Room Left', order: 2 });
+    expect(plugAlias('Lamp')).toBeNull();
+    const names = ['Smart Plug', 'Smart Plug 3', 'Smart Plug 2', 'Hall lamp'];
+    const ordered = names
+      .map((name, index) => ({ name: plugAlias(name)?.name || name, order: plugSortKey(name, index) }))
+      .sort((a, b) => a.order - b.order)
+      .map((row) => row.name);
+    expect(ordered.slice(0, 3)).toEqual(['Patio Lights', 'Living Room Rear', 'Living Room Left']);
   });
 });

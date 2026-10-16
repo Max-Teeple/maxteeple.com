@@ -30,6 +30,7 @@ import {
   type Place
 } from './location';
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
+import { plugAlias, plugSortKey } from './plug-names';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
 import { verseDetail, verseSummary } from './verse';
@@ -1372,12 +1373,13 @@ function mergeLights(
     .map((device, index) => {
       const pref = byId.get(device.id);
       const renamed = pref?.label?.trim() || '';
+      const alias = plugAlias(device.name);
       return {
         id: device.id,
-        name: renamed || device.name,
+        name: alias?.name || renamed || device.name,
         deviceName: device.name,
         enabled: pref ? !!pref.enabled : true,
-        sortOrder: pref ? pref.sort_order : index,
+        sortOrder: plugSortKey(device.name, pref ? pref.sort_order : index),
         online: device.online,
         on: device.on,
         code: device.code

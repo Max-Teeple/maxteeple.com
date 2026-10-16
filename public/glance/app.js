@@ -881,10 +881,10 @@
   function readAddDraft() {
     var title = document.getElementById('add-title');
     if (!title) return null;
-    var pressed = document.querySelector('.add-day[aria-pressed="true"]');
+    var when = document.getElementById('add-when');
     return {
       title: title.value,
-      day: pressed ? pressed.dataset.day : 'today',
+      day: when ? when.value : 'today',
       date: document.getElementById('add-date').value,
       start: document.getElementById('add-start').value,
       duration: document.getElementById('add-duration').value,
@@ -929,37 +929,51 @@
     title.setAttribute('aria-label', 'Event title');
     title.autocapitalize = 'sentences';
     title.value = saved.title || '';
-    var days = document.createElement('div');
-    days.className = 'add-days';
-    var chosen = saved.day || 'today';
-    [['today', 'Today'], ['tomorrow', 'Tomorrow']].forEach(function (entry) {
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'add-day';
-      button.dataset.day = entry[0];
-      button.textContent = entry[1];
-      button.setAttribute('aria-pressed', chosen === entry[0] ? 'true' : 'false');
-      button.addEventListener('click', function () {
-        days.querySelectorAll('.add-day').forEach(function (item) { item.setAttribute('aria-pressed', 'false'); });
-        button.setAttribute('aria-pressed', 'true');
-        date.value = entry[0] === 'today' ? today : shiftDateKey(today, 1);
-      });
-      days.appendChild(button);
-    });
+    var tomorrowKey = shiftDateKey(today, 1);
+    var savedDay = saved.day || 'today';
+    var savedDate = saved.date || (savedDay === 'tomorrow' ? tomorrowKey : today);
+    var whenWrap = document.createElement('div');
+    whenWrap.className = 'add-when';
+    var when = document.createElement('select');
+    when.id = 'add-when';
+    when.setAttribute('aria-label', 'Day');
+    function whenOption(value, label) {
+      var option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }
+    var dateOpt = whenOption('date', 'Choose date');
+    when.append(whenOption('today', 'Today'), whenOption('tomorrow', 'Tomorrow'), dateOpt);
     var date = document.createElement('input');
     date.id = 'add-date';
+    date.className = 'add-date';
     date.type = 'date';
-    date.setAttribute('aria-label', 'Day');
-    date.value = saved.date || (chosen === 'tomorrow' ? shiftDateKey(today, 1) : today);
-    date.addEventListener('change', function () {
-      var mode = date.value === today ? 'today' : date.value === shiftDateKey(today, 1) ? 'tomorrow' : 'date';
-      days.querySelectorAll('.add-day').forEach(function (item) {
-        item.setAttribute('aria-pressed', item.dataset.day === mode ? 'true' : 'false');
-      });
+    date.tabIndex = -1;
+    date.setAttribute('aria-hidden', 'true');
+    date.value = savedDate;
+    function paintWhen() {
+      var custom = date.value && date.value !== today && date.value !== tomorrowKey;
+      dateOpt.textContent = custom
+        ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', month: 'short', day: 'numeric' }).format(new Date(date.value + 'T12:00:00-07:00'))
+        : 'Choose date';
+      when.value = custom ? 'date' : (date.value === tomorrowKey ? 'tomorrow' : 'today');
+    }
+    when.addEventListener('change', function () {
+      if (when.value === 'today') date.value = today;
+      else if (when.value === 'tomorrow') date.value = tomorrowKey;
+      else if (date.showPicker) {
+        var picker = date.showPicker();
+        if (picker && picker.catch) picker.catch(function () {});
+        return;
+      }
+      paintWhen();
     });
-    days.appendChild(date);
-    var times = document.createElement('div');
-    times.className = 'add-times';
+    date.addEventListener('change', paintWhen);
+    paintWhen();
+    whenWrap.append(when, date);
+    var row = document.createElement('div');
+    row.className = 'add-row';
     var start = timeField('add-start', 'Start time', saved.start || defaultStart());
     var duration = document.createElement('select');
     duration.id = 'add-duration';
@@ -973,8 +987,8 @@
     duration.value = saved.duration || '60';
     var end = timeField('add-end', 'End time', saved.end || '');
     end.hidden = duration.value !== 'end';
-    duration.addEventListener('change', function () { end.hidden = duration.value !== 'end'; });
-    times.append(start, duration, end);
+    duration.addEventListener('change', function () { end.hidden = box.checked || duration.value !== 'end'; });
+    row.append(whenWrap, start, duration, end);
     var foot = document.createElement('div');
     foot.className = 'add-foot';
     var allday = document.createElement('label');
@@ -989,13 +1003,17 @@
     go.type = 'submit';
     go.textContent = 'Add';
     foot.append(allday, go);
-    function syncAllDay() { times.hidden = box.checked; }
+    function syncAllDay() {
+      start.hidden = box.checked;
+      duration.hidden = box.checked;
+      end.hidden = box.checked || duration.value !== 'end';
+    }
     box.addEventListener('change', syncAllDay);
     syncAllDay();
     var status = document.createElement('p');
     status.className = 'add-note';
     status.textContent = state.googleNotice || '';
-    form.append(title, days, times, foot, status);
+    form.append(title, row, foot, status);
     form.addEventListener('submit', function (event) { event.preventDefault(); submitEvent(form); });
     card.appendChild(form);
     rail.appendChild(card);
@@ -1058,11 +1076,14 @@
     }
     var box = form.querySelector('#add-allday');
     if (box) box.checked = false;
-    var times = form.querySelector('.add-times');
-    if (times) times.hidden = false;
-    form.querySelectorAll('.add-day').forEach(function (item) {
-      item.setAttribute('aria-pressed', item.dataset.day === 'today' ? 'true' : 'false');
-    });
+    var when = form.querySelector('#add-when');
+    if (when) when.value = 'today';
+    var dateOpt = when && when.querySelector('option[value="date"]');
+    if (dateOpt) dateOpt.textContent = 'Choose date';
+    var row = form.querySelector('.add-row');
+    if (row) row.classList.remove('is-all-day');
+    var startWrap = form.querySelector('#add-start');
+    if (startWrap && startWrap.parentElement) startWrap.parentElement.hidden = false;
   }
 
   function setAddBusy(form, busy) {
