@@ -470,6 +470,19 @@ describe('layouts and birthdays', () => {
     });
     expect(saved.status).toBe(200);
     expect((await saved.json() as { layout: string }).layout).toBe('home');
+    const fiveDay = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout: 'fiveday' })
+    });
+    expect(fiveDay.status).toBe(200);
+    expect((await fiveDay.json() as { layout: string }).layout).toBe('fiveday');
+    const unknown = await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout: 'nope' })
+    });
+    expect((await unknown.json() as { layout: string }).layout).toBe('fiveday');
 
     const ics = `BEGIN:VCALENDAR
 BEGIN:VEVENT

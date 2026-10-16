@@ -47,7 +47,7 @@ const viewports = [
   { name: 'laptop-1920x1080', width: 1920, height: 1080, mode: 'laptop', primary: false }
 ];
 
-const layouts = ['balanced', 'calendar', 'today', 'threeday', 'home'];
+const layouts = ['fiveday', 'balanced', 'calendar', 'today', 'threeday', 'home'];
 const themes = ['aurora', 'desert', 'golf', 'glass', 'auto'];
 
 if (process.env.GLANCE_FIT_TIMING === '1') {
@@ -152,14 +152,30 @@ function fixtureDashboard() {
       deletable: personal
     }));
   }
-  const day = { date: today, label: 'Today', weekday: 'Today', day: Number(today.slice(-2)), events };
+  const shiftKey = (key, offset) => {
+    const [y, m, d] = key.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + offset));
+    return dt.toISOString().slice(0, 10);
+  };
+  const shortDay = (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', weekday: 'short' }).format(new Date(key + 'T12:00:00-07:00'));
+  const longDay = (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', weekday: 'long' }).format(new Date(key + 'T12:00:00-07:00'));
+  const days = [0, 1, 2, 3, 4].map((offset) => {
+    const date = shiftKey(today, offset);
+    return {
+      date,
+      label: offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : shortDay(date),
+      weekday: offset === 0 ? 'Today' : longDay(date),
+      day: Number(date.slice(-2)),
+      events: offset === 0 ? events : events.slice(0, offset === 2 ? 4 : 2)
+    };
+  });
   return {
     ok: true,
     settings: {
       ok: true,
       locationName: 'Phoenix',
       theme: 'auto',
-      layout: 'threeday',
+      layout: 'fiveday',
       clock24: false,
       nightStart: 21,
       nightEnd: 6,
@@ -170,10 +186,10 @@ function fixtureDashboard() {
     weather: {
       ok: true,
       current: { temp: 84, label: 'Clear', icon: 'sun', isDay: true, high: 91, low: 64, feels: 82, wind: 6, windDir: 220, uv: 7, precip: 0, code: 0 },
-      daily: [0, 1, 2, 3, 4].map((offset) => ({ date: today, icon: 'sun', high: 90, low: 64, precip: 0 })),
+      daily: [0, 1, 2, 3, 4].map((offset) => ({ date: shiftKey(today, offset), icon: 'sun', high: 90, low: 64, precip: 0 })),
       hourly: [15, 16, 17, 18].map((hour) => ({ time: today + 'T' + hour + ':00:00-07:00', icon: 'sun', isDay: true, temp: 84, precip: 0 }))
     },
-    calendar: { ok: true, days: [day, { ...day, label: 'Tomorrow', events: [] }, { ...day, label: 'Wed', events: day.events }] },
+    calendar: { ok: true, days },
     lights: { ok: true, configured: true, lights: [{ id: 'plug1', name: 'Lamp', online: true, on: false, code: 'switch_1', enabled: true }] },
     location: { ok: true, people: [{ id: 'p1', name: 'Max', color: '#f6f3ec', phrase: 'Max is at home', stale: false }] }
   };
@@ -213,7 +229,7 @@ if (assets) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fixtureDashboard()) });
       }
       if (target.endsWith('/glance/api/settings') && request.method() === 'PUT') {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, layout: 'threeday', theme: 'auto', google: { connected: true } }) });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, layout: 'fiveday', theme: 'auto', google: { connected: true } }) });
       }
       if (target.endsWith('/glance/api/version')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"version":"fit"}' });
@@ -337,6 +353,28 @@ for (const viewport of viewports) {
             if (gap < -1) problems.push('verse not below add');
             if (gap > 28) problems.push('verse gap ' + Math.round(gap));
           }
+          if (layout === 'fiveday') {
+            const columns = [...document.querySelectorAll('#days .day')];
+            if (columns.length !== 5) problems.push('fiveday columns ' + columns.length);
+            if (columns.length >= 2) {
+              const todayWidth = columns[0].getBoundingClientRect().width;
+              const nextWidth = columns[1].getBoundingClientRect().width;
+              const ratio = nextWidth ? todayWidth / nextWidth : 0;
+              if (ratio < 1.15 || ratio > 1.5) problems.push('today width ratio ' + ratio.toFixed(2));
+            }
+            const tomorrow = document.querySelector('.add-day[data-day="tomorrow"]');
+            if (tomorrow && visible(tomorrow)) {
+              const box = tomorrow.getBoundingClientRect();
+              const range = document.createRange();
+              range.selectNodeContents(tomorrow);
+              const text = range.getBoundingClientRect();
+              if (text.width > box.width + 1 || text.right > box.right + 1 || text.left < box.left - 1) {
+                problems.push('Tomorrow overflows pill');
+              }
+            }
+            const start = document.querySelector('#add-start');
+            if (start && visible(start) && String(start.value).split(':').length > 2) problems.push('time has seconds');
+          }
           const rail = verse.closest('.rail');
           const days = document.querySelector('.days');
           if (rail && days && visible(days)) {
@@ -452,11 +490,14 @@ for (const viewport of viewports) {
 
 await page.setViewportSize({ width: 1024, height: 1366 });
 await page.evaluate(() => {
-  document.body.dataset.layout = 'threeday';
+  document.body.dataset.layout = 'fiveday';
   document.body.dataset.theme = 'aurora';
-  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'threeday', theme: 'aurora' } }));
+  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'fiveday', theme: 'aurora' } }));
 });
 await page.screenshot({ path: path.join(outDir, 'ipad-12.9-collapsed.png') });
+await page.screenshot({ path: path.join(outDir, 'glance-5day-1024x1366.png') });
+const addCard = page.locator('.add-card');
+if (await addCard.count()) await addCard.screenshot({ path: path.join(outDir, 'glance-add-event-portrait.png') });
 const verse = page.locator('.verse-card');
 if (await verse.count()) {
   await verse.click();
@@ -473,9 +514,21 @@ if (await event.count()) {
 }
 await page.setViewportSize({ width: 1366, height: 1024 });
 await page.evaluate(() => {
-  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'threeday', theme: 'aurora' } }));
+  window.dispatchEvent(new CustomEvent('glance-fit', { detail: { layout: 'fiveday', theme: 'aurora' } }));
 });
 await page.screenshot({ path: path.join(outDir, 'ipad-12.9-landscape-collapsed.png') });
+await page.screenshot({ path: path.join(outDir, 'glance-5day-1366x1024.png') });
+if (await addCard.count()) await addCard.screenshot({ path: path.join(outDir, 'glance-add-event.png') });
+await page.evaluate(() => {
+  document.getElementById('board').hidden = true;
+  const boot = document.getElementById('boot');
+  boot.hidden = false;
+});
+await page.screenshot({ path: path.join(outDir, 'glance-loading.png') });
+await page.evaluate(() => {
+  document.getElementById('boot').hidden = true;
+  document.getElementById('board').hidden = false;
+});
 
 await browser.close();
 if (posts.length) {

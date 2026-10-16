@@ -11,6 +11,7 @@ import {
   GLANCE_FAIL_LIMIT,
   GLANCE_FAIL_WINDOW_MS,
   GLANCE_SESSION_SECONDS,
+  DEFAULT_LAYOUT,
   LAYOUTS,
   THEMES,
   type GlanceLayout,
@@ -2019,9 +2020,9 @@ function boolOf(value: unknown): boolean {
 }
 
 function layoutOf(value: unknown): GlanceLayout {
-  const layout = String(value || 'threeday');
+  const layout = String(value || DEFAULT_LAYOUT);
   if ((LAYOUTS as readonly string[]).includes(layout)) return layout as GlanceLayout;
-  return 'threeday';
+  return DEFAULT_LAYOUT;
 }
 
 function themeOf(value: unknown): GlanceTheme {

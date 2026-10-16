@@ -18,8 +18,12 @@
     <link rel="apple-touch-icon" href="/glance/apple-touch-icon.png" sizes="180x180" />
     <link rel="stylesheet" href="/glance/app.css?v=__GLANCE_BUILD__" />
   </head>
-  <body data-theme="aurora" data-layout="threeday">
-    <p id="boot" class="boot">Glance</p>
+  <body data-theme="aurora" data-layout="fiveday">
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <p class="boot-mark">Glance</p>
+      <p class="boot-dots" aria-hidden="true"><span></span><span></span><span></span></p>
+      <p class="boot-line">Loading your board…</p>
+    </div>
 
     <main id="login" class="login" hidden>
       <form id="login-form" class="glass login-card" method="post" action="/glance/api/login">
