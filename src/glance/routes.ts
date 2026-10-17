@@ -35,7 +35,7 @@ import { scheduleHint } from './light-automation';
 import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
-import { createGlancePhoto, listGlancePhotos, readGlancePhoto, removeGlancePhoto } from './photos';
+import { createGlancePhoto, listGlancePhotos, readGlancePhoto, removeGlancePhoto, replaceGlancePhoto } from './photos';
 import { verseDetail, verseSummary } from './verse';
 import { forgetPrefix, remember } from './cache';
 import {
@@ -715,6 +715,12 @@ glance.delete('/photos/:id', async (c) => {
   if (!removed) throw new HttpError(404, 'Photo not found');
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true });
+});
+
+glance.put('/photos/:id', async (c) => {
+  const photo = await replaceGlancePhoto(c.req.raw, c.env, c.req.param('id'));
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, id: photo.id });
 });
 
 async function photoResponse(env: Bindings, id: string, kind: 'full' | 'thumb'): Promise<Response> {

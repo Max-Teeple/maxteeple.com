@@ -2,7 +2,7 @@ import type { Bindings } from '../types';
 import { HttpError } from '../util';
 
 const MAX_PHOTOS = 120;
-const MAX_FULL_BYTES = 1_200_000;
+const MAX_FULL_BYTES = 2_200_000;
 const MAX_THUMB_BYTES = 160_000;
 
 let r2Failed = false;
@@ -76,7 +76,7 @@ export async function listGlancePhotos(env: Bindings): Promise<{ id: string; cre
   }));
 }
 
-export async function createGlancePhoto(request: Request, env: Bindings): Promise<{ id: string }> {
+async function photoForm(request: Request) {
   const form = await request.formData();
   const fullFile = form.get('full');
   const thumbFile = form.get('thumb');
@@ -85,20 +85,53 @@ export async function createGlancePhoto(request: Request, env: Bindings): Promis
   const thumb = jpegBytes(new Uint8Array(await thumbFile.arrayBuffer()), 'Thumbnail', MAX_THUMB_BYTES);
   const width = Math.max(0, Math.min(8000, Math.round(Number(form.get('width')) || 0)));
   const height = Math.max(0, Math.min(8000, Math.round(Number(form.get('height')) || 0)));
-  const count = await env.LIVEVIEW_DB.prepare(`SELECT COUNT(*) AS n FROM glance_photos`).first<{ n: number }>();
-  if ((count?.n || 0) >= MAX_PHOTOS) throw new HttpError(400, 'The photo library is full');
-  const id = crypto.randomUUID();
-  const createdAt = new Date().toISOString();
+  return { full, thumb, width, height };
+}
+
+async function writePhoto(env: Bindings, id: string, full: Uint8Array, thumb: Uint8Array): Promise<boolean> {
   const stored = await useR2(env, full, thumb, id);
-  const db = env.LIVEVIEW_DB;
-  await db
-    .prepare(`INSERT INTO glance_photos (id, created_at, bytes, width, height, store) VALUES (?, ?, ?, ?, ?, ?)`)
-    .bind(id, createdAt, full.length, width, height, stored ? 'r2' : 'd1')
-    .run();
   if (!stored) {
+    const db = env.LIVEVIEW_DB;
     await db.prepare(`INSERT INTO glance_photo_blobs (photo_id, kind, data) VALUES (?, 'full', ?)`).bind(id, full).run();
     await db.prepare(`INSERT INTO glance_photo_blobs (photo_id, kind, data) VALUES (?, 'thumb', ?)`).bind(id, thumb).run();
   }
+  return stored;
+}
+
+export async function createGlancePhoto(request: Request, env: Bindings): Promise<{ id: string }> {
+  const photo = await photoForm(request);
+  const count = await env.LIVEVIEW_DB.prepare(`SELECT COUNT(*) AS n FROM glance_photos`).first<{ n: number }>();
+  if ((count?.n || 0) >= MAX_PHOTOS) throw new HttpError(400, 'The photo library is full');
+  const id = crypto.randomUUID();
+  const stored = await writePhoto(env, id, photo.full, photo.thumb);
+  await env.LIVEVIEW_DB
+    .prepare(`INSERT INTO glance_photos (id, created_at, bytes, width, height, store) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(id, new Date().toISOString(), photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1')
+    .run();
+  return { id };
+}
+
+export async function replaceGlancePhoto(request: Request, env: Bindings, id: string): Promise<{ id: string }> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, 'Photo not found');
+  const row = await env.LIVEVIEW_DB
+    .prepare(`SELECT id, store FROM glance_photos WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; store: string }>();
+  if (!row) throw new HttpError(404, 'Photo not found');
+  const photo = await photoForm(request);
+  if (row.store === 'r2' && env.GLANCE_PHOTOS) {
+    try {
+      await env.GLANCE_PHOTOS.delete([photoKey(id, 'full'), photoKey(id, 'thumb')]);
+    } catch {
+      console.error('[glance] R2 photo delete failed');
+    }
+  }
+  await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photo_blobs WHERE photo_id = ?`).bind(id).run();
+  const stored = await writePhoto(env, id, photo.full, photo.thumb);
+  await env.LIVEVIEW_DB
+    .prepare(`UPDATE glance_photos SET bytes = ?, width = ?, height = ?, store = ? WHERE id = ?`)
+    .bind(photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1', id)
+    .run();
   return { id };
 }
 
