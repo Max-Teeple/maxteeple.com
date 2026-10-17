@@ -83,6 +83,11 @@
     if (!viewer || !img) return;
     setConfirm(false);
     img.src = fullUrl(photo.id);
+    var credit = $('viewer-credit');
+    if (credit) {
+      credit.hidden = !photo.credit;
+      credit.textContent = photo.credit ? 'Shared by ' + photo.credit : '';
+    }
     viewer.hidden = false;
   }
 

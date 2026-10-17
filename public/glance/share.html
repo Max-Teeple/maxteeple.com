@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Add Glance photos</title>
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#07090d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="glance-build" content="__GLANCE_BUILD__" />
+    <link rel="stylesheet" href="/glance/photos.css?v=__GLANCE_BUILD__" />
+    <link rel="stylesheet" href="/glance/gallery.css?v=__GLANCE_BUILD__" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="head">
+        <h1>Add photos</h1>
+        <p class="hint">Choose pictures, crop each one to the landscape frame, then they show up on the kitchen board.</p>
+      </header>
+      <p id="share-status" class="status" role="status"></p>
+      <section id="share-form">
+        <label class="field">Shared by
+          <input id="share-name" type="text" maxlength="40" autocomplete="name" placeholder="Optional name" />
+        </label>
+        <label class="pick">
+          Add photos
+          <input id="files" type="file" accept="image/*" multiple />
+        </label>
+      </section>
+      <section id="crop" class="crop" hidden>
+        <p id="crop-count" class="crop-count">Crop</p>
+        <div id="crop-stage" class="crop-stage"><canvas id="crop-view"></canvas></div>
+        <label class="crop-zoom">Zoom
+          <input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1" />
+        </label>
+        <p id="crop-status" class="crop-status" role="status"></p>
+        <div class="crop-rot">
+          <button id="crop-left" type="button">Rotate left</button>
+          <button id="crop-right" type="button">Rotate right</button>
+        </div>
+        <div class="crop-actions">
+          <button id="crop-cancel" type="button">Cancel</button>
+          <button id="crop-skip" type="button">Skip</button>
+          <button id="crop-save" type="button">Save</button>
+        </div>
+      </section>
+    </main>
+    <script src="/glance/crop.js?v=__GLANCE_BUILD__" defer></script>
+    <script src="/glance/share-upload.js?v=__GLANCE_BUILD__" defer></script>
+  </body>
+</html>

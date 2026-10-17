@@ -1249,6 +1249,7 @@ describe('Glance photos', () => {
     expect(html).toContain('>Skip<');
     expect(html).toContain('Manage photos');
     expect(html).toContain('Rotate left');
+    expect(html).toContain('Share photos via QR');
     expect(html).not.toContain('__GLANCE_BUILD__');
     const saved = await withSession('/glance/api/photos', session, { method: 'POST', body: photoForm() });
     expect(saved.status).toBe(201);
@@ -1303,6 +1304,56 @@ describe('Glance photos', () => {
     expect(replaced.status).toBe(200);
     const kept = await withSession(`/glance/api/photos/${id}/original`, session);
     expect(new Uint8Array(await kept.arrayBuffer())[3]).toBe(0xe0);
+  });
+
+  it('lets a share link upload without opening the board', async () => {
+    const session = await signIn();
+    const created = await withSession('/glance/api/photos/share', session, { method: 'POST' });
+    expect(created.status).toBe(200);
+    const share = await created.json() as { url: string; expiresAt: string };
+    expect(share.url).toMatch(/^https:\/\/maxteeple\.test\/glance\/share\/[A-Za-z0-9_-]{20,64}$/);
+    const token = share.url.split('/').pop() || '';
+    const hashes = await env.LIVEVIEW_DB.prepare(`SELECT token_hash FROM glance_photo_shares`).all<{ token_hash: string }>();
+    expect(hashes.results.some((row) => row.token_hash === token)).toBe(false);
+    expect(JSON.stringify(hashes.results)).not.toContain(token);
+
+    const locked = await api('/glance/api/photos');
+    expect(locked.status).toBe(401);
+    const page = await api(share.url.replace('https://maxteeple.test', ''));
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('Rotate left');
+    expect(html).toContain('Shared by');
+    expect(html).not.toContain('tuya');
+    expect(html).not.toContain('calendar');
+
+    const status = await api(`/glance/api/share/${token}`);
+    expect(status.status).toBe(200);
+    const body = await status.json() as { photos?: unknown; expiresAt?: string };
+    expect(body.photos).toBeUndefined();
+    expect(body.expiresAt).toBeTruthy();
+
+    const form = photoForm();
+    form.set('credit', 'Ada');
+    const uploaded = await api(`/glance/api/share/${token}/photos`, { method: 'POST', body: form });
+    expect(uploaded.status).toBe(201);
+    const listed = await withSession('/glance/api/photos', session);
+    const photos = (await listed.json() as { photos: { credit?: string }[] }).photos;
+    expect(photos.some((photo) => photo.credit === 'Ada')).toBe(true);
+    const peek = await api(`/glance/api/photos/${(await uploaded.json() as { id: string }).id}`);
+    expect(peek.status).toBe(401);
+
+    for (let i = 0; i < 7; i++) {
+      const again = await api(`/glance/api/share/${token}/photos`, { method: 'POST', body: photoForm() });
+      expect(again.status).toBe(201);
+    }
+    const limited = await api(`/glance/api/share/${token}/photos`, { method: 'POST', body: photoForm() });
+    expect(limited.status).toBe(429);
+
+    const stopped = await withSession('/glance/api/photos/share', session, { method: 'DELETE' });
+    expect(stopped.status).toBe(200);
+    const after = await api(`/glance/api/share/${token}/photos`, { method: 'POST', body: photoForm() });
+    expect(after.status).toBe(410);
   });
 
   it('rejects a file that is not a jpeg', async () => {

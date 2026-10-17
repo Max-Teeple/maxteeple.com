@@ -36,6 +36,7 @@ import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
 import { createGlancePhoto, listGlancePhotos, readGlancePhoto, removeGlancePhoto, replaceGlancePhoto } from './photos';
+import { createPhotoShare, revokePhotoShares, shareStatus, shareTokenPattern, uploadSharedPhoto } from './share';
 import { verseDetail, verseSummary } from './verse';
 import { forgetPrefix, remember } from './cache';
 import {
@@ -166,6 +167,8 @@ glance.use('*', async (c, next) => {
   const path = c.req.path;
   if (path.endsWith('/login')) return next();
   if (c.req.method === 'POST' && (path.endsWith('/location/owntracks') || path === '/location')) return next();
+  if (c.req.method === 'GET' && shareTokenPattern().test(path.slice('/share/'.length)) && path.startsWith('/share/')) return next();
+  if (c.req.method === 'POST' && /^\/share\/[A-Za-z0-9_-]{20,64}\/photos$/.test(path)) return next();
   const token = readSessionToken(c.req.header('cookie'));
   if (!token) {
     if (c.req.path === '/google/callback') return c.redirect('/glance/?google=login');
@@ -701,6 +704,35 @@ glance.get('/photos', async (c) => {
   return c.json({ ok: true, photos: await listGlancePhotos(c.env) });
 });
 
+glance.post('/photos/share', async (c) => {
+  const share = await createPhotoShare(c.env.LIVEVIEW_DB);
+  const origin = new URL(c.req.url);
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    ok: true,
+    url: `${origin.protocol}//${origin.host}/glance/share/${share.token}`,
+    expiresAt: share.expiresAt
+  });
+});
+
+glance.delete('/photos/share', async (c) => {
+  await revokePhotoShares(c.env.LIVEVIEW_DB);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true });
+});
+
+glance.get('/share/:token', async (c) => {
+  const status = await shareStatus(c.env.LIVEVIEW_DB, c.req.param('token'));
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, expiresAt: status.expiresAt });
+});
+
+glance.post('/share/:token/photos', async (c) => {
+  const photo = await uploadSharedPhoto(c.env.LIVEVIEW_DB, c.req.param('token'), c.req.raw, c.env);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ ok: true, id: photo.id }, 201);
+});
+
 glance.post('/photos', async (c) => {
   const photo = await createGlancePhoto(c.req.raw, c.env);
   c.header('Cache-Control', 'no-store');
@@ -766,9 +798,11 @@ export async function handleGlance(request: Request, env: Bindings, ctx: Executi
   assetUrl.search = '';
   if (url.pathname === '/glance/') assetUrl.pathname = '/glance/index.html';
   if (url.pathname === '/glance/privacy') assetUrl.pathname = '/glance/privacy.html';
+  const sharePage = /^\/glance\/share\/[A-Za-z0-9_-]{20,64}$/.test(url.pathname);
+  if (sharePage) assetUrl.pathname = '/glance/share.html';
   const asset = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
   const versioned = url.searchParams.has('v');
-  const isHtml = url.pathname === '/glance/' || url.pathname === '/glance/privacy' || url.pathname.endsWith('.html');
+  const isHtml = url.pathname === '/glance/' || url.pathname === '/glance/privacy' || sharePage || url.pathname.endsWith('.html');
   if (isHtml && (asset.ok || asset.status === 304)) {
     const html = (await asset.text()).replaceAll('__GLANCE_BUILD__', GLANCE_BUILD);
     const headers = new Headers({
