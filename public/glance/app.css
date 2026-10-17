@@ -1092,11 +1092,15 @@ body { container-name: screen; container-type: inline-size; }
   color: #f6f3ec;
 }
 #slide-back svg { width: 20px; height: 20px; display: block; margin: auto; }
-#slide-add {
+.slide-tools {
   position: absolute;
   z-index: 2;
   right: calc(0.8rem + env(safe-area-inset-right));
   bottom: calc(0.8rem + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 0.4rem;
+}
+.slide-tools button {
   min-height: 44px;
   padding: 0 1rem;
   border-radius: 999px;
@@ -1138,7 +1142,7 @@ body { container-name: screen; container-type: inline-size; }
   justify-items: center;
   gap: 0.7rem;
   padding: calc(0.8rem + env(safe-area-inset-top)) 0.8rem calc(0.8rem + env(safe-area-inset-bottom));
-  background: rgba(7, 10, 14, 0.96);
+  background: #07141c;
   color: #fff;
 }
 .crop-count, .crop-status { margin: 0; font-size: 16px; }

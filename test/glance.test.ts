@@ -1247,6 +1247,8 @@ describe('Glance photos', () => {
     expect(html).toContain('Add photos');
     expect(html).toContain('id="crop-stage"');
     expect(html).toContain('>Skip<');
+    expect(html).toContain('Manage photos');
+    expect(html).toContain('Rotate left');
     expect(html).not.toContain('__GLANCE_BUILD__');
     const saved = await withSession('/glance/api/photos', session, { method: 'POST', body: photoForm() });
     expect(saved.status).toBe(201);
@@ -1273,6 +1275,34 @@ describe('Glance photos', () => {
     expect(removed.status).toBe(200);
     const gone = await withSession(`/glance/api/photos/${id}`, session);
     expect(gone.status).toBe(404);
+  });
+
+  it('stores an original for re-crop and leaves older photos without one', async () => {
+    const session = await signIn();
+    const plain = await withSession('/glance/api/photos', session, { method: 'POST', body: photoForm() });
+    expect(plain.status).toBe(201);
+    const plainId = (await plain.json() as { id: string }).id;
+    const missing = await withSession(`/glance/api/photos/${plainId}/original`, session);
+    expect(missing.status).toBe(404);
+    const still = await withSession(`/glance/api/photos/${plainId}`, session);
+    expect(still.status).toBe(200);
+
+    const form = photoForm();
+    const original = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xd9]);
+    form.set('original', new File([original], 'original.jpg', { type: 'image/jpeg' }));
+    const saved = await withSession('/glance/api/photos', session, { method: 'POST', body: form });
+    expect(saved.status).toBe(201);
+    const id = (await saved.json() as { id: string }).id;
+    const got = await withSession(`/glance/api/photos/${id}/original`, session);
+    expect(got.status).toBe(200);
+    expect(new Uint8Array(await got.arrayBuffer())[3]).toBe(0xe0);
+    const cropped = photoForm();
+    cropped.set('width', '1366');
+    cropped.set('height', '1024');
+    const replaced = await withSession(`/glance/api/photos/${id}`, session, { method: 'PUT', body: cropped });
+    expect(replaced.status).toBe(200);
+    const kept = await withSession(`/glance/api/photos/${id}/original`, session);
+    expect(new Uint8Array(await kept.arrayBuffer())[3]).toBe(0xe0);
   });
 
   it('rejects a file that is not a jpeg', async () => {

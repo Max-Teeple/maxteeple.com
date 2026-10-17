@@ -708,6 +708,7 @@ glance.post('/photos', async (c) => {
 });
 
 glance.get('/photos/:id/thumb', async (c) => photoResponse(c.env, c.req.param('id'), 'thumb'));
+glance.get('/photos/:id/original', async (c) => photoResponse(c.env, c.req.param('id'), 'original'));
 glance.get('/photos/:id', async (c) => photoResponse(c.env, c.req.param('id'), 'full'));
 
 glance.delete('/photos/:id', async (c) => {
@@ -723,7 +724,7 @@ glance.put('/photos/:id', async (c) => {
   return c.json({ ok: true, id: photo.id });
 });
 
-async function photoResponse(env: Bindings, id: string, kind: 'full' | 'thumb'): Promise<Response> {
+async function photoResponse(env: Bindings, id: string, kind: 'full' | 'thumb' | 'original'): Promise<Response> {
   const bytes = await readGlancePhoto(env, id, kind);
   if (!bytes) throw new HttpError(404, 'Photo not found');
   return new Response(bytes, {

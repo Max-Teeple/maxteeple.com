@@ -4,6 +4,7 @@ import { HttpError } from '../util';
 const MAX_PHOTOS = 120;
 const MAX_FULL_BYTES = 2_200_000;
 const MAX_THUMB_BYTES = 160_000;
+const MAX_ORIGINAL_BYTES = 4_500_000;
 
 let r2Failed = false;
 
@@ -29,7 +30,9 @@ function jpegBytes(value: unknown, label: string, max: number): Uint8Array {
   return bytes;
 }
 
-function photoKey(id: string, kind: 'full' | 'thumb'): string {
+type PhotoKind = 'full' | 'thumb' | 'original';
+
+function photoKey(id: string, kind: PhotoKind): string {
   return kind + '/' + id + '.jpg';
 }
 
@@ -49,18 +52,39 @@ function asBytes(data: ArrayBuffer | Uint8Array | string | number[] | null): Uin
   return out;
 }
 
-async function useR2(env: Bindings, full: Uint8Array, thumb: Uint8Array, id: string): Promise<boolean> {
+async function putR2(env: Bindings, id: string, kind: PhotoKind, bytes: Uint8Array): Promise<boolean> {
   const bucket = env.GLANCE_PHOTOS;
   if (!bucket || r2Failed) return false;
   try {
-    await bucket.put(photoKey(id, 'full'), full, { httpMetadata: { contentType: 'image/jpeg' } });
-    await bucket.put(photoKey(id, 'thumb'), thumb, { httpMetadata: { contentType: 'image/jpeg' } });
+    await bucket.put(photoKey(id, kind), bytes, { httpMetadata: { contentType: 'image/jpeg' } });
     return true;
   } catch {
     r2Failed = true;
     console.error('[glance] R2 photos unavailable, storing in D1');
     return false;
   }
+}
+
+async function putBlob(env: Bindings, id: string, kind: PhotoKind, bytes: Uint8Array): Promise<void> {
+  if (await putR2(env, id, kind, bytes)) return;
+  await env.LIVEVIEW_DB
+    .prepare(
+      `INSERT INTO glance_photo_blobs (photo_id, kind, data) VALUES (?, ?, ?)
+       ON CONFLICT(photo_id, kind) DO UPDATE SET data = excluded.data`
+    )
+    .bind(id, kind, bytes)
+    .run();
+}
+
+async function dropKind(env: Bindings, id: string, kind: PhotoKind): Promise<void> {
+  if (env.GLANCE_PHOTOS) {
+    try {
+      await env.GLANCE_PHOTOS.delete(photoKey(id, kind));
+    } catch {
+      console.error('[glance] R2 photo delete failed');
+    }
+  }
+  await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photo_blobs WHERE photo_id = ? AND kind = ?`).bind(id, kind).run();
 }
 
 export async function listGlancePhotos(env: Bindings): Promise<{ id: string; createdAt: string; width: number; height: number }[]> {
@@ -83,19 +107,29 @@ async function photoForm(request: Request) {
   if (!(fullFile instanceof File) || !(thumbFile instanceof File)) throw new HttpError(400, 'Choose a photo');
   const full = jpegBytes(new Uint8Array(await fullFile.arrayBuffer()), 'Photo', MAX_FULL_BYTES);
   const thumb = jpegBytes(new Uint8Array(await thumbFile.arrayBuffer()), 'Thumbnail', MAX_THUMB_BYTES);
+  const originalFile = form.get('original');
+  const original = originalFile instanceof File && originalFile.size
+    ? jpegBytes(new Uint8Array(await originalFile.arrayBuffer()), 'Original', MAX_ORIGINAL_BYTES)
+    : null;
   const width = Math.max(0, Math.min(8000, Math.round(Number(form.get('width')) || 0)));
   const height = Math.max(0, Math.min(8000, Math.round(Number(form.get('height')) || 0)));
-  return { full, thumb, width, height };
+  return { full, thumb, original, width, height };
 }
 
-async function writePhoto(env: Bindings, id: string, full: Uint8Array, thumb: Uint8Array): Promise<boolean> {
-  const stored = await useR2(env, full, thumb, id);
-  if (!stored) {
-    const db = env.LIVEVIEW_DB;
-    await db.prepare(`INSERT INTO glance_photo_blobs (photo_id, kind, data) VALUES (?, 'full', ?)`).bind(id, full).run();
-    await db.prepare(`INSERT INTO glance_photo_blobs (photo_id, kind, data) VALUES (?, 'thumb', ?)`).bind(id, thumb).run();
+async function writeCrop(env: Bindings, id: string, full: Uint8Array, thumb: Uint8Array, original: Uint8Array | null): Promise<boolean> {
+  await dropKind(env, id, 'full');
+  await dropKind(env, id, 'thumb');
+  if (original) await dropKind(env, id, 'original');
+  const onR2 = await putR2(env, id, 'full', full);
+  if (onR2) {
+    await putR2(env, id, 'thumb', thumb);
+    if (original) await putR2(env, id, 'original', original);
+    return true;
   }
-  return stored;
+  await putBlob(env, id, 'full', full);
+  await putBlob(env, id, 'thumb', thumb);
+  if (original) await putBlob(env, id, 'original', original);
+  return false;
 }
 
 export async function createGlancePhoto(request: Request, env: Bindings): Promise<{ id: string }> {
@@ -103,7 +137,7 @@ export async function createGlancePhoto(request: Request, env: Bindings): Promis
   const count = await env.LIVEVIEW_DB.prepare(`SELECT COUNT(*) AS n FROM glance_photos`).first<{ n: number }>();
   if ((count?.n || 0) >= MAX_PHOTOS) throw new HttpError(400, 'The photo library is full');
   const id = crypto.randomUUID();
-  const stored = await writePhoto(env, id, photo.full, photo.thumb);
+  const stored = await writeCrop(env, id, photo.full, photo.thumb, photo.original);
   await env.LIVEVIEW_DB
     .prepare(`INSERT INTO glance_photos (id, created_at, bytes, width, height, store) VALUES (?, ?, ?, ?, ?, ?)`)
     .bind(id, new Date().toISOString(), photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1')
@@ -114,20 +148,12 @@ export async function createGlancePhoto(request: Request, env: Bindings): Promis
 export async function replaceGlancePhoto(request: Request, env: Bindings, id: string): Promise<{ id: string }> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, 'Photo not found');
   const row = await env.LIVEVIEW_DB
-    .prepare(`SELECT id, store FROM glance_photos WHERE id = ?`)
+    .prepare(`SELECT id FROM glance_photos WHERE id = ?`)
     .bind(id)
-    .first<{ id: string; store: string }>();
+    .first<{ id: string }>();
   if (!row) throw new HttpError(404, 'Photo not found');
   const photo = await photoForm(request);
-  if (row.store === 'r2' && env.GLANCE_PHOTOS) {
-    try {
-      await env.GLANCE_PHOTOS.delete([photoKey(id, 'full'), photoKey(id, 'thumb')]);
-    } catch {
-      console.error('[glance] R2 photo delete failed');
-    }
-  }
-  await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photo_blobs WHERE photo_id = ?`).bind(id).run();
-  const stored = await writePhoto(env, id, photo.full, photo.thumb);
+  const stored = await writeCrop(env, id, photo.full, photo.thumb, photo.original);
   await env.LIVEVIEW_DB
     .prepare(`UPDATE glance_photos SET bytes = ?, width = ?, height = ?, store = ? WHERE id = ?`)
     .bind(photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1', id)
@@ -135,14 +161,14 @@ export async function replaceGlancePhoto(request: Request, env: Bindings, id: st
   return { id };
 }
 
-export async function readGlancePhoto(env: Bindings, id: string, kind: 'full' | 'thumb'): Promise<Uint8Array | null> {
+export async function readGlancePhoto(env: Bindings, id: string, kind: PhotoKind): Promise<Uint8Array | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const row = await env.LIVEVIEW_DB
-    .prepare(`SELECT id, store FROM glance_photos WHERE id = ?`)
+    .prepare(`SELECT id FROM glance_photos WHERE id = ?`)
     .bind(id)
-    .first<{ id: string; store: string }>();
+    .first<{ id: string }>();
   if (!row) return null;
-  if (row.store === 'r2' && env.GLANCE_PHOTOS && !r2Failed) {
+  if (env.GLANCE_PHOTOS && !r2Failed) {
     try {
       const object = await env.GLANCE_PHOTOS.get(photoKey(id, kind));
       if (object) return new Uint8Array(await object.arrayBuffer());
@@ -161,18 +187,13 @@ export async function readGlancePhoto(env: Bindings, id: string, kind: 'full' | 
 export async function removeGlancePhoto(env: Bindings, id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
   const row = await env.LIVEVIEW_DB
-    .prepare(`SELECT id, store FROM glance_photos WHERE id = ?`)
+    .prepare(`SELECT id FROM glance_photos WHERE id = ?`)
     .bind(id)
-    .first<{ id: string; store: string }>();
+    .first<{ id: string }>();
   if (!row) return false;
-  if (row.store === 'r2' && env.GLANCE_PHOTOS) {
-    try {
-      await env.GLANCE_PHOTOS.delete([photoKey(id, 'full'), photoKey(id, 'thumb')]);
-    } catch {
-      console.error('[glance] R2 photo delete failed');
-    }
-  }
-  await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photo_blobs WHERE photo_id = ?`).bind(id).run();
+  await dropKind(env, id, 'full');
+  await dropKind(env, id, 'thumb');
+  await dropKind(env, id, 'original');
   await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photos WHERE id = ?`).bind(id).run();
   return true;
 }
