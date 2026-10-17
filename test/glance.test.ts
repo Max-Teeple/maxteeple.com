@@ -1245,6 +1245,8 @@ describe('Glance photos', () => {
     const html = await page.text();
     expect(html).toContain('No photos yet');
     expect(html).toContain('Add photos');
+    expect(html).toContain('id="crop-stage"');
+    expect(html).toContain('>Skip<');
     expect(html).not.toContain('__GLANCE_BUILD__');
     const saved = await withSession('/glance/api/photos', session, { method: 'POST', body: photoForm() });
     expect(saved.status).toBe(201);
@@ -1258,6 +1260,15 @@ describe('Glance photos', () => {
     expect(new Uint8Array(await image.arrayBuffer())[0]).toBe(0xff);
     const thumb = await withSession(`/glance/api/photos/${id}/thumb`, session);
     expect(thumb.status).toBe(200);
+    const cropped = photoForm();
+    cropped.set('width', '1366');
+    cropped.set('height', '1024');
+    const replaced = await withSession(`/glance/api/photos/${id}`, session, { method: 'PUT', body: cropped });
+    expect(replaced.status).toBe(200);
+    const again = await withSession('/glance/api/photos', session);
+    const updated = ((await again.json()) as { photos: { id: string; width: number; height: number }[] }).photos.find((photo) => photo.id === id);
+    expect(updated?.width).toBe(1366);
+    expect(updated?.height).toBe(1024);
     const removed = await withSession(`/glance/api/photos/${id}`, session, { method: 'DELETE' });
     expect(removed.status).toBe(200);
     const gone = await withSession(`/glance/api/photos/${id}`, session);

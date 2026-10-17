@@ -25,57 +25,41 @@
     return body;
   }
 
-  function decode(file) {
-    if (window.createImageBitmap) {
-      return createImageBitmap(file).then(function (bitmap) {
-        return { source: bitmap, width: bitmap.width, height: bitmap.height, close: function () { if (bitmap.close) bitmap.close(); } };
-      });
+  function formFor(photo) {
+    var form = new FormData();
+    form.append('full', photo.full, 'photo.jpg');
+    form.append('thumb', photo.thumb, 'thumb.jpg');
+    form.append('width', String(photo.width));
+    form.append('height', String(photo.height));
+    return form;
+  }
+
+  async function saveCrop(photo) {
+    var replaceId = photo.source && photo.source.replaceId;
+    if (replaceId) {
+      await api('/glance/api/photos/' + replaceId, { method: 'PUT', body: formFor(photo) });
+      return;
     }
-    return new Promise(function (resolve, reject) {
-      var url = URL.createObjectURL(file);
-      var img = new Image();
-      img.onload = function () {
-        URL.revokeObjectURL(url);
-        resolve({ source: img, width: img.naturalWidth, height: img.naturalHeight, close: function () {} });
-      };
-      img.onerror = function () {
-        URL.revokeObjectURL(url);
-        reject(new Error('That photo could not be prepared'));
-      };
-      img.src = url;
-    });
+    await api('/glance/api/photos', { method: 'POST', body: formFor(photo) });
   }
 
-  function blobFrom(source, width, height, quality) {
-    var canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    var ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(source, 0, 0, width, height);
-    return new Promise(function (resolve, reject) {
-      canvas.toBlob(function (blob) {
-        if (!blob) reject(new Error('That photo could not be prepared'));
-        else resolve(blob);
-      }, 'image/jpeg', quality);
-    });
-  }
-
-  function scaled(width, height, maxEdge) {
-    var scale = Math.min(1, maxEdge / Math.max(width, height));
-    return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
-  }
-
-  async function prepare(file) {
-    var image = await decode(file);
-    try {
-      var fullSize = scaled(image.width, image.height, 1600);
-      var thumbSize = scaled(image.width, image.height, 480);
-      var full = await blobFrom(image.source, fullSize.width, fullSize.height, 0.8);
-      var thumb = await blobFrom(image.source, thumbSize.width, thumbSize.height, 0.72);
-      return { full: full, thumb: thumb, width: fullSize.width, height: fullSize.height };
-    } finally {
-      image.close();
+  function openCrop(items) {
+    if (!window.GlanceCrop) {
+      say('Crop is unavailable');
+      return;
     }
+    var saved = false;
+    GlanceCrop.open(items, {
+      onSave: async function (photo) {
+        await saveCrop(photo);
+        saved = true;
+      },
+      onError: function (err) { say(err.message || 'Could not save a photo'); },
+      onDone: function () {
+        if (saved) say('Saved');
+        refresh().catch(function (err) { say(err.message || 'Could not load photos'); });
+      }
+    });
   }
 
   function render(list) {
@@ -86,6 +70,25 @@
       var img = document.createElement('img');
       img.src = '/glance/api/photos/' + photo.id + '/thumb';
       img.alt = '';
+      var actions = document.createElement('div');
+      actions.className = 'thumb-actions';
+      var recrop = document.createElement('button');
+      recrop.type = 'button';
+      recrop.textContent = 'Recrop';
+      recrop.addEventListener('click', async function () {
+        recrop.disabled = true;
+        say('Loading photo');
+        try {
+          var res = await fetch('/glance/api/photos/' + photo.id, { credentials: 'same-origin' });
+          if (!res.ok) throw new Error('Could not load that photo');
+          var blob = await res.blob();
+          say('');
+          openCrop([{ file: blob, replaceId: photo.id }]);
+        } catch (err) {
+          say(err.message || 'Could not load that photo');
+        }
+        recrop.disabled = false;
+      });
       var button = document.createElement('button');
       button.type = 'button';
       button.textContent = 'Delete';
@@ -100,7 +103,8 @@
           say(err.message || 'Could not delete that photo');
         }
       });
-      item.append(img, button);
+      actions.append(recrop, button);
+      item.append(img, actions);
       thumbs.appendChild(item);
     });
   }
@@ -142,28 +146,11 @@
     }
   });
 
-  files.addEventListener('change', async function () {
+  files.addEventListener('change', function () {
     var chosen = Array.prototype.slice.call(files.files || []);
     files.value = '';
     if (!chosen.length) return;
-    for (var i = 0; i < chosen.length; i++) {
-      say('Saving ' + (i + 1) + ' of ' + chosen.length);
-      try {
-        var photo = await prepare(chosen[i]);
-        var form = new FormData();
-        form.append('full', photo.full, 'photo.jpg');
-        form.append('thumb', photo.thumb, 'thumb.jpg');
-        form.append('width', String(photo.width));
-        form.append('height', String(photo.height));
-        await api('/glance/api/photos', { method: 'POST', body: form });
-      } catch (err) {
-        say(err.message || 'Could not save a photo');
-        await refresh();
-        return;
-      }
-    }
-    say('Saved');
-    await refresh();
+    openCrop(chosen.map(function (file) { return { file: file }; }));
   });
 
   refresh().catch(function (err) { say(err.message || 'Could not load photos'); });

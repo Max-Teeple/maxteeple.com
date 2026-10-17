@@ -15,7 +15,7 @@
       <header class="head">
         <a class="back" href="/glance/">Back to Glance</a>
         <h1>Photos</h1>
-        <p class="hint">Choose pictures from your phone. Each one is resized on this device, then saved as a JPEG.</p>
+        <p class="hint">Choose pictures from your phone. Crop each one to the landscape frame, then it is saved as a 4:3 JPEG.</p>
       </header>
       <form id="login" class="login" hidden>
         <label>Password
@@ -33,7 +33,21 @@
         <p id="empty" class="empty">No photos yet. Add a few and the kitchen board can show them after it sits untouched.</p>
         <ul id="thumbs" class="thumbs"></ul>
       </section>
+      <section id="crop" class="crop" hidden>
+        <p id="crop-count" class="crop-count">Crop</p>
+        <div id="crop-stage" class="crop-stage"><canvas id="crop-view"></canvas></div>
+        <label class="crop-zoom">Zoom
+          <input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1" />
+        </label>
+        <p id="crop-status" class="crop-status" role="status"></p>
+        <div class="crop-actions">
+          <button id="crop-cancel" type="button">Cancel</button>
+          <button id="crop-skip" type="button">Skip</button>
+          <button id="crop-save" type="button">Save</button>
+        </div>
+      </section>
     </main>
+    <script src="/glance/crop.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/photos.js?v=__GLANCE_BUILD__" defer></script>
   </body>
 </html>

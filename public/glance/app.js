@@ -1886,14 +1886,111 @@
   ['pointerdown', 'keydown'].forEach(function (name) {
     window.addEventListener(name, armSlideshow, { passive: true });
   });
-  document.getElementById('photo-open').addEventListener('click', function () {
-    if (!photos.length) {
-      window.location.href = '/glance/photos.html';
-      return;
+  var photoMenu = document.getElementById('photo-menu');
+  var photoFiles = document.getElementById('photo-files');
+  var photoOpen = document.getElementById('photo-open');
+
+  function setPhotoMenu(open) {
+    if (!photoMenu) return;
+    photoMenu.hidden = !open;
+    if (photoOpen) photoOpen.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var start = document.getElementById('photo-start');
+    if (start) start.disabled = !photos.length;
+  }
+
+  function photoForm(photo) {
+    var form = new FormData();
+    form.append('full', photo.full, 'photo.jpg');
+    form.append('thumb', photo.thumb, 'thumb.jpg');
+    form.append('width', String(photo.width));
+    form.append('height', String(photo.height));
+    return form;
+  }
+
+  async function saveBoardPhoto(photo) {
+    var res = await fetch('/glance/api/photos', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      body: photoForm(photo)
+    });
+    var body = {};
+    try { body = await res.json(); } catch (err) { body = {}; }
+    if (!res.ok) throw new Error(body.message || 'Could not save that photo');
+    if (body.id) photos.push({ id: body.id });
+    return body.id;
+  }
+
+  function pickPhotos(fromSlides) {
+    if (!photoFiles || !window.GlanceCrop) return;
+    var resumed = false;
+    function resumeSlides() {
+      if (resumed || !fromSlides || !state.slides) return;
+      var crop = document.getElementById('crop');
+      if (crop && !crop.hidden) return;
+      resumed = true;
+      scheduleSlide();
     }
+    photoFiles.onchange = function () {
+      resumed = true;
+      var chosen = Array.prototype.slice.call(photoFiles.files || []);
+      photoFiles.value = '';
+      if (!chosen.length) {
+        resumeSlides();
+        return;
+      }
+      GlanceCrop.open(chosen.map(function (file) { return { file: file }; }), {
+        onSave: saveBoardPhoto,
+        onDone: function () {
+          loadPhotos().then(function () {
+            if (fromSlides && state.slides) {
+              var known = {};
+              slideOrder.forEach(function (id) { known[id] = true; });
+              photos.forEach(function (photo) {
+                if (!known[photo.id]) slideOrder.push(photo.id);
+              });
+              if (slideOrder.length > 1) scheduleSlide();
+              else paintSlideChrome();
+            } else {
+              armSlideshow();
+            }
+          });
+        }
+      });
+    };
+    if (fromSlides) clearTimeout(slideTimer);
+    window.addEventListener('focus', function onFocus() {
+      window.removeEventListener('focus', onFocus);
+      setTimeout(resumeSlides, 400);
+    });
+    photoFiles.click();
+  }
+
+  photoOpen.addEventListener('click', function (event) {
+    event.stopPropagation();
+    setPhotoMenu(photoMenu.hidden);
+  });
+  document.getElementById('photo-start').addEventListener('click', function () {
+    setPhotoMenu(false);
     startSlideshow();
   });
-  document.getElementById('slides').addEventListener('click', leaveSlideshow);
+  document.getElementById('photo-add').addEventListener('click', function () {
+    setPhotoMenu(false);
+    pickPhotos(false);
+  });
+  document.getElementById('slide-add').addEventListener('click', function (event) {
+    event.stopPropagation();
+    pickPhotos(true);
+  });
+  document.addEventListener('pointerdown', function (event) {
+    if (!photoMenu || photoMenu.hidden) return;
+    if (event.target.closest('#photo-menu, #photo-open')) return;
+    setPhotoMenu(false);
+  });
+  document.getElementById('slides').addEventListener('click', function (event) {
+    if (event.target.closest('button, a, input, label')) return;
+    leaveSlideshow();
+  });
 
   var reloading = false;
   function reloadForDeploy(remote) {
@@ -1939,7 +2036,8 @@
   checkVersion();
 
   function slidesBlocked() {
-    return state.open || board.hidden || (weekEl && !weekEl.hidden);
+    var crop = document.getElementById('crop');
+    return state.open || board.hidden || (weekEl && !weekEl.hidden) || (crop && !crop.hidden);
   }
 
   function armSlideshow() {

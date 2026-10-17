@@ -208,6 +208,7 @@ if (assets) {
   const html = fs.readFileSync(path.join(assets, 'index.html'), 'utf8').replaceAll('__GLANCE_BUILD__', 'fit');
   const css = fs.readFileSync(path.join(assets, 'app.css'), 'utf8');
   const js = fs.readFileSync(path.join(assets, 'app.js'), 'utf8');
+  const cropJs = fs.readFileSync(path.join(assets, 'crop.js'), 'utf8');
   await page.route('**/*', async (route) => {
     const request = route.request();
     const target = request.url().split('?')[0];
@@ -216,6 +217,7 @@ if (assets) {
     }
     if (target.endsWith('/glance/app.css')) return route.fulfill({ status: 200, contentType: 'text/css', body: css });
     if (target.endsWith('/glance/app.js')) return route.fulfill({ status: 200, contentType: 'text/javascript', body: js });
+    if (target.endsWith('/glance/crop.js')) return route.fulfill({ status: 200, contentType: 'text/javascript', body: cropJs });
     if (fixture && target.includes('/glance/api/')) {
       if (target.endsWith('/glance/api/login')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
