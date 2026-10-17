@@ -5,7 +5,6 @@
   var library = document.getElementById('library');
   var status = document.getElementById('status');
   var empty = document.getElementById('empty');
-  var thumbs = document.getElementById('thumbs');
   var files = document.getElementById('files');
 
   function say(text) { status.textContent = text || ''; }
@@ -31,6 +30,7 @@
     form.append('thumb', photo.thumb, 'thumb.jpg');
     form.append('width', String(photo.width));
     form.append('height', String(photo.height));
+    if (photo.original) form.append('original', photo.original, 'original.jpg');
     return form;
   }
 
@@ -62,53 +62,6 @@
     });
   }
 
-  function render(list) {
-    thumbs.replaceChildren();
-    empty.hidden = list.length > 0;
-    list.forEach(function (photo) {
-      var item = document.createElement('li');
-      var img = document.createElement('img');
-      img.src = '/glance/api/photos/' + photo.id + '/thumb';
-      img.alt = '';
-      var actions = document.createElement('div');
-      actions.className = 'thumb-actions';
-      var recrop = document.createElement('button');
-      recrop.type = 'button';
-      recrop.textContent = 'Recrop';
-      recrop.addEventListener('click', async function () {
-        recrop.disabled = true;
-        say('Loading photo');
-        try {
-          var res = await fetch('/glance/api/photos/' + photo.id, { credentials: 'same-origin' });
-          if (!res.ok) throw new Error('Could not load that photo');
-          var blob = await res.blob();
-          say('');
-          openCrop([{ file: blob, replaceId: photo.id }]);
-        } catch (err) {
-          say(err.message || 'Could not load that photo');
-        }
-        recrop.disabled = false;
-      });
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = 'Delete';
-      button.addEventListener('click', async function () {
-        if (!window.confirm('Delete this photo?')) return;
-        button.disabled = true;
-        try {
-          await api('/glance/api/photos/' + photo.id, { method: 'DELETE' });
-          await refresh();
-        } catch (err) {
-          button.disabled = false;
-          say(err.message || 'Could not delete that photo');
-        }
-      });
-      actions.append(recrop, button);
-      item.append(img, actions);
-      thumbs.appendChild(item);
-    });
-  }
-
   async function refresh() {
     var body = await api('/glance/api/photos');
     if (!body) {
@@ -118,7 +71,8 @@
     }
     login.hidden = true;
     library.hidden = false;
-    render(body.photos || []);
+    if (window.GlanceGallery) GlanceGallery.show(body.photos || []);
+    else if (empty) empty.hidden = (body.photos || []).length > 0;
   }
 
   document.getElementById('login').addEventListener('submit', async function (event) {

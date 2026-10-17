@@ -11,7 +11,9 @@
   var queue = [];
   var index = 0;
   var hooks = {};
+  var base = null;
   var image = null;
+  var turns = 0;
   var zoom = 1;
   var ox = 0;
   var oy = 0;
@@ -84,7 +86,7 @@
 
   function layout() {
     var maxW = Math.max(160, Math.min(window.innerWidth - 28, 860));
-    var maxH = Math.max(120, Math.min(window.innerHeight - 210, 640));
+    var maxH = Math.max(120, Math.min(window.innerHeight - 270, 640));
     var w = maxW;
     var h = w / RATIO;
     if (h > maxH) {
@@ -129,19 +131,74 @@
     requestDraw();
   }
 
-  function jpeg(width, height, quality) {
+  function toJpeg(source, rect, width, height, quality) {
     var canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     var ctx = canvas.getContext('2d', { alpha: false });
-    var rect = cropRect();
-    ctx.drawImage(image.source, rect.x, rect.y, rect.w, rect.h, 0, 0, width, height);
+    ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, width, height);
     return new Promise(function (resolve, reject) {
       canvas.toBlob(function (blob) {
         if (!blob) reject(new Error('That photo could not be prepared'));
         else resolve(blob);
       }, 'image/jpeg', quality);
     });
+  }
+
+  function jpeg(width, height, quality) {
+    return toJpeg(image.source, cropRect(), width, height, quality);
+  }
+
+  function limitEdge(decoded, maxEdge) {
+    var edge = Math.max(decoded.width, decoded.height);
+    if (edge <= maxEdge) return decoded;
+    var scale = maxEdge / edge;
+    var w = Math.max(1, Math.round(decoded.width * scale));
+    var h = Math.max(1, Math.round(decoded.height * scale));
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d', { alpha: false }).drawImage(decoded.source, 0, 0, w, h);
+    decoded.close();
+    return { source: canvas, width: w, height: h, close: function () {} };
+  }
+
+  function applyTurn() {
+    var t = ((turns % 4) + 4) % 4;
+    if (!base) {
+      image = null;
+      return;
+    }
+    if (t === 0) {
+      image = base;
+      return;
+    }
+    var canvas = document.createElement('canvas');
+    var w = base.width;
+    var h = base.height;
+    if (t % 2) {
+      canvas.width = h;
+      canvas.height = w;
+    } else {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    var ctx = canvas.getContext('2d', { alpha: false });
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(t * Math.PI / 2);
+    ctx.drawImage(base.source, -w / 2, -h / 2);
+    image = { source: canvas, width: canvas.width, height: canvas.height, close: function () {} };
+  }
+
+  function turn(delta) {
+    if (busy || !base) return;
+    turns = (turns + delta + 4) % 4;
+    zoom = 1;
+    ox = 0;
+    oy = 0;
+    slider.value = '1';
+    applyTurn();
+    requestDraw();
   }
 
   function paintChrome() {
@@ -151,8 +208,10 @@
   }
 
   function closeImage() {
-    if (image) image.close();
+    if (base) base.close();
+    base = null;
     image = null;
+    turns = 0;
   }
 
   async function showCurrent() {
@@ -168,7 +227,9 @@
     paintChrome();
     layout();
     try {
-      image = await decode(queue[index].file);
+      base = limitEdge(await decode(queue[index].file), 2400);
+      turns = 0;
+      applyTurn();
       say('');
       draw();
     } catch (err) {
@@ -196,8 +257,22 @@
     }
     try {
       var full = await jpeg(OUT_W, OUT_H, 0.82);
-      var thumb = await jpeg(480, 360, 0.72);
-      if (hooks.onSave) await hooks.onSave({ full: full, thumb: thumb, width: OUT_W, height: OUT_H, source: queue[index] });
+      var thumb = await jpeg(320, 240, 0.7);
+      var item = queue[index];
+      var original = null;
+      if (!item.replaceId || turns !== 0 || item.upgradeOriginal) {
+        original = await toJpeg(image.source, { x: 0, y: 0, w: image.width, h: image.height }, image.width, image.height, 0.86);
+      }
+      if (hooks.onSave) {
+        await hooks.onSave({
+          full: full,
+          thumb: thumb,
+          original: original,
+          width: OUT_W,
+          height: OUT_H,
+          source: item
+        });
+      }
       index += 1;
       if (index >= queue.length) {
         hide();
@@ -218,6 +293,10 @@
     if (bound || !els()) return;
     bound = true;
     slider.addEventListener('input', function () { setZoom(Number(slider.value) || 1); });
+    var left = document.getElementById('crop-left');
+    var right = document.getElementById('crop-right');
+    if (left) left.addEventListener('click', function () { turn(-1); });
+    if (right) right.addEventListener('click', function () { turn(1); });
     document.getElementById('crop-skip').addEventListener('click', function () { commit(true); });
     saveBtn.addEventListener('click', function () { commit(false); });
     document.getElementById('crop-cancel').addEventListener('click', function () {
@@ -274,5 +353,46 @@
     showCurrent();
   }
 
-  global.GlanceCrop = { open: open };
+  async function bake(file, delta) {
+    var decoded = limitEdge(await decode(file), 2400);
+    var t = ((delta % 4) + 4) % 4;
+    var frame = decoded;
+    if (t !== 0) {
+      var canvas = document.createElement('canvas');
+      if (t % 2) {
+        canvas.width = decoded.height;
+        canvas.height = decoded.width;
+      } else {
+        canvas.width = decoded.width;
+        canvas.height = decoded.height;
+      }
+      var ctx = canvas.getContext('2d', { alpha: false });
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(t * Math.PI / 2);
+      ctx.drawImage(decoded.source, -decoded.width / 2, -decoded.height / 2);
+      frame = { source: canvas, width: canvas.width, height: canvas.height, close: function () {} };
+    }
+    var coverW;
+    var coverH;
+    if (frame.width / frame.height > RATIO) {
+      coverH = frame.height;
+      coverW = frame.height * RATIO;
+    } else {
+      coverW = frame.width;
+      coverH = frame.width / RATIO;
+    }
+    var rect = {
+      x: (frame.width - coverW) / 2,
+      y: (frame.height - coverH) / 2,
+      w: coverW,
+      h: coverH
+    };
+    var full = await toJpeg(frame.source, rect, OUT_W, OUT_H, 0.82);
+    var thumb = await toJpeg(frame.source, rect, 320, 240, 0.7);
+    var original = await toJpeg(frame.source, { x: 0, y: 0, w: frame.width, h: frame.height }, frame.width, frame.height, 0.86);
+    decoded.close();
+    return { full: full, thumb: thumb, original: original, width: OUT_W, height: OUT_H };
+  }
+
+  global.GlanceCrop = { open: open, bake: bake };
 })(window);

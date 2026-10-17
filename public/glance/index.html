@@ -17,6 +17,7 @@
     <link rel="icon" href="/glance/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/glance/apple-touch-icon.png" sizes="180x180" />
     <link rel="stylesheet" href="/glance/app.css?v=__GLANCE_BUILD__" />
+    <link rel="stylesheet" href="/glance/gallery.css?v=__GLANCE_BUILD__" />
   </head>
   <body data-theme="aurora" data-layout="fiveday">
     <div id="boot" class="boot" role="status" aria-live="polite">
@@ -68,6 +69,7 @@
         <div id="photo-menu" class="photo-menu" hidden>
           <button id="photo-start" type="button">Start slideshow</button>
           <button id="photo-add" type="button">Add photos</button>
+          <button id="photo-manage" type="button">Manage photos</button>
         </div>
         <input id="photo-files" type="file" accept="image/*" multiple hidden />
         <button id="week-open" type="button" aria-label="Week view" title="Week view">
@@ -95,7 +97,10 @@
       <button id="slide-back" type="button" aria-label="Back to calendar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 3.5v3M16 3.5v3M4 9.5h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
-      <button id="slide-add" type="button">Add photos</button>
+      <div class="slide-tools">
+        <button id="slide-manage" type="button">Manage photos</button>
+        <button id="slide-add" type="button">Add photos</button>
+      </div>
     </section>
     <section id="crop" class="crop" hidden>
       <p id="crop-count" class="crop-count">Crop</p>
@@ -103,11 +108,42 @@
       <label class="crop-zoom">Zoom
         <input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1" />
       </label>
-      <p id="crop-status" class="crop-status" role="status"></p>
-      <div class="crop-actions">
+        <p id="crop-status" class="crop-status" role="status"></p>
+        <div class="crop-rot">
+          <button id="crop-left" type="button">Rotate left</button>
+          <button id="crop-right" type="button">Rotate right</button>
+        </div>
+        <div class="crop-actions">
         <button id="crop-cancel" type="button">Cancel</button>
         <button id="crop-skip" type="button">Skip</button>
         <button id="crop-save" type="button">Save</button>
+      </div>
+    </section>
+    <section id="gallery" class="gallery" hidden aria-label="Manage photos">
+      <div class="gallery-bar">
+        <button id="gallery-close" type="button">Back</button>
+        <h2>Manage photos</h2>
+      </div>
+      <p id="gallery-empty" class="empty">No photos yet.</p>
+      <ul id="gallery-grid" class="gallery-grid"></ul>
+    </section>
+    <section id="viewer" class="viewer" hidden aria-label="Photo">
+      <div class="viewer-frame"><img id="viewer-img" alt="" /></div>
+      <div class="viewer-side">
+        <h2>Photo</h2>
+        <div class="viewer-actions">
+          <button id="viewer-back" type="button">Back</button>
+          <button id="viewer-recrop" type="button">Re-crop</button>
+          <button id="viewer-left" type="button">Rotate left</button>
+          <button id="viewer-right" type="button">Rotate right</button>
+          <button id="viewer-delete" class="viewer-delete" type="button">Delete</button>
+        </div>
+        <p id="viewer-confirm" class="viewer-confirm" hidden>
+          Delete this photo?
+          <button id="viewer-yes" type="button">Delete</button>
+          <button id="viewer-no" type="button">Keep</button>
+        </p>
+        <p id="viewer-status" class="viewer-status" role="status"></p>
       </div>
     </section>
 
@@ -241,6 +277,7 @@
     </div>
     </template>
     <script src="/glance/crop.js?v=__GLANCE_BUILD__" defer></script>
+    <script src="/glance/gallery.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/app.js?v=__GLANCE_BUILD__" defer></script>
   </body>
 </html>

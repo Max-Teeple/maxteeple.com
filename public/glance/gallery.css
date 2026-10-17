@@ -1,0 +1,96 @@
+.gallery-grid {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.2rem, 1fr));
+  gap: 0.55rem;
+}
+.gallery-grid li { margin: 0; }
+.gallery-grid button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #102028;
+  min-height: 0;
+}
+.gallery-grid img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #102028;
+}
+.gallery, .viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
+  background: #07141c;
+  color: #fff;
+}
+.gallery {
+  overflow: auto;
+  padding: calc(0.8rem + env(safe-area-inset-top)) 1rem calc(1rem + env(safe-area-inset-bottom));
+}
+.gallery-bar, .viewer-actions, .viewer-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+.gallery-bar h2, .viewer h2 { margin: 0; font-size: 1.35rem; font-weight: 500; }
+.gallery-bar button, .viewer-actions button, .viewer-confirm button, .crop-rot button {
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font: 600 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.viewer {
+  z-index: 37;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 18rem);
+  gap: 1rem;
+  align-items: center;
+  padding: calc(0.8rem + env(safe-area-inset-top)) 1rem calc(0.8rem + env(safe-area-inset-bottom));
+}
+.viewer-frame {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.viewer-frame img {
+  width: 100%;
+  max-height: calc(100vh - 2.4rem);
+  object-fit: contain;
+  background: #000;
+  border-radius: 16px;
+}
+.viewer-side { display: grid; gap: 0.7rem; align-content: center; }
+.viewer-actions, .viewer-confirm { display: grid; }
+.viewer-actions .viewer-delete,
+.viewer-confirm #viewer-yes {
+  background: #c43838;
+  border-color: #e07070;
+  color: #fff;
+}
+.viewer-status { min-height: 1.2em; margin: 0; font-size: 16px; color: rgba(255, 255, 255, 0.8); }
+.crop-rot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  width: min(100%, 28rem);
+}
+@media (max-width: 800px) {
+  .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }
+  .viewer-frame img { max-height: 52vh; }
+  .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr)); }
+}
