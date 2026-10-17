@@ -12,13 +12,14 @@ export function resetPhotoStore(): void {
   r2Failed = false;
 }
 
-type PhotoRow = {
+  type PhotoRow = {
   id: string;
   created_at: string;
   bytes: number;
   width: number;
   height: number;
   store: string;
+  credit?: string;
 };
 
 function jpegBytes(value: unknown, label: string, max: number): Uint8Array {
@@ -89,14 +90,15 @@ async function dropKind(env: Bindings, id: string, kind: PhotoKind): Promise<voi
 
 export async function listGlancePhotos(env: Bindings): Promise<{ id: string; createdAt: string; width: number; height: number }[]> {
   const rows = await env.LIVEVIEW_DB
-    .prepare(`SELECT id, created_at, width, height FROM glance_photos ORDER BY created_at DESC LIMIT ?`)
+    .prepare(`SELECT id, created_at, width, height, credit FROM glance_photos ORDER BY created_at DESC LIMIT ?`)
     .bind(MAX_PHOTOS)
-    .all<Pick<PhotoRow, 'id' | 'created_at' | 'width' | 'height'>>();
+    .all<Pick<PhotoRow, 'id' | 'created_at' | 'width' | 'height' | 'credit'>>();
   return (rows.results || []).map((row) => ({
     id: row.id,
     createdAt: row.created_at,
     width: row.width,
-    height: row.height
+    height: row.height,
+    credit: row.credit || ''
   }));
 }
 
@@ -113,7 +115,13 @@ async function photoForm(request: Request) {
     : null;
   const width = Math.max(0, Math.min(8000, Math.round(Number(form.get('width')) || 0)));
   const height = Math.max(0, Math.min(8000, Math.round(Number(form.get('height')) || 0)));
-  return { full, thumb, original, width, height };
+  const credit = cleanCredit(form.get('credit'));
+  return { full, thumb, original, width, height, credit };
+}
+
+function cleanCredit(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[\u0000-\u001f]/g, '').trim().replace(/\s+/g, ' ').slice(0, 40);
 }
 
 async function writeCrop(env: Bindings, id: string, full: Uint8Array, thumb: Uint8Array, original: Uint8Array | null): Promise<boolean> {
@@ -139,8 +147,8 @@ export async function createGlancePhoto(request: Request, env: Bindings): Promis
   const id = crypto.randomUUID();
   const stored = await writeCrop(env, id, photo.full, photo.thumb, photo.original);
   await env.LIVEVIEW_DB
-    .prepare(`INSERT INTO glance_photos (id, created_at, bytes, width, height, store) VALUES (?, ?, ?, ?, ?, ?)`)
-    .bind(id, new Date().toISOString(), photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1')
+    .prepare(`INSERT INTO glance_photos (id, created_at, bytes, width, height, store, credit) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, new Date().toISOString(), photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1', photo.credit)
     .run();
   return { id };
 }

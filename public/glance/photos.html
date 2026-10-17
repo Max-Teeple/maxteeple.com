@@ -32,6 +32,7 @@
         </label>
         <p id="status" class="status" role="status"></p>
         <h2 id="manage-title">Manage photos</h2>
+        <p><button type="button" data-share>Share photos via QR</button></p>
         <p id="empty" class="empty">No photos yet. Add a few and the kitchen board can show them after it sits untouched.</p>
         <ul id="gallery-grid" class="gallery-grid"></ul>
       </section>
@@ -63,6 +64,7 @@
             <button id="viewer-right" type="button">Rotate right</button>
             <button id="viewer-delete" class="viewer-delete" type="button">Delete</button>
           </div>
+          <p id="viewer-credit" class="viewer-credit" hidden></p>
           <p id="viewer-confirm" class="viewer-confirm" hidden>
             Delete this photo?
             <button id="viewer-yes" type="button">Delete</button>
@@ -73,6 +75,7 @@
       </section>
     </main>
     <script src="/glance/crop.js?v=__GLANCE_BUILD__" defer></script>
+    <script src="/glance/share.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/gallery.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/photos.js?v=__GLANCE_BUILD__" defer></script>
   </body>

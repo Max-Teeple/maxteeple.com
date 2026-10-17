@@ -2232,6 +2232,35 @@
     if (state.slides || board.hidden) return;
     refresh().catch(function () {});
   }, DASHBOARD_POLL_MS);
+  async function refreshSharedPhotos() {
+    var before = {};
+    photos.forEach(function (photo) { before[photo.id] = true; });
+    var had = photos.length;
+    await loadPhotos();
+    var gallery = document.getElementById('gallery');
+    if (gallery && !gallery.hidden && window.GlanceGallery) GlanceGallery.show(photos);
+    if (!state.slides) {
+      if (!had && photos.length) armSlideshow();
+      return;
+    }
+    var added = false;
+    photos.forEach(function (photo) {
+      if (!before[photo.id]) {
+        slideOrder.push(photo.id);
+        added = true;
+      }
+    });
+    if (!added) return;
+    if (slideOrder.length === 1) {
+      var imgs = document.querySelectorAll('#slides img');
+      imgs[slideSlot].src = slideUrl(slideOrder[0]);
+    }
+    if (slideOrder.length > 1) scheduleSlide();
+  }
+  setInterval(function () {
+    if (document.visibilityState !== 'visible' || board.hidden) return;
+    refreshSharedPhotos().catch(function () {});
+  }, 20000);
 
   window.addEventListener('glance-fit', function (event) {
     var detail = event.detail || {};

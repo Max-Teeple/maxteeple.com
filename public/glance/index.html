@@ -70,6 +70,7 @@
           <button id="photo-start" type="button">Start slideshow</button>
           <button id="photo-add" type="button">Add photos</button>
           <button id="photo-manage" type="button">Manage photos</button>
+          <button type="button" data-share>Share photos via QR</button>
         </div>
         <input id="photo-files" type="file" accept="image/*" multiple hidden />
         <button id="week-open" type="button" aria-label="Week view" title="Week view">
@@ -123,6 +124,7 @@
       <div class="gallery-bar">
         <button id="gallery-close" type="button">Back</button>
         <h2>Manage photos</h2>
+        <button type="button" data-share>Share photos via QR</button>
       </div>
       <p id="gallery-empty" class="empty">No photos yet.</p>
       <ul id="gallery-grid" class="gallery-grid"></ul>
@@ -138,6 +140,7 @@
           <button id="viewer-right" type="button">Rotate right</button>
           <button id="viewer-delete" class="viewer-delete" type="button">Delete</button>
         </div>
+          <p id="viewer-credit" class="viewer-credit" hidden></p>
         <p id="viewer-confirm" class="viewer-confirm" hidden>
           Delete this photo?
           <button id="viewer-yes" type="button">Delete</button>
@@ -277,6 +280,7 @@
     </div>
     </template>
     <script src="/glance/crop.js?v=__GLANCE_BUILD__" defer></script>
+    <script src="/glance/share.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/gallery.js?v=__GLANCE_BUILD__" defer></script>
     <script src="/glance/app.js?v=__GLANCE_BUILD__" defer></script>
   </body>

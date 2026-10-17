@@ -89,6 +89,61 @@
   gap: 0.45rem;
   width: min(100%, 28rem);
 }
+.share-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+}
+.share-card {
+  width: min(28rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem 1rem 1.1rem;
+  border-radius: 18px;
+  background: #10151b;
+  color: #fff;
+  text-align: center;
+}
+.share-card h2 { margin: 0 0 0.7rem; font-size: 1.4rem; font-weight: 500; }
+#share-qr { display: block; margin: 0 auto; background: #fff; border-radius: 12px; }
+.share-url { margin: 0.7rem 0 0.4rem; font-size: 16px; line-height: 1.35; word-break: break-all; }
+.share-note { margin: 0 0 0.8rem; font-size: 16px; line-height: 1.35; color: rgba(255, 255, 255, 0.78); }
+.share-actions { display: flex; gap: 0.45rem; justify-content: center; }
+.share-actions button, #share-form .pick {
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 600 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.share-status { min-height: 1.2em; margin: 0.6rem 0 0; font-size: 16px; }
+#share-form .field { display: grid; gap: 0.3rem; margin: 0 0 0.8rem; font-size: 16px; text-align: left; }
+#share-name {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  font: inherit;
+  padding: 0 0.7rem;
+}
+.viewer-credit { margin: 0; font-size: 16px; color: rgba(255, 255, 255, 0.8); }
+#library [data-share] {
+  min-height: 44px;
+  margin-top: 0.4rem;
+  padding: 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 600 16px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 @media (max-width: 800px) {
   .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }
   .viewer-frame img { max-height: 52vh; }
