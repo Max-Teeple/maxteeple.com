@@ -193,7 +193,7 @@ function fixtureDashboard() {
     lights: {
       ok: true,
       configured: true,
-      schedule: 'Patio on at sunset 5:54 PM / LR off at 12 AM',
+      schedule: 'Patio on at sunset 5:54 PM · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM',
       lights: [
         { id: 'plugpatio1', name: 'Patio Lights', online: true, on: true, code: 'switch_1', enabled: true },
         { id: 'plugrear02', name: 'Living Room Rear', online: true, on: false, code: 'switch_1', enabled: true },

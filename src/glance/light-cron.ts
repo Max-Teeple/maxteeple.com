@@ -41,18 +41,20 @@ export async function runScheduledLights(env: Bindings, nowMs = Date.now(), io: 
     .first<{ lat: number; lon: number; tuya_access_id: string; tuya_access_secret: string }>();
   if (!settings?.tuya_access_id || !settings.tuya_access_secret) return;
   const lastPatioDate = await lastRun(db, 'patio-sunset');
-  const lastMidnightDate = await lastRun(db, 'living-room-midnight');
+  const lastEveningDate = await lastRun(db, 'all-off-9pm');
+  const lastMorningDate = await lastRun(db, 'lr-on-6am');
   const due = planLightAutomations({
     nowMs,
     lat: Number.isFinite(settings.lat) ? settings.lat : PHOENIX_LAT,
     lon: Number.isFinite(settings.lon) ? settings.lon : PHOENIX_LON,
     lights: [],
     lastPatioDate,
-    lastMidnightDate
+    lastEveningDate,
+    lastMorningDate
   });
   // Stay off Tuya unless a schedule is actually due. A 5-minute poll was
   // racing the board's status read and caching a rejected token.
-  if (!due.runPatio && !due.runMidnight) return;
+  if (!due.runPatio && !due.runEvening && !due.runMorning) return;
   let lights: AutoLight[] = [];
   try {
     lights = await io.listLights(
@@ -69,7 +71,8 @@ export async function runScheduledLights(env: Bindings, nowMs = Date.now(), io: 
     lon: Number.isFinite(settings.lon) ? settings.lon : PHOENIX_LON,
     lights,
     lastPatioDate,
-    lastMidnightDate
+    lastEveningDate,
+    lastMorningDate
   });
   if (plan.runPatio) {
     let ok = true;
@@ -85,19 +88,33 @@ export async function runScheduledLights(env: Bindings, nowMs = Date.now(), io: 
     }
     if (ok) await markRun(db, 'patio-sunset', plan.date);
   }
-  if (plan.runMidnight) {
+  if (plan.runEvening) {
     let ok = true;
-    if (!plan.livingRoomOff.length) await logAction(db, 'lr-off', 'already off or offline');
-    for (const id of plan.livingRoomOff) {
+    if (!plan.eveningOff.length) await logAction(db, 'all-off', 'already off or offline');
+    for (const id of plan.eveningOff) {
       try {
         await io.setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, false);
-        await logAction(db, 'lr-off', id);
+        await logAction(db, 'all-off', id);
       } catch (error) {
         ok = false;
-        await logAction(db, 'lr-off-failed', error instanceof Error ? error.message : 'error');
+        await logAction(db, 'all-off-failed', error instanceof Error ? error.message : 'error');
       }
     }
-    if (ok) await markRun(db, 'living-room-midnight', plan.date);
+    if (ok) await markRun(db, 'all-off-9pm', plan.date);
+  }
+  if (plan.runMorning) {
+    let ok = true;
+    if (!plan.morningOn.length) await logAction(db, 'lr-on', 'already on or offline');
+    for (const id of plan.morningOn) {
+      try {
+        await io.setLight({ accessId: settings.tuya_access_id, accessSecret: settings.tuya_access_secret }, db, id, true);
+        await logAction(db, 'lr-on', id);
+      } catch (error) {
+        ok = false;
+        await logAction(db, 'lr-on-failed', error instanceof Error ? error.message : 'error');
+      }
+    }
+    if (ok) await markRun(db, 'lr-on-6am', plan.date);
   }
 }
 

@@ -27,7 +27,7 @@ import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
-import { planLightAutomations } from '../src/glance/light-automation';
+import { planLightAutomations, scheduleHint } from '../src/glance/light-automation';
 import { runScheduledLights } from '../src/glance/light-cron';
 import { plugAlias, plugSortKey } from '../src/glance/plug-names';
 import { ensureSchema } from '../src/schema';
@@ -1133,6 +1133,7 @@ describe('light schedules', () => {
     expect(minutes).toBeLessThan(19 * 60);
     expect(phoenixSunsetMinutes(2026, 6, 21, lat, lon)).toBeGreaterThan(19 * 60);
     expect(phoenixSunsetMinutes(2026, 12, 21, lat, lon)).toBeLessThan(18 * 60);
+    expect(scheduleHint('5:54 PM')).toBe('Patio on at sunset 5:54 PM · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM');
   });
 
   it('turns the patio on once after sunset and does not call plugs before sunset', () => {
@@ -1142,7 +1143,8 @@ describe('light schedules', () => {
       lon,
       lights,
       lastPatioDate: null,
-      lastMidnightDate: '2026-10-16'
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: '2026-10-16'
     });
     expect(before.runPatio).toBe(false);
     expect(before.patioOn).toEqual([]);
@@ -1152,18 +1154,20 @@ describe('light schedules', () => {
       lon,
       lights,
       lastPatioDate: null,
-      lastMidnightDate: '2026-10-16'
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: '2026-10-16'
     });
     expect(after.runPatio).toBe(true);
     expect(after.patioOn).toEqual(['patioplug1']);
-    expect(after.livingRoomOff).toEqual([]);
+    expect(after.eveningOff).toEqual([]);
     const again = planLightAutomations({
       nowMs: phoenix(2026, 10, 16, 18, 15),
       lat,
       lon,
       lights,
       lastPatioDate: after.date,
-      lastMidnightDate: '2026-10-16'
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: '2026-10-16'
     });
     expect(again.runPatio).toBe(false);
     expect(again.patioOn).toEqual([]);
@@ -1172,36 +1176,80 @@ describe('light schedules', () => {
     expect(calls).toEqual(['on:patioplug1']);
   });
 
-  it('turns off only living-room plugs that are on, and only in the midnight window', () => {
+  it('turns all three plugs off at 9 PM only when they are on', () => {
     const afternoon = planLightAutomations({
-      nowMs: phoenix(2026, 10, 16, 15, 0),
+      nowMs: phoenix(2026, 10, 16, 20, 50),
       lat,
       lon,
       lights,
       lastPatioDate: '2026-10-16',
-      lastMidnightDate: null
+      lastEveningDate: null,
+      lastMorningDate: '2026-10-16'
     });
-    expect(afternoon.runMidnight).toBe(false);
-    expect(afternoon.livingRoomOff).toEqual([]);
-    const midnight = planLightAutomations({
-      nowMs: phoenix(2026, 10, 17, 0, 5),
+    expect(afternoon.runEvening).toBe(false);
+    expect(afternoon.eveningOff).toEqual([]);
+    const evening = planLightAutomations({
+      nowMs: phoenix(2026, 10, 16, 21, 5),
       lat,
       lon,
-      lights,
+      lights: [
+        { id: 'patioplug1', name: 'Smart Plug 3', online: true, on: true, code: 'switch_1' },
+        { id: 'rearplug02', name: 'Smart Plug 2', online: true, on: true, code: 'switch_1' },
+        { id: 'leftplug03', name: 'Smart Plug', online: true, on: false, code: 'switch_1' },
+        { id: 'hallplug04', name: 'Hall lamp', online: true, on: true, code: 'switch_1' }
+      ],
       lastPatioDate: '2026-10-16',
-      lastMidnightDate: null
+      lastEveningDate: null,
+      lastMorningDate: '2026-10-16'
     });
-    expect(midnight.runMidnight).toBe(true);
-    expect(midnight.livingRoomOff).toEqual(['rearplug02']);
+    expect(evening.runEvening).toBe(true);
+    expect(evening.eveningOff).toEqual(['patioplug1', 'rearplug02']);
     const later = planLightAutomations({
-      nowMs: phoenix(2026, 10, 17, 0, 10),
+      nowMs: phoenix(2026, 10, 16, 21, 10),
       lat,
       lon,
       lights,
       lastPatioDate: '2026-10-16',
-      lastMidnightDate: midnight.date
+      lastEveningDate: evening.date,
+      lastMorningDate: '2026-10-16'
     });
-    expect(later.runMidnight).toBe(false);
+    expect(later.runEvening).toBe(false);
+  });
+
+  it('turns living-room plugs on at 6 AM only when they are off', () => {
+    const night = planLightAutomations({
+      nowMs: phoenix(2026, 10, 17, 5, 50),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: null,
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: null
+    });
+    expect(night.runMorning).toBe(false);
+    expect(night.morningOn).toEqual([]);
+    const morning = planLightAutomations({
+      nowMs: phoenix(2026, 10, 17, 6, 5),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: null,
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: null
+    });
+    expect(morning.runMorning).toBe(true);
+    expect(morning.morningOn).toEqual(['leftplug03']);
+    expect(morning.patioOn).toEqual([]);
+    const later = planLightAutomations({
+      nowMs: phoenix(2026, 10, 17, 6, 10),
+      lat,
+      lon,
+      lights,
+      lastPatioDate: null,
+      lastEveningDate: '2026-10-16',
+      lastMorningDate: morning.date
+    });
+    expect(later.runMorning).toBe(false);
   });
 
   it('does not read or command plugs when no schedule is due', async () => {
@@ -1222,6 +1270,42 @@ describe('light schedules', () => {
       }
     });
     expect(calls).toEqual([]);
+  });
+
+  it('commands only the plugs that need a change, and only through the mock', async () => {
+    const session = await signIn();
+    await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tuyaAccessId: 'abc123xyz987', tuyaAccessSecret: 'abcdef0123456789abcd' })
+    });
+    const calls: string[] = [];
+    const devices = [
+      { id: 'patioplug1', name: 'Smart Plug 3', online: true, on: true, code: 'switch_1' },
+      { id: 'rearplug02', name: 'Smart Plug 2', online: true, on: true, code: 'switch_1' },
+      { id: 'leftplug03', name: 'Smart Plug', online: true, on: false, code: 'switch_1' }
+    ];
+    await runScheduledLights(env as Bindings, phoenix(2026, 10, 16, 21, 5), {
+      async listLights() {
+        calls.push('list');
+        return devices;
+      },
+      async setLight(_creds, _db, id, on) {
+        calls.push((on ? 'on:' : 'off:') + id);
+      }
+    });
+    expect(calls).toEqual(['list', 'off:patioplug1', 'off:rearplug02']);
+    calls.length = 0;
+    await runScheduledLights(env as Bindings, phoenix(2026, 10, 17, 6, 5), {
+      async listLights() {
+        calls.push('list');
+        return devices;
+      },
+      async setLight(_creds, _db, id, on) {
+        calls.push((on ? 'on:' : 'off:') + id);
+      }
+    });
+    expect(calls).toEqual(['list', 'on:leftplug03']);
   });
 });
 
