@@ -16,15 +16,23 @@ export type LightPlan = {
   sunsetMinutes: number;
   sunsetLabel: string;
   runPatio: boolean;
-  runMidnight: boolean;
+  runEvening: boolean;
+  runMorning: boolean;
   patioOn: string[];
-  livingRoomOff: string[];
+  eveningOff: string[];
+  morningOn: string[];
 };
 
-const MIDNIGHT_WINDOW_MINUTES = 15;
+const WINDOW_MINUTES = 15;
+const EVENING_MINUTES = 21 * 60;
+const MORNING_MINUTES = 6 * 60;
 
 function dateKey(parts: { y: number; m: number; d: number }): string {
   return parts.y + '-' + String(parts.m).padStart(2, '0') + '-' + String(parts.d).padStart(2, '0');
+}
+
+function inWindow(minutes: number, start: number): boolean {
+  return minutes >= start && minutes < start + WINDOW_MINUTES;
 }
 
 function isPatio(name: string): boolean {
@@ -37,25 +45,35 @@ function isLivingRoom(name: string): boolean {
   return alias?.order === 1 || alias?.order === 2 || name.trim() === 'Living Room Rear' || name.trim() === 'Living Room Left';
 }
 
+function isKnownPlug(name: string): boolean {
+  return isPatio(name) || isLivingRoom(name);
+}
+
 export function planLightAutomations(input: {
   nowMs: number;
   lat: number;
   lon: number;
   lights: AutoLight[];
   lastPatioDate: string | null;
-  lastMidnightDate: string | null;
+  lastEveningDate: string | null;
+  lastMorningDate: string | null;
 }): LightPlan {
   const parts = partsInZone(input.nowMs, PHOENIX);
   const date = dateKey(parts);
   const minutes = parts.h * 60 + parts.mi;
   const sunsetMinutes = phoenixSunsetMinutes(parts.y, parts.m, parts.d, input.lat, input.lon);
   const runPatio = minutes >= sunsetMinutes && input.lastPatioDate !== date;
-  const runMidnight = minutes < MIDNIGHT_WINDOW_MINUTES && input.lastMidnightDate !== date;
+  const runEvening = inWindow(minutes, EVENING_MINUTES) && input.lastEveningDate !== date;
+  const runMorning = inWindow(minutes, MORNING_MINUTES) && input.lastMorningDate !== date;
+  const ready = (light: AutoLight) => light.online && !!light.code;
   const patioOn = runPatio
-    ? input.lights.filter((light) => isPatio(light.name) && light.online && light.code && light.on !== true).map((light) => light.id)
+    ? input.lights.filter((light) => isPatio(light.name) && ready(light) && light.on !== true).map((light) => light.id)
     : [];
-  const livingRoomOff = runMidnight
-    ? input.lights.filter((light) => isLivingRoom(light.name) && light.online && light.code && light.on === true).map((light) => light.id)
+  const eveningOff = runEvening
+    ? input.lights.filter((light) => isKnownPlug(light.name) && ready(light) && light.on === true).map((light) => light.id)
+    : [];
+  const morningOn = runMorning
+    ? input.lights.filter((light) => isLivingRoom(light.name) && ready(light) && light.on !== true).map((light) => light.id)
     : [];
   return {
     date,
@@ -63,9 +81,11 @@ export function planLightAutomations(input: {
     sunsetMinutes,
     sunsetLabel: formatMinutes(sunsetMinutes),
     runPatio,
-    runMidnight,
+    runEvening,
+    runMorning,
     patioOn,
-    livingRoomOff
+    eveningOff,
+    morningOn
   };
 }
 
@@ -78,5 +98,5 @@ function formatMinutes(minutes: number): string {
 }
 
 export function scheduleHint(sunsetLabel: string): string {
-  return 'Patio on at sunset ' + sunsetLabel + ' / LR off at 12 AM';
+  return 'Patio on at sunset ' + sunsetLabel + ' · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM';
 }
