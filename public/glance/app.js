@@ -101,6 +101,42 @@
     return text.hh + ':' + text.mm;
   }
 
+  function formatHourChip(iso, clock24) {
+    var parts = phoenixParts(new Date(iso));
+    if (clock24) return String(parts.hour).padStart(2, '0');
+    var h = parts.hour % 12;
+    if (h === 0) h = 12;
+    return h + (parts.hour >= 12 ? 'p' : 'a');
+  }
+
+  function hourCondition(hour) {
+    if (hour && hour.label) return hour.label;
+    var name = hour && hour.icon;
+    if (hour && hour.isDay === false && (name === 'clear' || name === 'mostly')) return 'Clear';
+    var names = {
+      clear: 'Clear',
+      mostly: 'Mostly clear',
+      partly: 'Partly cloudy',
+      cloud: 'Cloudy',
+      rain: 'Rain',
+      snow: 'Snow',
+      storm: 'Thunderstorm',
+      fog: 'Fog',
+      wind: 'Windy'
+    };
+    return names[name] || '';
+  }
+
+  function hourTitle(hour, clock24) {
+    var when = formatNowLabel(new Date(hour.time), clock24);
+    var bits = [when];
+    var condition = hourCondition(hour);
+    if (condition) bits.push(condition);
+    bits.push(hour.temp + '°');
+    if (hour.precip > 0) bits.push(hour.precip + '% rain');
+    return bits.join(' · ');
+  }
+
   function formatNowLabel(date, clock24) {
     var text = clockText(phoenixParts(date), !!clock24);
     return text.hh + ':' + text.mm + (text.ap ? ' ' + text.ap : '');
@@ -310,19 +346,30 @@
     (state.weather.hourly || []).forEach(function (hour) {
       var card = document.createElement('article');
       card.className = 'hour';
+      var detail = hourTitle(hour, clock24);
+      card.title = detail;
+      card.setAttribute('aria-label', detail);
+      var when = document.createElement('span');
+      when.className = 'hour-line';
       var label = document.createElement('span');
-      label.textContent = formatShort(hour.time, clock24);
+      label.className = 'hour-time';
+      label.textContent = formatHourChip(hour.time, clock24);
       var wx = document.createElement('div');
       wx.className = 'wx';
+      wx.setAttribute('aria-hidden', 'true');
       wx.innerHTML = icon(hour.icon, hour.isDay);
+      when.append(label, wx);
+      var read = document.createElement('span');
+      read.className = 'hour-line';
       var temp = document.createElement('b');
       temp.textContent = hour.temp + '°';
-      card.append(label, wx, temp);
-      if (hour.precip >= 15) {
+      read.appendChild(temp);
+      if (hour.precip > 0) {
         var rain = document.createElement('em');
         rain.textContent = hour.precip + '%';
-        card.appendChild(rain);
+        read.appendChild(rain);
       }
+      card.append(when, read);
       hourly.appendChild(card);
     });
   }

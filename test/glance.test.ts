@@ -707,6 +707,8 @@ END:VCALENDAR`;
     expect(weather.current.temp).toBe(84);
     expect(weather.current.high).toBe(91);
     expect(weather.hourly[0].time.endsWith('-07:00')).toBe(true);
+    expect(weather.hourly[0].label).toBe('Mostly clear');
+    expect(weather.hourly[1].label).toBe('Partly cloudy');
     expect(weather.sun.sunrise).toBe('2026-10-14T06:42:00-07:00');
     expect(weather.air.label).toBe('Good');
   });

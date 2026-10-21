@@ -27,6 +27,7 @@ export type WeatherPayload = {
     code: number;
     icon: WeatherIcon;
     isDay: boolean;
+    label: string;
   }[];
   daily: {
     date: string;
@@ -131,7 +132,8 @@ export function shapeWeather(forecast: ForecastJson, air: AirJson | null, now: n
       precip: round(forecast.hourly?.precipitation_probability?.[i]),
       code,
       icon: info.icon,
-      isDay
+      isDay,
+      label: info.label
     });
   }
   const daily = [];
