@@ -17,7 +17,22 @@ import {
   type GlanceLayout,
   type GlanceTheme
 } from './defaults';
-import { cachedFeed, dedupeWorkMirrors, feedSpan, maskWorkEvents, projectFeed, takeFeedRaws, type AgendaEvent, type FeedMeta } from './ics';
+import {
+  adoptReadyFeed,
+  cachedFeed,
+  continueFeedParse,
+  dedupeWorkMirrors,
+  feedIsFresh,
+  feedParseActive,
+  feedSpan,
+  maskWorkEvents,
+  projectFeed,
+  startFeedParse,
+  touchFeed,
+  type AgendaEvent,
+  type FeedMeta,
+  type IcsStep
+} from './ics';
 import { PHOENIX, addDays, formatPhoenix, partsInZone, phoenixDate, phoenixWindow, weekday, windowFrom, zonedToUtc } from './time';
 import {
   familyPhrase,
@@ -984,23 +999,184 @@ async function buildBoardCore(env: Bindings): Promise<string> {
     weatherPayload(env),
     loadCalendar(env, null)
   ]);
+  let nextWeather = weather;
+  if (!('current' in weather)) {
+    const previous = await readCore(env.LIVEVIEW_DB);
+    if (previous) {
+      try {
+        const old = JSON.parse(previous) as { weather?: typeof weather };
+        if (old.weather && 'current' in old.weather) nextWeather = old.weather;
+      } catch {
+        /* Keep the fresh failure. */
+      }
+    }
+  }
   return JSON.stringify({
     ok: true,
     settings: { ok: true, ...pub },
-    weather,
+    weather: nextWeather,
     calendar
   });
 }
 
-/** Cron path. Skips Tuya. The board poll reads this string back. */
+/** Cron path. Skips Tuya. Parses calendars here, never on the iPad poll. */
 export async function refreshGlanceBoard(env: Bindings): Promise<void> {
   try {
     await ensureSchema(env.LIVEVIEW_DB);
+    const refreshed = await refreshIcsFeeds(env);
+    if (!refreshed) return;
     const core = await buildBoardCore(env);
     await writeCore(env.LIVEVIEW_DB, core);
   } catch (error) {
     console.error('[glance] board refresh', scrub(error instanceof Error ? error.message : 'error'));
   }
+}
+
+function icsStatId(feedId: string): string {
+  return `glance:ics-stat:${feedId}`;
+}
+
+function icsRawId(feedId: string): string {
+  return `glance:ics-raw:${feedId}`;
+}
+
+async function recordIcsStat(db: D1Database, feedId: string, step: IcsStep): Promise<void> {
+  const line = `[glance] ics ${feedId} bytes=${step.bytes} etag=${step.etag ? 1 : 0} notModified=${step.notModified ? 1 : 0} reparsed=${step.reparsed ? 1 : 0} parseMs=${step.parseMs.toFixed(1)} done=${step.done ? 1 : 0} offset=${step.offset}`;
+  console.log(line);
+  const value = JSON.stringify({ ...step, at: Date.now() });
+  try {
+    await db
+      .prepare(
+        `INSERT INTO glance_cache (id, value, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`
+      )
+      .bind(icsStatId(feedId), value, Date.now() + 7 * 86400000)
+      .run();
+  } catch {
+    /* The log line is enough if D1 is busy. */
+  }
+}
+
+async function saveFeedRaws(db: D1Database, feedId: string, step: IcsStep): Promise<void> {
+  const known = cachedFeed(feedId);
+  if (!known) return;
+  const payload = JSON.stringify({ at: Date.now(), etag: step.etag, bytes: step.bytes, raws: known.raws });
+  if (payload.length > 900_000) return;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO glance_cache (id, value, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`
+      )
+      .bind(icsRawId(feedId), payload, Date.now() + 7 * 86400000)
+      .run();
+  } catch {
+    /* Memory still has the events in this isolate. */
+  }
+}
+
+async function rememberStoredRaws(db: D1Database, feedId: string): Promise<boolean> {
+  if (cachedFeed(feedId)) return true;
+  try {
+    const row = await db
+      .prepare(`SELECT value FROM glance_cache WHERE id = ?`)
+      .bind(icsRawId(feedId))
+      .first<{ value: string }>();
+    if (!row?.value) return false;
+    const stored = JSON.parse(row.value) as { at?: number; etag?: string; bytes?: number; raws?: Parameters<typeof adoptReadyFeed>[1] };
+    if (!stored?.raws) return false;
+    adoptReadyFeed(feedId, stored.raws, {
+      at: stored.at || 0,
+      etag: stored.etag || '',
+      bytes: stored.bytes || 0
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch and maybe parse. Returns false when a feed is still mid-parse, so the board keeps the previous core. */
+async function refreshIcsFeeds(env: Bindings): Promise<boolean> {
+  const db = env.LIVEVIEW_DB;
+  const feeds = (
+    await db
+      .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
+      .all<FeedRow>()
+  ).results.filter((feed) => feed.url);
+  if (!feeds.length) return true;
+  const span = feedSpan();
+  let canPublish = true;
+  const hold = (feedId: string) => {
+    if (!cachedFeed(feedId)) canPublish = false;
+  };
+  for (const feed of feeds) {
+    if (feedParseActive(feed.id)) {
+      const step = continueFeedParse(feed.id);
+      if (step) {
+        await recordIcsStat(db, feed.id, step);
+        if (step.done) await saveFeedRaws(db, feed.id, step);
+        else hold(feed.id);
+      }
+      continue;
+    }
+    await rememberStoredRaws(db, feed.id);
+    const known = cachedFeed(feed.id);
+    const fresh = feedIsFresh(feed.id);
+    let fetched: { text: string; etag: string; notModified: boolean; bytes: number };
+    try {
+      fetched = await fetchIcs(feed.url, known?.etag || '', { readBody: !fresh });
+    } catch (error) {
+      hold(feed.id);
+      console.error('[glance] calendar refresh failed', feed.id, scrub(error instanceof Error ? error.message : 'error'));
+      await recordIcsStat(db, feed.id, {
+        bytes: known?.bytes || 0,
+        etag: known?.etag || '',
+        notModified: false,
+        reparsed: false,
+        parseMs: 0,
+        done: false,
+        offset: 0
+      });
+      continue;
+    }
+    if (fetched.notModified) {
+      touchFeed(feed.id);
+      await recordIcsStat(db, feed.id, {
+        bytes: known?.bytes || fetched.bytes,
+        etag: fetched.etag || known?.etag || '',
+        notModified: true,
+        reparsed: false,
+        parseMs: 0,
+        done: true,
+        offset: known?.bytes || 0
+      });
+      continue;
+    }
+    if (fresh) {
+      await recordIcsStat(db, feed.id, {
+        bytes: fetched.bytes || known?.bytes || 0,
+        etag: fetched.etag || known?.etag || '',
+        notModified: false,
+        reparsed: false,
+        parseMs: 0,
+        done: true,
+        offset: known?.bytes || 0
+      });
+      continue;
+    }
+    const step = startFeedParse({
+      id: feed.id,
+      text: fetched.text,
+      etag: fetched.etag,
+      windowStart: span.start,
+      windowEnd: span.end
+    });
+    await recordIcsStat(db, feed.id, step);
+    if (step.done) await saveFeedRaws(db, feed.id, step);
+    else hold(feed.id);
+  }
+  return canPublish;
 }
 
 function calendarStart(raw: string | undefined): string | null {
@@ -1026,23 +1202,6 @@ async function mergeAdded<T extends Parameters<typeof withAddedEvents>[1]>(db: D
   return withAddedEvents(db, JSON.parse(JSON.stringify(payload)) as T);
 }
 
-async function loadFeedRaws(feed: FeedRow, span: { start: number; end: number }) {
-  const known = cachedFeed(feed.id);
-  let fetched: { text: string; etag: string; notModified: boolean };
-  try {
-    fetched = await fetchIcs(feed.url, known?.etag || '');
-  } catch (error) {
-    if (known) return known.raws;
-    throw error;
-  }
-  if (fetched.notModified && known) return known.raws;
-  if (!fetched.text) {
-    if (known) return known.raws;
-    throw new Error('empty');
-  }
-  return takeFeedRaws(feed.id, fetched.text, fetched.etag, span.start, span.end);
-}
-
 async function loadCalendar(env: Bindings, startDate: string | null) {
   const now = Date.now();
   const feeds = (
@@ -1051,7 +1210,6 @@ async function loadCalendar(env: Bindings, startDate: string | null) {
       .all<FeedRow>()
   ).results.filter((feed) => feed.url);
   if (!feeds.length) return present([], now, [], startDate);
-  const span = feedSpan(now);
   const day = startDate || phoenixDate(now);
   const key = `${day}|${feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n')}`;
   const rawsList: object[][] = [];
@@ -1060,15 +1218,11 @@ async function loadCalendar(env: Bindings, startDate: string | null) {
   await Promise.all(
     feeds.map(async (feed, index) => {
       const meta: FeedMeta = { id: feed.id, label: feed.label, color: feed.color };
-      try {
-        rawsList[index] = await loadFeedRaws(feed, span);
-        status[index] = { ...meta, ok: true };
-      } catch (error) {
-        failed = true;
-        rawsList[index] = [];
-        status[index] = { ...meta, ok: false };
-        console.error('[glance] calendar refresh failed', feed.id, scrub(error instanceof Error ? error.message : 'error'));
-      }
+      if (!cachedFeed(feed.id)) await rememberStoredRaws(env.LIVEVIEW_DB, feed.id);
+      const known = cachedFeed(feed.id);
+      rawsList[index] = known?.raws || [];
+      status[index] = { ...meta, ok: true };
+      if (!known) failed = true;
     })
   );
   const hit = presentedViews.get(key);
@@ -1191,18 +1345,27 @@ function serializeEvent(event: AgendaEvent) {
   };
 }
 
+async function safeFetch(url: string): Promise<Response | null> {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(12000) });
+  } catch {
+    return null;
+  }
+}
+
 async function loadWeather(lat: number, lon: number): Promise<WeatherPayload> {
   const [forecastRes, airRes] = await Promise.all([
-    fetch(forecastUrl(lat, lon), { signal: AbortSignal.timeout(12000) }),
-    fetch(airUrl(lat, lon), { signal: AbortSignal.timeout(12000) })
+    safeFetch(forecastUrl(lat, lon)),
+    safeFetch(airUrl(lat, lon))
   ]);
-  if (!forecastRes.ok) throw new Error('forecast status');
+  if (!forecastRes?.ok) throw new Error('forecast status');
   const forecast = (await forecastRes.json()) as Parameters<typeof shapeWeather>[0];
-  const air = airRes.ok ? ((await airRes.json()) as Parameters<typeof shapeWeather>[1]) : null;
+  const air = airRes?.ok ? ((await airRes.json()) as Parameters<typeof shapeWeather>[1]) : null;
   return shapeWeather(forecast, air, Date.now());
 }
 
-async function fetchIcs(raw: string, etag = ''): Promise<{ text: string; etag: string; notModified: boolean }> {
+async function fetchIcs(raw: string, etag = '', options?: { readBody?: boolean }): Promise<{ text: string; etag: string; notModified: boolean; bytes: number }> {
+  const readBody = options?.readBody !== false;
   let current = raw;
   for (let hop = 0; hop < 4; hop++) {
     assertPublicHttps(current);
@@ -1220,7 +1383,7 @@ async function fetchIcs(raw: string, etag = ''): Promise<{ text: string; etag: s
     }
     if (response.status === 304) {
       await response.body?.cancel().catch(() => undefined);
-      return { text: '', etag, notModified: true };
+      return { text: '', etag, notModified: true, bytes: 0 };
     }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -1232,9 +1395,15 @@ async function fetchIcs(raw: string, etag = ''): Promise<{ text: string; etag: s
       await response.body?.cancel().catch(() => undefined);
       throw new Error('status');
     }
+    const responseEtag = response.headers.get('etag') || '';
+    if (!readBody) {
+      const bytes = Number(response.headers.get('content-length') || 0);
+      await response.body?.cancel().catch(() => undefined);
+      return { text: '', etag: responseEtag, notModified: false, bytes: Number.isFinite(bytes) ? bytes : 0 };
+    }
     const text = await response.text();
     if (!text || text.length > 8_000_000) throw new Error('size');
-    return { text, etag: response.headers.get('etag') || '', notModified: false };
+    return { text, etag: responseEtag, notModified: false, bytes: text.length };
   }
   throw new Error('redirect');
 }
