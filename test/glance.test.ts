@@ -20,7 +20,8 @@ declare module 'cloudflare:test' {
     };
   };
 }
-import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, feedSpan, googleEventId, maskWorkEvents, projectFeed, takeFeedRaws, titleIsBirthday } from '../src/glance/ics';
+import { birthdayName, cachedFeed, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, feedSpan, googleEventId, ICS_REFRESH_MS, maskWorkEvents, projectFeed, startFeedParse, takeFeedRaws, titleIsBirthday } from '../src/glance/ics';
+import { refreshGlanceBoard } from '../src/glance/routes';
 import { verseFor, verseIndex } from '../src/glance/verse';
 import verses from '../src/glance/verses.json';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
@@ -765,6 +766,52 @@ END:VCALENDAR`;
     expect(winter).toMatchObject({ y: 2026, m: 1, d: 15, h: 12 });
   });
 
+  it('keeps a 3MB parse under 8ms per step and ignores DTSTAMP churn for 30 minutes', () => {
+    const attach = 'QUJD'.repeat(12000);
+    const chunks = ['BEGIN:VCALENDAR', 'X-WR-TIMEZONE:America/Phoenix'];
+    for (let i = 0; i < 900; i++) {
+      const year = 2023 + (i % 4);
+      const month = String(1 + (i % 12)).padStart(2, '0');
+      const day = String(1 + (i % 27)).padStart(2, '0');
+      const stamp = `${year}${month}${day}T090000`;
+      chunks.push(`BEGIN:VEVENT\r\nUID:bulk-${i}@google.com\r\nDTSTAMP:20261022T120000Z\r\nSUMMARY:Bulk ${i}\r\nDTSTART;TZID=America/Phoenix:${stamp}\r\nDTEND;TZID=America/Phoenix:${stamp.slice(0, 9)}100000\r\n${i % 11 === 0 ? `ATTACH;ENCODING=BASE64;VALUE=BINARY:${attach}\r\n` : ''}END:VEVENT`);
+    }
+    chunks.push('BEGIN:VEVENT\r\nUID:weekly-budget@work.example\r\nDTSTAMP:20261022T120000Z\r\nSUMMARY:Budget standup\r\nDTSTART;TZID=America/Phoenix:20180306T090000\r\nDTEND;TZID=America/Phoenix:20180306T093000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR\r\nEND:VEVENT');
+    chunks.push('END:VCALENDAR');
+    const ics = chunks.join('\r\n');
+    expect(ics.length).toBeGreaterThan(2_000_000);
+    const meta = { id: 'work', label: 'Work', color: '#8eb6ff' };
+    const start = zonedToUtc(2026, 10, 16, 0, 0, 0, 'America/Phoenix');
+    const end = zonedToUtc(2026, 10, 23, 0, 0, 0, 'America/Phoenix');
+    const full = eventsFromIcs(ics, meta, start, end).map((event) => `${event.uid}:${event.title}:${phoenixDate(event.start)}`).sort();
+    const span = feedSpan(Date.parse('2026-10-16T15:00:00Z'));
+    let step = startFeedParse({ id: 'budget-feed', text: ics, etag: '', windowStart: span.start, windowEnd: span.end, now: 1_000, budgetMs: 6 });
+    expect(step.reparsed).toBe(true);
+    expect(step.parseMs).toBeLessThan(8);
+    let guard = 0;
+    while (!step.done && guard++ < 30) {
+      step = startFeedParse({ id: 'budget-feed', text: ics, etag: '', windowStart: span.start, windowEnd: span.end, now: 1_000, budgetMs: 6 });
+      expect(step.parseMs).toBeLessThan(8);
+    }
+    expect(step.done).toBe(true);
+    const raws = cachedFeed('budget-feed')?.raws || [];
+    const stepped = projectFeed(raws, meta, start, end).map((event) => `${event.uid}:${event.title}:${phoenixDate(event.start)}`).sort();
+    expect(stepped).toEqual(full);
+    const churned = ics.replaceAll('DTSTAMP:20261022T120000Z', 'DTSTAMP:19990101T000000Z');
+    const skipped = startFeedParse({
+      id: 'budget-feed',
+      text: churned,
+      etag: '',
+      windowStart: span.start,
+      windowEnd: span.end,
+      now: 1_000 + 5 * 60 * 1000,
+      budgetMs: 6
+    });
+    expect(skipped.reparsed).toBe(false);
+    expect(skipped.parseMs).toBe(0);
+    expect(ICS_REFRESH_MS).toBe(30 * 60 * 1000);
+  });
+
   it('shapes an Open-Meteo payload', () => {
     const weather = shapeWeather(
       {
@@ -820,6 +867,52 @@ describe('Glance dashboard', () => {
     expect(Array.isArray(body.calendar.days)).toBe(true);
     expect(body.lights.ok).toBe(true);
     expect(Array.isArray(body.location.people)).toBe(true);
+  });
+});
+
+describe('Glance ics cron', () => {
+  it('records feed stats on the cron and does not parse again when only DTSTAMP changes', async () => {
+    const session = await signIn();
+    const day = soonDate(2).replaceAll('-', '');
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:cron-board@google.com',
+      'SUMMARY:Cron Dentist',
+      'DTSTAMP:20261001T000000Z',
+      `DTSTART;TZID=America/Phoenix:${day}T090000`,
+      `DTEND;TZID=America/Phoenix:${day}T100000`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+    const churned = ics.replace('DTSTAMP:20261001T000000Z', 'DTSTAMP:20261002T010000Z');
+    await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feeds: [{ label: 'Personal', color: '#7dcea0', enabled: true, url: 'https://example.com/cal.ics' }] })
+    });
+    fetchMock.activate();
+    try {
+      fetchMock.get('https://example.com').intercept({ path: '/cal.ics', method: 'GET' }).reply(200, ics);
+      fetchMock.get('https://example.com').intercept({ path: '/cal.ics', method: 'GET' }).reply(200, churned);
+      await refreshGlanceBoard(env as Bindings);
+      const first = await env.LIVEVIEW_DB.prepare(`SELECT value FROM glance_cache WHERE id LIKE 'glance:ics-stat:%'`).first<{ value: string }>();
+      const stat = JSON.parse(first?.value || '{}') as { reparsed?: boolean; parseMs?: number; bytes?: number; done?: boolean };
+      expect(stat.reparsed).toBe(true);
+      expect(stat.done).toBe(true);
+      expect(stat.bytes).toBe(ics.length);
+      expect(stat.parseMs).toBeLessThan(8);
+      const board = await withSession('/glance/api/calendar', session);
+      expect(board.status).toBe(200);
+      expect(JSON.stringify(await board.json())).toContain('Cron Dentist');
+      await refreshGlanceBoard(env as Bindings);
+      const second = await env.LIVEVIEW_DB.prepare(`SELECT value FROM glance_cache WHERE id LIKE 'glance:ics-stat:%'`).first<{ value: string }>();
+      const again = JSON.parse(second?.value || '{}') as { reparsed?: boolean; notModified?: boolean; parseMs?: number };
+      expect(again.reparsed).toBe(false);
+      expect(again.parseMs).toBe(0);
+    } finally {
+      fetchMock.deactivate();
+    }
   });
 });
 

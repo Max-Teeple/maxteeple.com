@@ -215,9 +215,52 @@ export function maskWorkEvents(events: AgendaEvent[]): AgendaEvent[] {
   });
 }
 
-type HeldFeed = { text: string; etag: string; raws: RawEvent[] };
+type ReadyFeed = {
+  at: number;
+  raws: RawEvent[];
+  etag: string;
+  bytes: number;
+  parses: number;
+  /** Full body only for the synchronous test helper. Cron drops it. */
+  textKey: string;
+};
 
-const heldFeeds = new Map<string, HeldFeed>();
+type IcsCursor = {
+  text: string;
+  i: number;
+  index: number;
+  calendarZone: string;
+  events: RawEvent[];
+  minDate: number;
+  maxDate: number;
+  etag: string;
+  inEvent: boolean;
+  eventStart: number;
+  nested: number;
+  sawStart: boolean;
+  sawRrule: boolean;
+  sawException: boolean;
+  startNum: number;
+  endNum: number;
+};
+
+/** Do not start another full parse of a feed sooner than this. */
+export const ICS_REFRESH_MS = 30 * 60 * 1000;
+/** One cron invocation stays under the free-tier CPU cap. */
+export const ICS_PARSE_BUDGET_MS = 6;
+
+export type IcsStep = {
+  bytes: number;
+  etag: string;
+  notModified: boolean;
+  reparsed: boolean;
+  parseMs: number;
+  done: boolean;
+  offset: number;
+};
+
+const readyFeeds = new Map<string, ReadyFeed>();
+const cursors = new Map<string, IcsCursor>();
 
 /** Wide enough for the week pager (±400 days) plus a little slack. */
 export function feedSpan(now = Date.now()): { start: number; end: number } {
@@ -230,26 +273,135 @@ export function feedSpan(now = Date.now()): { start: number; end: number } {
   };
 }
 
-export function cachedFeed(id: string): { etag: string; raws: RawEvent[] } | null {
-  const row = heldFeeds.get(id);
+export function cachedFeed(id: string): { etag: string; raws: RawEvent[]; bytes: number } | null {
+  const row = readyFeeds.get(id);
   if (!row) return null;
-  return { etag: row.etag, raws: row.raws };
+  return { etag: row.etag, raws: row.raws, bytes: row.bytes };
+}
+
+export function feedIsFresh(id: string, now = Date.now()): boolean {
+  const row = readyFeeds.get(id);
+  return !!row && !cursors.has(id) && now - row.at < ICS_REFRESH_MS;
+}
+
+export function feedParseActive(id: string): boolean {
+  return cursors.has(id);
+}
+
+export function touchFeed(id: string, now = Date.now()): void {
+  const row = readyFeeds.get(id);
+  if (row) row.at = now;
+}
+
+/** Install events loaded from D1 so a new isolate does not parse on the poll path. */
+export function adoptReadyFeed(id: string, raws: RawEvent[], meta: { at: number; etag: string; bytes: number }): void {
+  if (readyFeeds.has(id) || cursors.has(id)) return;
+  readyFeeds.set(id, { at: meta.at, raws, etag: meta.etag, bytes: meta.bytes, parses: 0, textKey: '' });
 }
 
 /** Reuse the last parse when the body or ETag has not changed. */
 export function takeFeedRaws(id: string, text: string, etag: string, windowStart: number, windowEnd: number): RawEvent[] {
-  const known = heldFeeds.get(id);
-  if (known && ((etag && etag === known.etag) || text === known.text)) {
+  const known = readyFeeds.get(id);
+  if (known && known.textKey && (known.textKey === text || (etag && etag === known.etag))) {
     if (etag) known.etag = etag;
     return known.raws;
   }
-  const raws = parseIcs(text, windowStart, windowEnd);
-  heldFeeds.set(id, { text, etag, raws });
-  if (heldFeeds.size > 8) {
-    const oldest = heldFeeds.keys().next().value;
-    if (oldest) heldFeeds.delete(oldest);
+  const cursor = openCursor(text, windowStart, windowEnd);
+  advanceIcsCursor(cursor, 1e9);
+  const ready: ReadyFeed = {
+    at: Date.now(),
+    raws: cursor.events,
+    etag,
+    bytes: text.length,
+    parses: (known?.parses || 0) + 1,
+    textKey: text
+  };
+  readyFeeds.set(id, ready);
+  return ready.raws;
+}
+
+/**
+ * Parse at most one budget slice. A fresh feed (parsed within ICS_REFRESH_MS)
+ * is returned as-is even if DTSTAMP or line order changed.
+ */
+export function startFeedParse(input: {
+  id: string;
+  text: string;
+  etag: string;
+  windowStart: number;
+  windowEnd: number;
+  now?: number;
+  budgetMs?: number;
+}): IcsStep {
+  const now = input.now ?? Date.now();
+  const budget = input.budgetMs ?? ICS_PARSE_BUDGET_MS;
+  const known = readyFeeds.get(input.id);
+  if (known && !cursors.has(input.id) && now - known.at < ICS_REFRESH_MS) {
+    if (input.etag) known.etag = input.etag;
+    return {
+      bytes: input.text.length || known.bytes,
+      etag: input.etag || known.etag,
+      notModified: false,
+      reparsed: false,
+      parseMs: 0,
+      done: true,
+      offset: input.text.length || known.bytes
+    };
   }
-  return raws;
+  let cursor = cursors.get(input.id);
+  if (!cursor || cursor.text !== input.text) {
+    cursor = openCursor(input.text, input.windowStart, input.windowEnd);
+    cursor.etag = input.etag;
+    cursors.set(input.id, cursor);
+  }
+  const step = advanceIcsCursor(cursor, budget);
+  if (step.done) {
+    readyFeeds.set(input.id, {
+      at: now,
+      raws: cursor.events,
+      etag: input.etag,
+      bytes: input.text.length,
+      parses: (known?.parses || 0) + 1,
+      textKey: ''
+    });
+    cursors.delete(input.id);
+  }
+  return {
+    bytes: input.text.length,
+    etag: input.etag,
+    notModified: false,
+    reparsed: true,
+    parseMs: step.ms,
+    done: step.done,
+    offset: cursor.i
+  };
+}
+
+export function continueFeedParse(id: string, budgetMs = ICS_PARSE_BUDGET_MS, now = Date.now()): IcsStep | null {
+  const cursor = cursors.get(id);
+  if (!cursor) return null;
+  const known = readyFeeds.get(id);
+  const step = advanceIcsCursor(cursor, budgetMs);
+  if (step.done) {
+    readyFeeds.set(id, {
+      at: now,
+      raws: cursor.events,
+      etag: cursor.etag || known?.etag || '',
+      bytes: cursor.text.length,
+      parses: (known?.parses || 0) + 1,
+      textKey: ''
+    });
+    cursors.delete(id);
+  }
+  return {
+    bytes: cursor.text.length,
+    etag: cursor.etag || known?.etag || '',
+    notModified: false,
+    reparsed: true,
+    parseMs: step.ms,
+    done: step.done,
+    offset: step.done ? cursor.text.length : cursor.i
+  };
 }
 
 export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, windowEnd: number): AgendaEvent[] {
@@ -316,16 +468,64 @@ function propCap(name: string): number {
   return 4000;
 }
 
+function nextBreak(text: string, i: number, limit: number): { end: number; next: number } {
+  const nl = text.indexOf('\n', i);
+  if (nl < 0 || nl >= limit) {
+    const end = limit > i && text.charCodeAt(limit - 1) === 13 ? limit - 1 : limit;
+    return { end, next: limit };
+  }
+  const end = nl > i && text.charCodeAt(nl - 1) === 13 ? nl - 1 : nl;
+  return { end, next: nl + 1 };
+}
+
+function startsWithName(text: string, i: number, end: number, name: string): boolean {
+  if (end - i < name.length) return false;
+  for (let k = 0; k < name.length; k++) {
+    let c = text.charCodeAt(i + k);
+    if (c >= 97 && c <= 122) c -= 32;
+    if (c !== name.charCodeAt(k)) return false;
+  }
+  if (i + name.length >= end) return true;
+  const sep = text.charCodeAt(i + name.length);
+  return sep === 58 || sep === 59;
+}
+
+function nameValueIs(text: string, i: number, end: number, name: string, value: string): boolean {
+  if (!startsWithName(text, i, end, name)) return false;
+  const colon = text.indexOf(':', i);
+  if (colon < 0 || colon >= end || end - (colon + 1) < value.length) return false;
+  for (let k = 0; k < value.length; k++) {
+    if (text.charCodeAt(colon + 1 + k) !== value.charCodeAt(k)) return false;
+  }
+  return end === colon + 1 + value.length;
+}
+
+function readDateNum(text: string, i: number, end: number): number {
+  const colon = text.indexOf(':', i);
+  if (colon < 0 || colon >= end) return 0;
+  let p = colon + 1;
+  while (p < end) {
+    const c = text.charCodeAt(p);
+    if (c >= 48 && c <= 57) break;
+    p++;
+  }
+  if (p + 8 > end) return 0;
+  let n = 0;
+  for (let k = 0; k < 8; k++) {
+    const c = text.charCodeAt(p + k);
+    if (c < 48 || c > 57) return 0;
+    n = n * 10 + (c - 48);
+  }
+  return n;
+}
+
 /**
- * Unfold only the properties Glance reads.
- * Outlook feeds fold base64 ATTACH lines every 75 characters. Concatenating
- * those strings is the CPU spike. Skipped lines are consumed, not copied.
+ * Unfold only the properties Glance reads, between [from, to).
+ * Attachment lines are skipped without being copied.
  */
-function logicalLines(ics: string): string[] {
-  const text = ics.indexOf('\r') === -1 ? ics : ics.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+function logicalLines(text: string, from = 0, to = text.length): string[] {
   const lines: string[] = [];
-  const n = text.length;
-  let i = 0;
+  let i = from;
   let current = '';
   let keeping = false;
   let cap = 0;
@@ -334,28 +534,27 @@ function logicalLines(ics: string): string[] {
     current = '';
     keeping = false;
   };
-  while (i < n) {
-    const nl = text.indexOf('\n', i);
-    const end = nl < 0 ? n : nl;
+  while (i < to) {
+    const br = nextBreak(text, i, to);
+    if (br.next <= i) break;
     const code = text.charCodeAt(i);
     if (code === 32 || code === 9) {
       if (keeping && current.length < cap) {
-        const take = Math.min(end, i + 1 + (cap - current.length));
-        current += text.slice(i + 1, take);
+        const take = Math.min(br.end, i + 1 + (cap - current.length));
+        if (take > i + 1) current += text.slice(i + 1, take);
       }
     } else {
       flush();
       let cut = i;
-      while (cut < end && text.charCodeAt(cut) !== 58 && text.charCodeAt(cut) !== 59) cut++;
+      while (cut < br.end && text.charCodeAt(cut) !== 58 && text.charCodeAt(cut) !== 59) cut++;
       const name = text.slice(i, cut).toUpperCase();
       if (name === 'BEGIN' || name === 'END' || keepProp(name)) {
         keeping = true;
         cap = name === 'BEGIN' || name === 'END' ? 80 : propCap(name);
-        current = text.slice(i, Math.min(end, i + cap));
+        current = text.slice(i, Math.min(br.end, i + cap));
       }
     }
-    if (nl < 0) break;
-    i = end + 1;
+    i = br.next;
   }
   flush();
   return lines;
@@ -522,35 +721,49 @@ function keepEvent(raw: RawEvent, minDate: number, maxDate: number): boolean {
   return end >= minDate && start <= maxDate;
 }
 
-function parseIcs(ics: string, windowStart = 0, windowEnd = 8640000000000000): RawEvent[] {
-  const lead = partsInZone(windowStart - 14 * 86400000, PHOENIX);
-  const tail = partsInZone(windowEnd + 14 * 86400000, PHOENIX);
-  const minDate = dateNum(lead.y, lead.m, lead.d);
-  const maxDate = dateNum(tail.y, tail.m, tail.d);
-  const events: RawEvent[] = [];
+function applyProp(current: RawEvent, prop: { name: string; params: Record<string, string>; value: string }, calendarZone: string): boolean {
+  if (prop.name === 'UID' && prop.value.trim()) current.uid = prop.value.trim();
+  else if (prop.name === 'SUMMARY') current.summary = unescapeText(prop.value);
+  else if (prop.name === 'LOCATION') current.location = clipDetail(unescapeText(prop.value), 300);
+  else if (prop.name === 'DESCRIPTION') current.description = clipDetail(unescapeText(prop.value), 1500);
+  else if (prop.name === 'URL') current.url = clipDetail(prop.value.trim(), 500);
+  else if (prop.name === 'CATEGORIES' && /birthday/i.test(prop.value)) current.birthday = true;
+  else if (/^X-/.test(prop.name) && /birthday|cake\.gif/i.test(`${prop.name} ${prop.value}`)) current.birthday = true;
+  else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
+  else if (prop.name === 'DTSTART') {
+    const stamp = parseStamp(prop.value, prop.params, calendarZone);
+    if (stamp) {
+      current.start = stamp;
+      return true;
+    }
+  } else if (prop.name === 'DTEND') {
+    const stamp = parseStamp(prop.value, prop.params, calendarZone);
+    if (stamp) current.end = stamp;
+  } else if (prop.name === 'DURATION') {
+    current.durationMs = parseDuration(prop.value);
+  } else if (prop.name === 'RRULE') {
+    current.rrule = parseRrule(prop.value, current.start.zone || calendarZone);
+  } else if (prop.name === 'EXDATE') {
+    current.exdates.push(...parseDateList(prop.value, prop.params, current.start.zone || calendarZone));
+  } else if (prop.name === 'RECURRENCE-ID') {
+    const stamp = parseStamp(prop.value, prop.params, current.start.zone || calendarZone);
+    if (stamp) current.recurrenceId = stampUtc(stamp);
+  }
+  return false;
+}
+
+function eventFromBlock(text: string, start: number, end: number, calendarZone: string, index: number): RawEvent | null {
   let current: RawEvent | null = null;
   let nested = 0;
-  let index = 0;
-  let calendarZone = PHOENIX;
   let sawStart = false;
-  for (const line of logicalLines(ics)) {
+  for (const line of logicalLines(text, start, end)) {
     if (line === 'BEGIN:VEVENT') {
-      current = emptyRaw(index++);
+      current = emptyRaw(index);
       nested = 0;
       sawStart = false;
       continue;
     }
-    if (line === 'END:VEVENT') {
-      if (current && sawStart && keepEvent(current, minDate, maxDate)) events.push(current);
-      current = null;
-      nested = 0;
-      continue;
-    }
-    if (!current) {
-      const prop = splitProp(line);
-      if (prop?.name === 'X-WR-TIMEZONE') calendarZone = resolveZone(prop.value, PHOENIX);
-      continue;
-    }
+    if (!current || line.startsWith('END:VEVENT')) continue;
     if (line.startsWith('BEGIN:')) {
       nested++;
       continue;
@@ -562,35 +775,96 @@ function parseIcs(ics: string, windowStart = 0, windowEnd = 8640000000000000): R
     if (nested) continue;
     const prop = splitProp(line);
     if (!prop) continue;
-    if (prop.name === 'UID' && prop.value.trim()) current.uid = prop.value.trim();
-    else if (prop.name === 'SUMMARY') current.summary = unescapeText(prop.value);
-    else if (prop.name === 'LOCATION') current.location = clipDetail(unescapeText(prop.value), 300);
-    else if (prop.name === 'DESCRIPTION') current.description = clipDetail(unescapeText(prop.value), 1500);
-    else if (prop.name === 'URL') current.url = clipDetail(prop.value.trim(), 500);
-    else if (prop.name === 'CATEGORIES' && /birthday/i.test(prop.value)) current.birthday = true;
-    else if (/^X-/.test(prop.name) && /birthday|cake\.gif/i.test(`${prop.name} ${prop.value}`)) current.birthday = true;
-    else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
-    else if (prop.name === 'DTSTART') {
-      const stamp = parseStamp(prop.value, prop.params, calendarZone);
-      if (stamp) {
-        current.start = stamp;
-        sawStart = true;
-      }
-    } else if (prop.name === 'DTEND') {
-      const stamp = parseStamp(prop.value, prop.params, calendarZone);
-      if (stamp) current.end = stamp;
-    } else if (prop.name === 'DURATION') {
-      current.durationMs = parseDuration(prop.value);
-    } else if (prop.name === 'RRULE') {
-      current.rrule = parseRrule(prop.value, current.start.zone || calendarZone);
-    } else if (prop.name === 'EXDATE') {
-      current.exdates.push(...parseDateList(prop.value, prop.params, current.start.zone || calendarZone));
-    } else if (prop.name === 'RECURRENCE-ID') {
-      const stamp = parseStamp(prop.value, prop.params, current.start.zone || calendarZone);
-      if (stamp) current.recurrenceId = stampUtc(stamp);
-    }
+    if (applyProp(current, prop, calendarZone)) sawStart = true;
   }
-  return events;
+  return current && sawStart ? current : null;
+}
+
+function openCursor(text: string, windowStart: number, windowEnd: number): IcsCursor {
+  const lead = partsInZone(windowStart - 14 * 86400000, PHOENIX);
+  const tail = partsInZone(windowEnd + 14 * 86400000, PHOENIX);
+  return {
+    text,
+    i: 0,
+    index: 0,
+    etag: '',
+    calendarZone: PHOENIX,
+    events: [],
+    minDate: dateNum(lead.y, lead.m, lead.d),
+    maxDate: dateNum(tail.y, tail.m, tail.d),
+    inEvent: false,
+    eventStart: 0,
+    nested: 0,
+    sawStart: false,
+    sawRrule: false,
+    sawException: false,
+    startNum: 0,
+    endNum: 0
+  };
+}
+
+function advanceIcsCursor(cursor: IcsCursor, budgetMs: number): { done: boolean; ms: number } {
+  const started = performance.now();
+  const text = cursor.text;
+  const limit = text.length;
+  let lines = 0;
+  while (cursor.i < limit) {
+    if ((lines++ & 63) === 0 && performance.now() - started >= budgetMs) break;
+    const br = nextBreak(text, cursor.i, limit);
+    if (br.next <= cursor.i) break;
+    const i = cursor.i;
+    const folded = text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9;
+    if (!cursor.inEvent) {
+      if (!folded && nameValueIs(text, i, br.end, 'BEGIN', 'VEVENT')) {
+        cursor.inEvent = true;
+        cursor.eventStart = i;
+        cursor.nested = 0;
+        cursor.sawStart = false;
+        cursor.sawRrule = false;
+        cursor.sawException = false;
+        cursor.startNum = 0;
+        cursor.endNum = 0;
+      } else if (!folded && startsWithName(text, i, br.end, 'X-WR-TIMEZONE')) {
+        const prop = splitProp(text.slice(i, br.end));
+        if (prop?.value) cursor.calendarZone = resolveZone(prop.value, PHOENIX);
+      }
+    } else if (!folded) {
+      if (cursor.nested === 0 && nameValueIs(text, i, br.end, 'END', 'VEVENT')) {
+        const endNum = cursor.endNum || cursor.startNum;
+        const inWindow = cursor.sawStart && cursor.startNum <= cursor.maxDate && endNum >= cursor.minDate;
+        if (cursor.sawRrule || cursor.sawException || inWindow) {
+          const raw = eventFromBlock(text, cursor.eventStart, i, cursor.calendarZone, cursor.index++);
+          if (raw && keepEvent(raw, cursor.minDate, cursor.maxDate)) cursor.events.push(raw);
+        }
+        cursor.inEvent = false;
+        cursor.i = br.next;
+        if (performance.now() - started >= budgetMs) return { done: false, ms: performance.now() - started };
+        continue;
+      } else if (startsWithName(text, i, br.end, 'BEGIN')) {
+        cursor.nested++;
+      } else if (startsWithName(text, i, br.end, 'END')) {
+        cursor.nested = Math.max(0, cursor.nested - 1);
+      } else if (cursor.nested === 0 && startsWithName(text, i, br.end, 'RRULE')) {
+        cursor.sawRrule = true;
+      } else if (cursor.nested === 0 && startsWithName(text, i, br.end, 'RECURRENCE-ID')) {
+        cursor.sawException = true;
+      } else if (cursor.nested === 0 && startsWithName(text, i, br.end, 'DTSTART')) {
+        cursor.startNum = readDateNum(text, i, br.end);
+        cursor.sawStart = cursor.startNum > 0;
+      } else if (cursor.nested === 0 && startsWithName(text, i, br.end, 'DTEND')) {
+        cursor.endNum = readDateNum(text, i, br.end);
+      }
+    }
+    cursor.i = br.next;
+  }
+  const done = cursor.i >= limit;
+  return { done, ms: performance.now() - started };
+}
+
+function parseIcs(ics: string, windowStart = 0, windowEnd = 8640000000000000): RawEvent[] {
+  const cursor = openCursor(ics, windowStart, windowEnd);
+  advanceIcsCursor(cursor, 1e9);
+  return cursor.events;
 }
 
 function durationOf(raw: RawEvent): number {
