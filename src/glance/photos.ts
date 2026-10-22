@@ -47,10 +47,36 @@ function asBytes(data: ArrayBuffer | Uint8Array | string | number[] | null): Uin
   }
   if (Array.isArray(data)) return Uint8Array.from(data);
   if (typeof data !== 'string' || !data) return null;
+  return decodeBase64(data);
+}
+
+function decodeBase64(data: string): Uint8Array {
+  const fast = (Uint8Array as unknown as { fromBase64?: (value: string) => Uint8Array }).fromBase64;
+  if (typeof fast === 'function') return fast(data);
+  const buffer = (globalThis as { Buffer?: { from(input: string, encoding: string): Uint8Array } }).Buffer;
+  if (buffer) {
+    const decoded = buffer.from(data, 'base64');
+    return new Uint8Array(decoded.buffer, decoded.byteOffset, decoded.byteLength);
+  }
   const bin = atob(data);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+export function photoCacheRequest(id: string, kind: string): Request {
+  return new Request(`https://glance-photo.invalid/${kind}/${id}`);
+}
+
+export async function forgetPhotoCache(id: string): Promise<void> {
+  try {
+    const cache = caches.default;
+    await Promise.all(
+      ['full', 'thumb', 'original'].map((kind) => cache.delete(photoCacheRequest(id, kind)))
+    );
+  } catch {
+    /* A later read stores a fresh copy. */
+  }
 }
 
 async function putR2(env: Bindings, id: string, kind: PhotoKind, bytes: Uint8Array): Promise<boolean> {
@@ -166,6 +192,7 @@ export async function replaceGlancePhoto(request: Request, env: Bindings, id: st
     .prepare(`UPDATE glance_photos SET bytes = ?, width = ?, height = ?, store = ? WHERE id = ?`)
     .bind(photo.full.length, photo.width, photo.height, stored ? 'r2' : 'd1', id)
     .run();
+  await forgetPhotoCache(id);
   return { id };
 }
 
@@ -203,5 +230,6 @@ export async function removeGlancePhoto(env: Bindings, id: string): Promise<bool
   await dropKind(env, id, 'thumb');
   await dropKind(env, id, 'original');
   await env.LIVEVIEW_DB.prepare(`DELETE FROM glance_photos WHERE id = ?`).bind(id).run();
+  await forgetPhotoCache(id);
   return true;
 }

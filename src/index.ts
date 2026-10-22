@@ -1,7 +1,9 @@
 import { app } from './app';
 import { runScheduledLights } from './glance/light-cron';
-import { handleGlance } from './glance/routes';
+import { handleGlance, refreshGlanceBoard } from './glance/routes';
 import type { Bindings } from './types';
+
+const LIVEVIEW_ASSET = /\.(?:js|css|map|png|jpe?g|gif|webp|svg|ico|json|webmanifest|txt|woff2?)$/i;
 
 /**
  * html_handling is "none" so /liveview/groups.html is not redirected onto the
@@ -32,7 +34,10 @@ async function fetchSiteAsset(request: Request, env: Bindings): Promise<Response
 
 export default {
   async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScheduledLights(env));
+    ctx.waitUntil(Promise.all([
+      runScheduledLights(env),
+      refreshGlanceBoard(env)
+    ]));
   },
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -48,6 +53,13 @@ export default {
       if (asset.ok || asset.status === 304) headers.set('Content-Type', 'video/mp4');
       headers.set('Cache-Control', 'public, max-age=86400');
       return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
+    }
+    if (
+      (request.method === 'GET' || request.method === 'HEAD') &&
+      url.pathname.startsWith('/liveview/') &&
+      LIVEVIEW_ASSET.test(url.pathname)
+    ) {
+      return env.ASSETS.fetch(request);
     }
     if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/liveview' || url.pathname === '/liveview/')) {
       const indexUrl = new URL(request.url);

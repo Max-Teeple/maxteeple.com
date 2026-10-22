@@ -1,0 +1,6 @@
+# Versioned Glance scripts and styles are safe to keep. The HTML points at
+# them with ?v=<build>, so a deploy changes the URL.
+/glance/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/glance/*.css
+  Cache-Control: public, max-age=31536000, immutable

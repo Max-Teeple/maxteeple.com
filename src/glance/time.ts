@@ -43,18 +43,12 @@ export function resolveZone(tzid: string | null | undefined, fallback = PHOENIX)
   return cleaned;
 }
 
-export function partsInZone(ms: number, timeZone: string): Parts {
-  let zone = timeZone;
-  try {
-    return readParts(ms, zone);
-  } catch {
-    zone = PHOENIX;
-    return readParts(ms, zone);
-  }
-}
+const formatters = new Map<string, Intl.DateTimeFormat>();
 
-function readParts(ms: number, timeZone: string): Parts {
-  const fmt = new Intl.DateTimeFormat('en-US', {
+function formatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = formatters.get(timeZone);
+  if (fmt) return fmt;
+  fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
     year: 'numeric',
@@ -64,8 +58,41 @@ function readParts(ms: number, timeZone: string): Parts {
     minute: '2-digit',
     second: '2-digit'
   });
+  formatters.set(timeZone, fmt);
+  return fmt;
+}
+
+function utcParts(ms: number): Parts {
+  const dt = new Date(ms);
+  return {
+    y: dt.getUTCFullYear(),
+    m: dt.getUTCMonth() + 1,
+    d: dt.getUTCDate(),
+    h: dt.getUTCHours(),
+    mi: dt.getUTCMinutes(),
+    s: dt.getUTCSeconds()
+  };
+}
+
+/** Phoenix has no daylight saving time. Arithmetic stays off the Intl path. */
+export function phoenixParts(ms: number): Parts {
+  return utcParts(ms - 7 * 3600000);
+}
+
+export function partsInZone(ms: number, timeZone: string): Parts {
+  const zone = resolveZone(timeZone);
+  if (zone === 'UTC') return utcParts(ms);
+  if (zone === PHOENIX) return phoenixParts(ms);
+  try {
+    return readParts(ms, zone);
+  } catch {
+    return phoenixParts(ms);
+  }
+}
+
+function readParts(ms: number, timeZone: string): Parts {
   const bag: Record<string, string> = {};
-  for (const part of fmt.formatToParts(new Date(ms))) bag[part.type] = part.value;
+  for (const part of formatter(timeZone).formatToParts(new Date(ms))) bag[part.type] = part.value;
   let h = Number(bag.hour);
   if (h === 24) h = 0;
   return {
