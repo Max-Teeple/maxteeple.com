@@ -215,8 +215,48 @@ export function maskWorkEvents(events: AgendaEvent[]): AgendaEvent[] {
   });
 }
 
+type HeldFeed = { text: string; etag: string; raws: RawEvent[] };
+
+const heldFeeds = new Map<string, HeldFeed>();
+
+/** Wide enough for the week pager (±400 days) plus a little slack. */
+export function feedSpan(now = Date.now()): { start: number; end: number } {
+  const [y, m, d] = phoenixDate(now).split('-').map(Number);
+  const start = addDays(y, m, d, -420);
+  const end = addDays(y, m, d, 420);
+  return {
+    start: zonedToUtc(start.y, start.m, start.d, 0, 0, 0, PHOENIX),
+    end: zonedToUtc(end.y, end.m, end.d, 0, 0, 0, PHOENIX)
+  };
+}
+
+export function cachedFeed(id: string): { etag: string; raws: RawEvent[] } | null {
+  const row = heldFeeds.get(id);
+  if (!row) return null;
+  return { etag: row.etag, raws: row.raws };
+}
+
+/** Reuse the last parse when the body or ETag has not changed. */
+export function takeFeedRaws(id: string, text: string, etag: string, windowStart: number, windowEnd: number): RawEvent[] {
+  const known = heldFeeds.get(id);
+  if (known && ((etag && etag === known.etag) || text === known.text)) {
+    if (etag) known.etag = etag;
+    return known.raws;
+  }
+  const raws = parseIcs(text, windowStart, windowEnd);
+  heldFeeds.set(id, { text, etag, raws });
+  if (heldFeeds.size > 8) {
+    const oldest = heldFeeds.keys().next().value;
+    if (oldest) heldFeeds.delete(oldest);
+  }
+  return raws;
+}
+
 export function eventsFromIcs(ics: string, feed: FeedMeta, windowStart: number, windowEnd: number): AgendaEvent[] {
-  const raws = parseIcs(ics);
+  return projectFeed(parseIcs(ics, windowStart, windowEnd), feed, windowStart, windowEnd);
+}
+
+export function projectFeed(raws: RawEvent[], feed: FeedMeta, windowStart: number, windowEnd: number): AgendaEvent[] {
   const occs = expandAll(raws, windowStart, windowEnd);
   return occs.map((occ) => {
     const personal = feed.label.trim().toLowerCase() === 'personal';
@@ -244,16 +284,80 @@ export function googleEventId(uid: string): string {
   return match ? match[1] : '';
 }
 
-function unfold(ics: string): string[] {
-  const physical = ics.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+const KEPT_PROPS = new Set([
+  'UID',
+  'SUMMARY',
+  'LOCATION',
+  'DESCRIPTION',
+  'URL',
+  'CATEGORIES',
+  'STATUS',
+  'DTSTART',
+  'DTEND',
+  'DURATION',
+  'RRULE',
+  'EXDATE',
+  'RECURRENCE-ID'
+]);
+
+function keepProp(name: string): boolean {
+  if (KEPT_PROPS.has(name)) return true;
+  if (name === 'X-WR-TIMEZONE') return true;
+  if (name.startsWith('X-') && /birthday|cake/i.test(name)) return true;
+  return false;
+}
+
+function propCap(name: string): number {
+  if (name === 'DESCRIPTION') return 1800;
+  if (name === 'EXDATE') return 12000;
+  if (name === 'SUMMARY' || name === 'LOCATION') return 500;
+  if (name === 'URL') return 600;
+  if (name.startsWith('X-')) return 300;
+  return 4000;
+}
+
+/**
+ * Unfold only the properties Glance reads.
+ * Outlook feeds fold base64 ATTACH lines every 75 characters. Concatenating
+ * those strings is the CPU spike. Skipped lines are consumed, not copied.
+ */
+function logicalLines(ics: string): string[] {
+  const text = ics.indexOf('\r') === -1 ? ics : ics.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines: string[] = [];
-  for (const line of physical) {
-    if ((line.startsWith(' ') || line.startsWith('\t')) && lines.length) {
-      lines[lines.length - 1] += line.slice(1);
+  const n = text.length;
+  let i = 0;
+  let current = '';
+  let keeping = false;
+  let cap = 0;
+  const flush = () => {
+    if (keeping && current) lines.push(current);
+    current = '';
+    keeping = false;
+  };
+  while (i < n) {
+    const nl = text.indexOf('\n', i);
+    const end = nl < 0 ? n : nl;
+    const code = text.charCodeAt(i);
+    if (code === 32 || code === 9) {
+      if (keeping && current.length < cap) {
+        const take = Math.min(end, i + 1 + (cap - current.length));
+        current += text.slice(i + 1, take);
+      }
     } else {
-      lines.push(line);
+      flush();
+      let cut = i;
+      while (cut < end && text.charCodeAt(cut) !== 58 && text.charCodeAt(cut) !== 59) cut++;
+      const name = text.slice(i, cut).toUpperCase();
+      if (name === 'BEGIN' || name === 'END' || keepProp(name)) {
+        keeping = true;
+        cap = name === 'BEGIN' || name === 'END' ? 80 : propCap(name);
+        current = text.slice(i, Math.min(end, i + cap));
+      }
     }
+    if (nl < 0) break;
+    i = end + 1;
   }
+  flush();
   return lines;
 }
 
@@ -407,14 +511,29 @@ function emptyRaw(index: number): RawEvent {
   };
 }
 
-function parseIcs(ics: string): RawEvent[] {
+function dateNum(y: number, m: number, d: number): number {
+  return y * 10000 + m * 100 + d;
+}
+
+function keepEvent(raw: RawEvent, minDate: number, maxDate: number): boolean {
+  if (raw.rrule || raw.recurrenceId != null) return true;
+  const start = dateNum(raw.start.y, raw.start.m, raw.start.d);
+  const end = raw.end ? dateNum(raw.end.y, raw.end.m, raw.end.d) : start;
+  return end >= minDate && start <= maxDate;
+}
+
+function parseIcs(ics: string, windowStart = 0, windowEnd = 8640000000000000): RawEvent[] {
+  const lead = partsInZone(windowStart - 14 * 86400000, PHOENIX);
+  const tail = partsInZone(windowEnd + 14 * 86400000, PHOENIX);
+  const minDate = dateNum(lead.y, lead.m, lead.d);
+  const maxDate = dateNum(tail.y, tail.m, tail.d);
   const events: RawEvent[] = [];
   let current: RawEvent | null = null;
   let nested = 0;
   let index = 0;
   let calendarZone = PHOENIX;
   let sawStart = false;
-  for (const line of unfold(ics)) {
+  for (const line of logicalLines(ics)) {
     if (line === 'BEGIN:VEVENT') {
       current = emptyRaw(index++);
       nested = 0;
@@ -422,7 +541,7 @@ function parseIcs(ics: string): RawEvent[] {
       continue;
     }
     if (line === 'END:VEVENT') {
-      if (current && sawStart) events.push(current);
+      if (current && sawStart && keepEvent(current, minDate, maxDate)) events.push(current);
       current = null;
       nested = 0;
       continue;
@@ -599,6 +718,7 @@ function expandDaily(raw: RawEvent, rule: RRule, windowStart: number, windowEnd:
     emitted.n = steps;
   }
   const limit = rule.count ?? 20000;
+  const horizon = partsInZone(windowEnd + 86400000, zone);
   let guard = 0;
   while (emitted.n < limit && guard < 20000) {
     guard++;
@@ -611,7 +731,7 @@ function expandDaily(raw: RawEvent, rule: RRule, windowStart: number, windowEnd:
       : zonedToUtc(cursor.y, cursor.m, cursor.d, raw.start.h, raw.start.mi, raw.start.s, raw.start.zone);
     if (startMs > windowEnd + 2 * 86400000) break;
     if (!push(cursor, out, emitted)) break;
-    if (cmpDate(cursor, partsInZone(windowEnd + 86400000, zone)) > 0) break;
+    if (cmpDate(cursor, horizon) > 0) break;
     cursor = addDays(cursor.y, cursor.m, cursor.d, interval);
   }
   return out;
@@ -699,13 +819,78 @@ function monthDates(y: number, m: number, rule: RRule, start: Stamp): LocalDate[
   return dates;
 }
 
+function advanceMonth(y: number, m: number, interval: number): { y: number; m: number } {
+  let month = m + interval;
+  let year = y;
+  while (month > 12) {
+    month -= 12;
+    year++;
+  }
+  return { y: year, m: month };
+}
+
+function monthPastUntil(raw: RawEvent, rule: RRule, date: LocalDate): boolean {
+  if (!rule.until) return false;
+  if (rule.until.kind === 'date') return cmpDate(date, rule.until) > 0;
+  const startMs = raw.start.allDay
+    ? zonedToUtc(date.y, date.m, date.d, 0, 0, 0, PHOENIX)
+    : zonedToUtc(date.y, date.m, date.d, raw.start.h, raw.start.mi, raw.start.s, raw.start.zone);
+  return startMs > rule.until.ms;
+}
+
+/** Count occurrences strictly before the month the window loop will start on. */
+function countMonthsBefore(raw: RawEvent, rule: RRule, startDate: LocalDate, steps: number): number {
+  let n = 0;
+  let y = raw.start.y;
+  let m = raw.start.m;
+  const simple = !rule.bymonth.length && !rule.byday.length && !rule.bymonthday.length;
+  for (let walked = 0; walked < steps; walked += rule.interval) {
+    if (simple) {
+      if (raw.start.d <= daysInMonth(y, m)) {
+        const date = { y, m, d: raw.start.d };
+        if (cmpDate(date, startDate) >= 0) {
+          if (monthPastUntil(raw, rule, date)) return n;
+          n++;
+        }
+      }
+    } else if (!rule.bymonth.length || rule.bymonth.includes(m)) {
+      for (const date of monthDates(y, m, rule, raw.start)) {
+        if (cmpDate(date, startDate) < 0) continue;
+        if (monthPastUntil(raw, rule, date)) return n;
+        n++;
+      }
+    }
+    const next = advanceMonth(y, m, rule.interval);
+    y = next.y;
+    m = next.m;
+  }
+  return n;
+}
+
 function expandMonthly(raw: RawEvent, rule: RRule, windowStart: number, windowEnd: number, push: Push): Occ[] {
   const out: Occ[] = [];
   const emitted = { n: 0 };
   let y = raw.start.y;
   let m = raw.start.m;
   const startDate = { y: raw.start.y, m: raw.start.m, d: raw.start.d };
+  const zone = raw.start.allDay ? PHOENIX : raw.start.zone;
+  const lead = partsInZone(windowStart - durationOf(raw) - 86400000, zone);
+  const leadIndex = lead.y * 12 + (lead.m - 1);
+  const startIndex = raw.start.y * 12 + (raw.start.m - 1);
+  if (leadIndex > startIndex) {
+    const steps = Math.floor((leadIndex - startIndex) / rule.interval) * rule.interval;
+    if (steps > 0) {
+      const jumped = countMonthsBefore(raw, rule, startDate, steps);
+      if (rule.count != null && jumped >= rule.count) return [];
+      emitted.n = jumped;
+      const nextIndex = startIndex + steps;
+      y = Math.floor(nextIndex / 12);
+      m = (nextIndex % 12) + 1;
+    }
+  }
   const limit = rule.count ?? 600;
+  const endProbe = partsInZone(windowEnd + 40 * 86400000, zone);
+  const endMonth = { y: endProbe.y, m: endProbe.m, d: 1 };
   let guard = 0;
   while (emitted.n < limit && guard < 800) {
     guard++;
@@ -716,14 +901,10 @@ function expandMonthly(raw: RawEvent, rule: RRule, windowStart: number, windowEn
         if (emitted.n >= limit) return out;
       }
     }
-    const cursor = { y, m, d: 1 };
-    const endProbe = partsInZone(windowEnd + 40 * 86400000, raw.start.zone);
-    if (cmpDate(cursor, { y: endProbe.y, m: endProbe.m, d: 1 }) > 0 && y * 12 + m > raw.start.y * 12 + raw.start.m) break;
-    m += rule.interval;
-    while (m > 12) {
-      m -= 12;
-      y++;
-    }
+    if (cmpDate({ y, m, d: 1 }, endMonth) > 0 && y * 12 + m > startIndex) break;
+    const next = advanceMonth(y, m, rule.interval);
+    y = next.y;
+    m = next.m;
   }
   return out;
 }
@@ -733,9 +914,9 @@ function expandYearly(raw: RawEvent, rule: RRule, windowStart: number, windowEnd
   const emitted = { n: 0 };
   const months = rule.bymonth.length ? rule.bymonth : [raw.start.m];
   const limit = rule.count ?? 200;
+  const endProbe = partsInZone(windowEnd + 400 * 86400000, raw.start.allDay ? PHOENIX : raw.start.zone);
   for (let step = 0; step < 200 && emitted.n < limit; step++) {
     const y = raw.start.y + step * rule.interval;
-    const endProbe = partsInZone(windowEnd + 400 * 86400000, raw.start.zone);
     if (y > endProbe.y + 1) break;
     for (const m of months) {
       const monthly: RRule = { ...rule, freq: 'MONTHLY', interval: 1, bymonth: [] };

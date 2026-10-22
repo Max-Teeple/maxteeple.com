@@ -20,7 +20,7 @@ declare module 'cloudflare:test' {
     };
   };
 }
-import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, googleEventId, maskWorkEvents, titleIsBirthday } from '../src/glance/ics';
+import { birthdayName, dedupeWorkMirrors, eventIsBirthday, eventsFromIcs, feedSpan, googleEventId, maskWorkEvents, projectFeed, takeFeedRaws, titleIsBirthday } from '../src/glance/ics';
 import { verseFor, verseIndex } from '../src/glance/verse';
 import verses from '../src/glance/verses.json';
 import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
@@ -37,6 +37,15 @@ import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
 const TEST_PASSWORD = 'correct-horse-battery';
+
+/** A Phoenix date a few days ahead, so event posts stay inside the allowed window. */
+function soonDate(daysAhead = 3): string {
+  const local = new Date(Date.now() + daysAhead * 86400000 - 7 * 3600000);
+  const y = local.getUTCFullYear();
+  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(local.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 async function api(path: string, init?: RequestInit) {
   return SELF.fetch(new Request(`${origin}${path}`, init));
@@ -163,10 +172,12 @@ describe('Glance kitchen board', () => {
     expect(posted.status).toBe(308);
     expect(posted.headers.get('location')).toBe('https://maxteeple.com/glance/api/login');
 
-    const www = await SELF.fetch('https://www.maxteeple.com/glance/app.css?v=1', { redirect: 'manual' });
+    const www = await SELF.fetch('https://www.maxteeple.com/glance/privacy', { redirect: 'manual' });
     expect(www.status).toBe(301);
-    expect(www.headers.get('location')).toBe('https://maxteeple.com/glance/app.css?v=1');
+    expect(www.headers.get('location')).toBe('https://maxteeple.com/glance/privacy');
     expect(www.headers.get('strict-transport-security')).toBe('max-age=31536000');
+    const css = await SELF.fetch('https://www.maxteeple.com/glance/app.css?v=1', { redirect: 'manual' });
+    expect(css.status).toBe(200);
   });
 
   it('signs in with a year-long cookie and keeps to-dos', async () => {
@@ -678,6 +689,82 @@ END:VCALENDAR`;
     expect(work[0].googleId).toBe('');
   });
 
+  it('jumps a years-old monthly series into the open week and stops at COUNT', () => {
+    const monthly = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:long-fourth
+SUMMARY:Fourth Tuesday
+DTSTART;TZID=America/Phoenix:20150623T150000
+DTEND;TZID=America/Phoenix:20150623T160000
+RRULE:FREQ=MONTHLY;INTERVAL=1;BYDAY=4TU
+END:VEVENT
+END:VCALENDAR`;
+    const found = eventsFromIcs(
+      monthly,
+      feed,
+      zonedToUtc(2026, 10, 1, 0, 0, 0, 'America/Phoenix'),
+      zonedToUtc(2026, 11, 1, 0, 0, 0, 'America/Phoenix')
+    );
+    expect(found.map((event) => phoenixDate(event.start))).toEqual(['2026-10-27']);
+    expect(partsInZone(found[0].start, 'America/Phoenix').h).toBe(15);
+
+    const counted = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:two
+SUMMARY:Twice
+DTSTART;TZID=America/Phoenix:20260115T090000
+DTEND;TZID=America/Phoenix:20260115T100000
+RRULE:FREQ=MONTHLY;COUNT=2
+END:VEVENT
+END:VCALENDAR`;
+    const later = eventsFromIcs(
+      counted,
+      feed,
+      zonedToUtc(2026, 10, 1, 0, 0, 0, 'America/Phoenix'),
+      zonedToUtc(2026, 11, 1, 0, 0, 0, 'America/Phoenix')
+    );
+    expect(later).toEqual([]);
+    const early = eventsFromIcs(
+      counted,
+      feed,
+      zonedToUtc(2026, 1, 1, 0, 0, 0, 'America/Phoenix'),
+      zonedToUtc(2026, 3, 1, 0, 0, 0, 'America/Phoenix')
+    );
+    expect(early.map((event) => phoenixDate(event.start))).toEqual(['2026-01-15', '2026-02-15']);
+  });
+
+  it('ignores a folded base64 attachment and reuses a parsed feed', () => {
+    const attach = 'QUJD'.repeat(4000);
+    const folded = attach.replace(/(.{72})/g, '$1\r\n ');
+    const ics = `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:with-attach@google.com
+SUMMARY:Bring the laptop
+ATTACH;FMTTYPE=text/plain;ENCODING=BASE64;VALUE=BINARY:${folded}
+DTSTART;TZID=America/Phoenix:20261016T090000
+DTEND;TZID=America/Phoenix:20261016T100000
+END:VEVENT
+END:VCALENDAR`;
+    const windowStart = zonedToUtc(2026, 10, 16, 0, 0, 0, 'America/Phoenix');
+    const windowEnd = zonedToUtc(2026, 10, 17, 0, 0, 0, 'America/Phoenix');
+    const events = eventsFromIcs(ics, { id: 'p', label: 'Personal', color: '#7dcea0' }, windowStart, windowEnd);
+    expect(events).toHaveLength(1);
+    expect(events[0].title).toBe('Bring the laptop');
+    expect(events[0].googleId).toBe('with-attach');
+    const span = feedSpan(Date.parse('2026-10-16T12:00:00-07:00'));
+    const first = takeFeedRaws('attach-feed', ics, '', span.start, span.end);
+    const second = takeFeedRaws('attach-feed', ics, '"same"', span.start, span.end);
+    expect(second).toBe(first);
+    const renamed = ics.replace('Bring the laptop', 'Bring the charger');
+    const third = takeFeedRaws('attach-feed', renamed, '"next"', span.start, span.end);
+    expect(third).not.toBe(first);
+    expect(projectFeed(third, { id: 'p', label: 'Personal', color: '#7dcea0' }, windowStart, windowEnd)[0].title).toBe('Bring the charger');
+    const summer = partsInZone(Date.parse('2026-07-15T19:00:00Z'), 'America/Phoenix');
+    const winter = partsInZone(Date.parse('2026-01-15T19:00:00Z'), 'America/Phoenix');
+    expect(summer).toMatchObject({ y: 2026, m: 7, d: 15, h: 12 });
+    expect(winter).toMatchObject({ y: 2026, m: 1, d: 15, h: 12 });
+  });
+
   it('shapes an Open-Meteo payload', () => {
     const weather = shapeWeather(
       {
@@ -808,7 +895,7 @@ describe('Google Calendar events', () => {
     const blocked = await withSession('/glance/api/events', session, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Dentist', date: '2026-10-15', start: '16:00', durationMinutes: 60 })
+      body: JSON.stringify({ title: 'Dentist', date: soonDate(), start: '16:00', durationMinutes: 60 })
     });
     expect(blocked.status).toBe(400);
     const blockedBody = await blocked.json() as { message: string };
@@ -902,9 +989,10 @@ describe('Google Calendar events', () => {
         seen.payload = typeof opts.body === 'string' ? opts.body : new TextDecoder().decode(opts.body as Uint8Array);
         return { statusCode: 200, data: '{"ok":true}', responseOptions: {} };
       });
+      const eventDate = soonDate();
       const eventBody = {
         title: 'Glance notify test',
-        date: '2026-10-15',
+        date: eventDate,
         start: '16:00',
         durationMinutes: 5,
         idempotencyKey: 'submit-key-1'
@@ -932,8 +1020,8 @@ describe('Google Calendar events', () => {
       expect(payload.title).toBe('Glance notify test');
       expect(payload.allDay).toBe(false);
       expect(payload.source).toBe('glance');
-      expect(payload.start.startsWith('2026-10-15T16:00:00')).toBe(true);
-      expect(payload.end.startsWith('2026-10-15T16:05:00')).toBe(true);
+      expect(payload.start.startsWith(`${eventDate}T16:00:00`)).toBe(true);
+      expect(payload.end.startsWith(`${eventDate}T16:05:00`)).toBe(true);
       expect(Object.keys(payload).sort()).toEqual(['allDay', 'end', 'source', 'start', 'title']);
       expect(seen.notifies).toBe(1);
       expect(seen.googleWrites).toBe(1);
@@ -1346,7 +1434,12 @@ describe('Glance photos', () => {
     const image = await withSession(`/glance/api/photos/${id}`, session);
     expect(image.status).toBe(200);
     expect(image.headers.get('content-type')).toContain('image/jpeg');
+    expect(image.headers.get('cache-control')).toContain('max-age=86400');
+    expect(image.headers.get('cache-control')).not.toContain('no-store');
     expect(new Uint8Array(await image.arrayBuffer())[0]).toBe(0xff);
+    const cached = await withSession(`/glance/api/photos/${id}`, session);
+    expect(cached.status).toBe(200);
+    expect(new Uint8Array(await cached.arrayBuffer())[0]).toBe(0xff);
     const thumb = await withSession(`/glance/api/photos/${id}/thumb`, session);
     expect(thumb.status).toBe(200);
     const cropped = photoForm();

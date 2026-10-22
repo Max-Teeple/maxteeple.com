@@ -17,8 +17,8 @@ import {
   type GlanceLayout,
   type GlanceTheme
 } from './defaults';
-import { dedupeWorkMirrors, eventsFromIcs, maskWorkEvents, type AgendaEvent, type FeedMeta } from './ics';
-import { PHOENIX, addDays, formatPhoenix, partsInZone, phoenixDate, phoenixWindow, windowFrom, zonedToUtc } from './time';
+import { cachedFeed, dedupeWorkMirrors, feedSpan, maskWorkEvents, projectFeed, takeFeedRaws, type AgendaEvent, type FeedMeta } from './ics';
+import { PHOENIX, addDays, formatPhoenix, partsInZone, phoenixDate, phoenixWindow, weekday, windowFrom, zonedToUtc } from './time';
 import {
   familyPhrase,
   geocodeAddress,
@@ -35,10 +35,11 @@ import { scheduleHint } from './light-automation';
 import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
-import { createGlancePhoto, listGlancePhotos, readGlancePhoto, removeGlancePhoto, replaceGlancePhoto } from './photos';
+import { createGlancePhoto, listGlancePhotos, photoCacheRequest, readGlancePhoto, removeGlancePhoto, replaceGlancePhoto } from './photos';
 import { createPhotoShare, revokePhotoShares, shareStatus, shareTokenPattern, uploadSharedPhoto } from './share';
 import { verseDetail, verseSummary } from './verse';
 import { forgetPrefix, remember } from './cache';
+import { composeBoard, invalidateCore, readCore, writeCore } from './board-cache';
 import {
   GOOGLE_ACCOUNT,
   cleanEventTitle,
@@ -97,9 +98,12 @@ type TodoRow = {
 type Widgets = typeof DEFAULT_WIDGETS;
 
 const googleAccess = new Map<string, { at: number; raw: string }>();
+const presentedViews = new Map<string, { raws: readonly object[]; value: object }>();
 const WEATHER_TTL_SEC = 15 * 60;
-const CALENDAR_TTL_SEC = 150;
 const LIGHTS_TTL_SEC = 150;
+const PHOTO_CACHE = 'private, max-age=86400';
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 let locationsPurgedAt = 0;
 let addedPurgedAt = 0;
 
@@ -272,6 +276,7 @@ glance.put('/settings', async (c) => {
   }
   c.header('Cache-Control', 'no-store');
   await forgetPrefix('glance:');
+  await invalidateCore(c.env.LIVEVIEW_DB);
   return c.json({ ok: true, ...(await publicSettings(c.env)) });
 });
 
@@ -309,7 +314,9 @@ glance.get('/calendar', async (c) => {
 
 glance.get('/dashboard', async (c) => {
   c.header('Cache-Control', 'no-store');
-  return c.json(await dashboardPayload(c.env, c.req.url));
+  return c.body(await dashboardJson(c.env, c.req.url), 200, {
+    'Content-Type': 'application/json; charset=utf-8'
+  });
 });
 
 glance.get('/google/start', async (c) => {
@@ -453,6 +460,7 @@ glance.post('/events', async (c) => {
   const color = await personalColor(db);
   await rememberAdded(db, { title, allDay, startMs: range.startMs, endMs: range.endMs });
   await forgetPrefix('glance:cal:');
+  await invalidateCore(db);
   const event = {
     ...glanceEvent({ title, allDay, startMs: range.startMs, endMs: range.endMs, color }),
     source: 'glance' as const,
@@ -498,6 +506,7 @@ glance.delete('/events/:id', async (c) => {
   const title = cleanOptionalTitle(c.req.query('title'));
   if (title) await db.prepare(`DELETE FROM glance_added_events WHERE title = ?`).bind(title).run();
   await forgetPrefix('glance:cal:');
+  await invalidateCore(db);
   c.header('Cache-Control', 'no-store');
   return c.json({ ok: true });
 });
@@ -757,14 +766,32 @@ glance.put('/photos/:id', async (c) => {
 });
 
 async function photoResponse(env: Bindings, id: string, kind: 'full' | 'thumb' | 'original'): Promise<Response> {
+  const key = photoCacheRequest(id, kind);
+  try {
+    const hit = await caches.default.match(key);
+    if (hit) {
+      const headers = new Headers(hit.headers);
+      headers.set('Content-Type', 'image/jpeg');
+      headers.set('Cache-Control', PHOTO_CACHE);
+      return new Response(hit.body, { status: 200, headers });
+    }
+  } catch {
+    /* Read the blob below. */
+  }
   const bytes = await readGlancePhoto(env, id, kind);
   if (!bytes) throw new HttpError(404, 'Photo not found');
-  return new Response(bytes, {
-    headers: {
-      'Content-Type': 'image/jpeg',
-      'Cache-Control': 'private, max-age=300'
-    }
-  });
+  const headers = {
+    'Content-Type': 'image/jpeg',
+    'Cache-Control': PHOTO_CACHE
+  };
+  // Two independent bodies. Sharing one stream with Cache API put deadlocks the response.
+  const response = new Response(bytes.slice(), { headers });
+  try {
+    await caches.default.put(key, new Response(bytes.slice(), { headers }));
+  } catch {
+    /* The browser cache still skips the next view. */
+  }
+  return response;
 }
 
 glance.notFound((c) => c.json({ ok: false, message: 'Not found' }, 404));
@@ -785,11 +812,13 @@ export async function handleGlance(request: Request, env: Bindings, ctx: Executi
     const routed = new URL(request.url);
     routed.pathname = apiPath.replace(/^\/glance\/api/, '') || '/';
     const response = await glance.fetch(new Request(routed.toString(), request), env, ctx);
-    return stampGlance(request, copyResponse(response, {
+    const headers: Record<string, string> = {
       'Referrer-Policy': 'no-referrer',
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-cache, no-store, must-revalidate'
-    }));
+      'X-Content-Type-Options': 'nosniff'
+    };
+    const type = response.headers.get('content-type') || '';
+    if (!type.startsWith('image/')) headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+    return stampGlance(request, copyResponse(response, headers));
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method not allowed', { status: 405 });
@@ -907,17 +936,8 @@ async function weatherPayload(env: Bindings) {
 }
 
 async function calendarPayload(env: Bindings, startDate: string | null) {
-  const db = env.LIVEVIEW_DB;
-  const feeds = (await db
-    .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
-    .all<FeedRow>()
-  ).results.filter((feed) => feed.url);
-  if (!feeds.length) return withAddedEvents(db, present([], Date.now(), [], startDate));
-  const key = `glance:cal:v4:${startDate || 'now'}:${await sha256Hex(feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n'))}`;
-  const payload = await remember(key, CALENDAR_TTL_SEC, () => buildCalendar(feeds, startDate), {
-    cache: (value) => value.feeds.every((feed) => feed.ok)
-  });
-  return withAddedEvents(db, payload);
+  const payload = await loadCalendar(env, startDate);
+  return mergeAdded(env.LIVEVIEW_DB, payload);
 }
 
 async function lightsPayload(env: Bindings) {
@@ -943,15 +963,44 @@ async function lightsPayload(env: Bindings) {
   }
 }
 
-async function dashboardPayload(env: Bindings, requestUrl: string) {
-  const [pub, weather, calendar, lights, location] = await Promise.all([
+async function dashboardJson(env: Bindings, requestUrl: string): Promise<string> {
+  let core = await readCore(env.LIVEVIEW_DB);
+  if (!core) {
+    core = await buildBoardCore(env);
+    await writeCore(env.LIVEVIEW_DB, core);
+  }
+  const lights = JSON.stringify(await lightsPayload(env));
+  const location = JSON.stringify(await locationView(env, requestUrl));
+  const added = await env.LIVEVIEW_DB.prepare(`SELECT 1 AS n FROM glance_added_events LIMIT 1`).first();
+  if (!added) return composeBoard(core, lights, location);
+  const body = JSON.parse(core) as { calendar: Parameters<typeof withAddedEvents>[1] };
+  body.calendar = await withAddedEvents(env.LIVEVIEW_DB, body.calendar);
+  return JSON.stringify({ ...body, lights: JSON.parse(lights), location: JSON.parse(location) });
+}
+
+async function buildBoardCore(env: Bindings): Promise<string> {
+  const [pub, weather, calendar] = await Promise.all([
     publicSettings(env),
     weatherPayload(env),
-    calendarPayload(env, null),
-    lightsPayload(env),
-    locationView(env, requestUrl)
+    loadCalendar(env, null)
   ]);
-  return { ok: true, settings: { ok: true, ...pub }, weather, calendar, lights, location };
+  return JSON.stringify({
+    ok: true,
+    settings: { ok: true, ...pub },
+    weather,
+    calendar
+  });
+}
+
+/** Cron path. Skips Tuya. The board poll reads this string back. */
+export async function refreshGlanceBoard(env: Bindings): Promise<void> {
+  try {
+    await ensureSchema(env.LIVEVIEW_DB);
+    const core = await buildBoardCore(env);
+    await writeCore(env.LIVEVIEW_DB, core);
+  } catch (error) {
+    console.error('[glance] board refresh', scrub(error instanceof Error ? error.message : 'error'));
+  }
 }
 
 function calendarStart(raw: string | undefined): string | null {
@@ -971,25 +1020,78 @@ function dateKeyFromParts(value: { y: number; m: number; d: number }): string {
   return `${value.y}-${String(value.m).padStart(2, '0')}-${String(value.d).padStart(2, '0')}`;
 }
 
-async function buildCalendar(feeds: FeedRow[], startDate: string | null) {
+async function mergeAdded<T extends Parameters<typeof withAddedEvents>[1]>(db: D1Database, payload: T): Promise<T> {
+  const added = await db.prepare(`SELECT 1 AS n FROM glance_added_events LIMIT 1`).first();
+  if (!added) return payload;
+  return withAddedEvents(db, JSON.parse(JSON.stringify(payload)) as T);
+}
+
+async function loadFeedRaws(feed: FeedRow, span: { start: number; end: number }) {
+  const known = cachedFeed(feed.id);
+  let fetched: { text: string; etag: string; notModified: boolean };
+  try {
+    fetched = await fetchIcs(feed.url, known?.etag || '');
+  } catch (error) {
+    if (known) return known.raws;
+    throw error;
+  }
+  if (fetched.notModified && known) return known.raws;
+  if (!fetched.text) {
+    if (known) return known.raws;
+    throw new Error('empty');
+  }
+  return takeFeedRaws(feed.id, fetched.text, fetched.etag, span.start, span.end);
+}
+
+async function loadCalendar(env: Bindings, startDate: string | null) {
   const now = Date.now();
-  const window = startDate ? windowFrom(startDate, 7) : phoenixWindow(now, 8);
+  const feeds = (
+    await env.LIVEVIEW_DB
+      .prepare(`SELECT id, label, color, url, enabled, sort_order FROM glance_feeds WHERE enabled = 1 ORDER BY sort_order, label`)
+      .all<FeedRow>()
+  ).results.filter((feed) => feed.url);
+  if (!feeds.length) return present([], now, [], startDate);
+  const span = feedSpan(now);
+  const day = startDate || phoenixDate(now);
+  const key = `${day}|${feeds.map((feed) => `${feed.id}|${feed.label}|${feed.color}|${feed.url}`).join('\n')}`;
+  const rawsList: object[][] = [];
   const status: { id: string; label: string; color: string; ok: boolean }[] = [];
-  const events: AgendaEvent[] = [];
+  let failed = false;
   await Promise.all(
-    feeds.map(async (feed) => {
+    feeds.map(async (feed, index) => {
       const meta: FeedMeta = { id: feed.id, label: feed.label, color: feed.color };
       try {
-        const ics = await fetchIcs(feed.url);
-        events.push(...eventsFromIcs(ics, meta, window.start, window.end));
-        status.push({ id: feed.id, label: feed.label, color: feed.color, ok: true });
+        rawsList[index] = await loadFeedRaws(feed, span);
+        status[index] = { ...meta, ok: true };
       } catch (error) {
+        failed = true;
+        rawsList[index] = [];
+        status[index] = { ...meta, ok: false };
         console.error('[glance] calendar refresh failed', feed.id, scrub(error instanceof Error ? error.message : 'error'));
-        status.push({ id: feed.id, label: feed.label, color: feed.color, ok: false });
       }
     })
   );
-  return present(maskWorkEvents(dedupeWorkMirrors(events)), now, status, startDate);
+  const hit = presentedViews.get(key);
+  if (hit && !failed && hit.raws.length === rawsList.length && hit.raws.every((raws, index) => raws === rawsList[index])) {
+    refreshUpcoming(hit.value as { days?: { events: CardEvent[] }[]; upcoming?: (CardEvent & { started?: boolean }) | null; generatedAt?: string }, now);
+    return hit.value as ReturnType<typeof present>;
+  }
+  const window = startDate ? windowFrom(startDate, 7) : phoenixWindow(now, 8);
+  const events: AgendaEvent[] = [];
+  feeds.forEach((feed, index) => {
+    if (!status[index]?.ok) return;
+    const meta: FeedMeta = { id: feed.id, label: feed.label, color: feed.color };
+    events.push(...projectFeed(rawsList[index] as Parameters<typeof projectFeed>[0], meta, window.start, window.end));
+  });
+  const value = present(maskWorkEvents(dedupeWorkMirrors(events)), now, status, startDate);
+  if (!failed) {
+    presentedViews.set(key, { raws: rawsList, value });
+    if (presentedViews.size > 8) {
+      const oldest = presentedViews.keys().next().value;
+      if (oldest) presentedViews.delete(oldest);
+    }
+  }
+  return value;
 }
 
 function present(events: AgendaEvent[], now: number, feeds: { id: string; label: string; color: string; ok: boolean }[], startDate: string | null = null) {
@@ -997,9 +1099,8 @@ function present(events: AgendaEvent[], now: number, feeds: { id: string; label:
   const today = phoenixDate(now);
   const days = window.dates.map((date, index) => {
     const [y, m, d] = date.split('-').map(Number);
-    const noon = zonedToUtc(y, m, d, 12, 0, 0, PHOENIX);
-    const weekday = new Intl.DateTimeFormat('en-US', { timeZone: PHOENIX, weekday: 'long' }).format(new Date(noon));
-    const short = new Intl.DateTimeFormat('en-US', { timeZone: PHOENIX, weekday: 'short' }).format(new Date(noon));
+    const dayName = WEEKDAY[weekday(y, m, d)] || 'Day';
+    const short = WEEKDAY_SHORT[weekday(y, m, d)] || 'Day';
     const dayStart = zonedToUtc(y, m, d, 0, 0, 0, PHOENIX);
     const next = addDays(y, m, d, 1);
     const dayEnd = zonedToUtc(next.y, next.m, next.d, 0, 0, 0, PHOENIX);
@@ -1016,7 +1117,7 @@ function present(events: AgendaEvent[], now: number, feeds: { id: string; label:
     return {
       date,
       label: !startDate && date === today ? 'Today' : !startDate && index === 1 ? 'Tomorrow' : short,
-      weekday,
+      weekday: dayName,
       day: d,
       events: items.map(serializeEvent)
     };
@@ -1033,6 +1134,27 @@ function present(events: AgendaEvent[], now: number, feeds: { id: string; label:
     upcoming: upcoming ? { ...serializeEvent(upcoming), started: upcoming.start <= now } : null,
     feeds
   };
+}
+
+function refreshUpcoming(
+  payload: { days?: { events: CardEvent[] }[]; upcoming?: (CardEvent & { started?: boolean }) | null; generatedAt?: string },
+  now: number
+) {
+  let best: CardEvent | null = null;
+  let bestStart = Number.POSITIVE_INFINITY;
+  for (const day of payload.days || []) {
+    for (const event of day.events) {
+      if (event.allDay) continue;
+      const start = Date.parse(event.start);
+      const end = Date.parse(event.end);
+      if (end > now && start < bestStart) {
+        best = event;
+        bestStart = start;
+      }
+    }
+  }
+  payload.upcoming = best ? { ...best, started: bestStart <= now } : null;
+  payload.generatedAt = new Date(now).toISOString();
 }
 
 function eventLinks(event: AgendaEvent): string[] {
@@ -1080,19 +1202,25 @@ async function loadWeather(lat: number, lon: number): Promise<WeatherPayload> {
   return shapeWeather(forecast, air, Date.now());
 }
 
-async function fetchIcs(raw: string): Promise<string> {
+async function fetchIcs(raw: string, etag = ''): Promise<{ text: string; etag: string; notModified: boolean }> {
   let current = raw;
   for (let hop = 0; hop < 4; hop++) {
     assertPublicHttps(current);
     let response: Response;
+    const headers: Record<string, string> = { Accept: 'text/calendar, text/plain, */*', 'User-Agent': 'Glance/1.0' };
+    if (hop === 0 && etag) headers['If-None-Match'] = etag;
     try {
       response = await fetch(current, {
         redirect: 'manual',
-        headers: { Accept: 'text/calendar, text/plain, */*', 'User-Agent': 'Glance/1.0' },
+        headers,
         signal: AbortSignal.timeout(12000)
       });
     } catch {
       throw new Error('fetch failed');
+    }
+    if (response.status === 304) {
+      await response.body?.cancel().catch(() => undefined);
+      return { text: '', etag, notModified: true };
     }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -1100,10 +1228,13 @@ async function fetchIcs(raw: string): Promise<string> {
       current = new URL(location, current).toString();
       continue;
     }
-    if (!response.ok) throw new Error('status');
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('status');
+    }
     const text = await response.text();
     if (!text || text.length > 8_000_000) throw new Error('size');
-    return text;
+    return { text, etag: response.headers.get('etag') || '', notModified: false };
   }
   throw new Error('redirect');
 }
