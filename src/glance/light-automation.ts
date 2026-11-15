@@ -1,5 +1,5 @@
 import { plugAlias } from './plug-names';
-import { phoenixSunsetMinutes } from './sunset';
+import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
 import { partsInZone, PHOENIX } from './time';
 
 export type AutoLight = {
@@ -26,6 +26,7 @@ export type LightPlan = {
 const WINDOW_MINUTES = 15;
 const EVENING_MINUTES = 21 * 60;
 const MORNING_MINUTES = 6 * 60;
+export const PATIO_SUNSET_OFFSET_MIN = -30;
 
 function dateKey(parts: { y: number; m: number; d: number }): string {
   return parts.y + '-' + String(parts.m).padStart(2, '0') + '-' + String(parts.d).padStart(2, '0');
@@ -62,7 +63,10 @@ export function planLightAutomations(input: {
   const date = dateKey(parts);
   const minutes = parts.h * 60 + parts.mi;
   const sunsetMinutes = phoenixSunsetMinutes(parts.y, parts.m, parts.d, input.lat, input.lon);
-  const runPatio = minutes >= sunsetMinutes && input.lastPatioDate !== date;
+  // Open through midnight, once per date. A */5 tick can land a few minutes
+  // late, and a deploy after this time still catches the same evening.
+  const patioMinutes = sunsetMinutes + PATIO_SUNSET_OFFSET_MIN;
+  const runPatio = minutes >= patioMinutes && input.lastPatioDate !== date;
   const runEvening = inWindow(minutes, EVENING_MINUTES) && input.lastEveningDate !== date;
   const runMorning = inWindow(minutes, MORNING_MINUTES) && input.lastMorningDate !== date;
   const ready = (light: AutoLight) => light.online && !!light.code;
@@ -97,6 +101,8 @@ function formatMinutes(minutes: number): string {
   return hour + ':' + String(minute).padStart(2, '0') + ' ' + ap;
 }
 
-export function scheduleHint(sunsetLabel: string): string {
-  return 'Patio on at sunset ' + sunsetLabel + ' · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM';
+export function scheduleHint(sunsetMinutes: number): string {
+  const early = -PATIO_SUNSET_OFFSET_MIN;
+  const when = formatPhoenixClock(sunsetMinutes + PATIO_SUNSET_OFFSET_MIN);
+  return 'Patio on ' + early + ' min before sunset ' + when + ' · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM';
 }
