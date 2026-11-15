@@ -28,12 +28,12 @@ import { partsInZone, phoenixDate, zonedToUtc } from '../src/glance/time';
 import { familyPhrase, haversineMeters, matchPlace } from '../src/glance/location';
 import { canonicalPath, sha256Hex, signPayload, tuyaSign } from '../src/glance/tuya';
 import { eventRange, googleAuthUrl, googleEventBody, googleFailureReason, openSecret, redirectUri, sealSecret } from '../src/glance/google';
-import { planLightAutomations, scheduleHint } from '../src/glance/light-automation';
+import { PATIO_SUNSET_OFFSET_MIN, planLightAutomations, scheduleHint } from '../src/glance/light-automation';
 import { runScheduledLights } from '../src/glance/light-cron';
 import { plugAlias, plugSortKey } from '../src/glance/plug-names';
 import { ensureSchema } from '../src/schema';
 import { createGlancePhoto, readGlancePhoto, removeGlancePhoto, resetPhotoStore } from '../src/glance/photos';
-import { phoenixSunsetMinutes } from '../src/glance/sunset';
+import { formatPhoenixClock, phoenixSunsetMinutes } from '../src/glance/sunset';
 import { shapeWeather } from '../src/glance/weather';
 
 const origin = 'https://maxteeple.test';
@@ -1271,9 +1271,10 @@ describe('plug display names', () => {
       }
       const response = await withSession('/glance/api/lights', session);
       expect(response.status).toBe(200);
-      const body = await response.json() as { ok: boolean; lights: { name: string }[]; message?: string };
+      const body = await response.json() as { ok: boolean; lights: { name: string }[]; schedule?: string; message?: string };
       expect(body.ok).toBe(true);
       expect(body.lights.map((light) => light.name)).toEqual(['Patio Lights', 'Living Room Rear', 'Living Room Left']);
+      expect(body.schedule).toMatch(/^Patio on 30 min before sunset \d{1,2}:\d{2} [AP]M · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM$/);
       expect(JSON.stringify(body)).not.toContain(accessId);
       expect(JSON.stringify(body)).not.toContain(accessSecret);
     } finally {
@@ -1316,46 +1317,77 @@ describe('light schedules', () => {
     expect(minutes).toBeLessThan(19 * 60);
     expect(phoenixSunsetMinutes(2026, 6, 21, lat, lon)).toBeGreaterThan(19 * 60);
     expect(phoenixSunsetMinutes(2026, 12, 21, lat, lon)).toBeLessThan(18 * 60);
-    expect(scheduleHint('5:54 PM')).toBe('Patio on at sunset 5:54 PM · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM');
+    expect(PATIO_SUNSET_OFFSET_MIN).toBe(-30);
+    expect(scheduleHint(17 * 60 + 54)).toBe('Patio on 30 min before sunset 5:24 PM · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM');
+    expect(scheduleHint(minutes)).toBe(
+      'Patio on 30 min before sunset ' + formatPhoenixClock(minutes + PATIO_SUNSET_OFFSET_MIN) + ' · All off 9 PM ·\u00a0LR\u00a0on\u00a06\u00a0AM'
+    );
   });
 
-  it('turns the patio on once after sunset and does not call plugs before sunset', () => {
-    const before = planLightAutomations({
-      nowMs: phoenix(2026, 10, 16, 16, 0),
+  it('turns the patio on once from 30 minutes before sunset', () => {
+    const sunset = phoenixSunsetMinutes(2026, 10, 16, lat, lon);
+    const trigger = sunset + PATIO_SUNSET_OFFSET_MIN;
+    const at = (total: number) => phoenix(2026, 10, 16, Math.floor(total / 60), total % 60);
+    const base = {
       lat,
       lon,
       lights,
-      lastPatioDate: null,
-      lastEveningDate: '2026-10-16',
-      lastMorningDate: '2026-10-16'
+      lastEveningDate: '2026-10-16' as string | null,
+      lastMorningDate: '2026-10-16' as string | null
+    };
+    const before = planLightAutomations({
+      ...base,
+      nowMs: at(trigger - 5),
+      lastPatioDate: null
     });
     expect(before.runPatio).toBe(false);
     expect(before.patioOn).toEqual([]);
-    const after = planLightAutomations({
-      nowMs: phoenix(2026, 10, 16, 18, 10),
-      lat,
-      lon,
-      lights,
-      lastPatioDate: null,
-      lastEveningDate: '2026-10-16',
-      lastMorningDate: '2026-10-16'
+    expect(before.minutes).toBeLessThan(trigger);
+    const due = planLightAutomations({
+      ...base,
+      nowMs: at(trigger),
+      lastPatioDate: null
     });
-    expect(after.runPatio).toBe(true);
-    expect(after.patioOn).toEqual(['patioplug1']);
-    expect(after.eveningOff).toEqual([]);
+    expect(due.runPatio).toBe(true);
+    expect(due.minutes).toBe(trigger);
+    expect(due.minutes).toBeLessThan(sunset);
+    expect(due.patioOn).toEqual(['patioplug1']);
+    expect(due.eveningOff).toEqual([]);
+    expect(due.morningOn).toEqual([]);
+    // A */5 tick can land up to 4 minutes after the trigger and still catch it.
+    const lateTick = planLightAutomations({
+      ...base,
+      nowMs: at(trigger + 4),
+      lastPatioDate: null
+    });
+    expect(lateTick.runPatio).toBe(true);
+    expect(lateTick.patioOn).toEqual(['patioplug1']);
+    expect(lateTick.minutes).toBeLessThan(sunset);
     const again = planLightAutomations({
-      nowMs: phoenix(2026, 10, 16, 18, 15),
-      lat,
-      lon,
-      lights,
-      lastPatioDate: after.date,
-      lastEveningDate: '2026-10-16',
-      lastMorningDate: '2026-10-16'
+      ...base,
+      nowMs: at(trigger + 5),
+      lastPatioDate: due.date
     });
     expect(again.runPatio).toBe(false);
     expect(again.patioOn).toEqual([]);
+    // Deploying after the new time still runs once that evening, before 9 PM.
+    const deployedLate = planLightAutomations({
+      ...base,
+      nowMs: phoenix(2026, 10, 16, 20, 40),
+      lastPatioDate: null
+    });
+    expect(deployedLate.runPatio).toBe(true);
+    expect(deployedLate.runEvening).toBe(false);
+    expect(deployedLate.patioOn).toEqual(['patioplug1']);
+    const deployedLateAgain = planLightAutomations({
+      ...base,
+      nowMs: phoenix(2026, 10, 16, 20, 45),
+      lastPatioDate: deployedLate.date
+    });
+    expect(deployedLateAgain.runPatio).toBe(false);
+    expect(deployedLateAgain.patioOn).toEqual([]);
     const calls: string[] = [];
-    for (const id of after.patioOn) calls.push('on:' + id);
+    for (const id of due.patioOn) calls.push('on:' + id);
     expect(calls).toEqual(['on:patioplug1']);
   });
 
@@ -1489,6 +1521,43 @@ describe('light schedules', () => {
       }
     });
     expect(calls).toEqual(['list', 'on:leftplug03']);
+  });
+
+  it('commands the patio once at sunset minus 30, including a late deploy, and only through the mock', async () => {
+    const session = await signIn();
+    await withSession('/glance/api/settings', session, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tuyaAccessId: 'abc123xyz987', tuyaAccessSecret: 'abcdef0123456789abcd' })
+    });
+    const devices = [
+      { id: 'patioplug1', name: 'Smart Plug 3', online: true, on: false, code: 'switch_1' },
+      { id: 'rearplug02', name: 'Smart Plug 2', online: true, on: false, code: 'switch_1' },
+      { id: 'leftplug03', name: 'Smart Plug', online: true, on: false, code: 'switch_1' }
+    ];
+    const calls: string[] = [];
+    const io = {
+      async listLights() {
+        calls.push('list');
+        return devices;
+      },
+      async setLight(_creds: unknown, _db: unknown, id: string, on: boolean) {
+        calls.push((on ? 'on:' : 'off:') + id);
+      }
+    };
+    const sunset = phoenixSunsetMinutes(2026, 11, 4, lat, lon);
+    const trigger = sunset + PATIO_SUNSET_OFFSET_MIN;
+    const at = (total: number) => phoenix(2026, 11, 4, Math.floor(total / 60), total % 60);
+    await runScheduledLights(env as Bindings, at(trigger + 4), io);
+    expect(calls).toEqual(['list', 'on:patioplug1']);
+    calls.length = 0;
+    await runScheduledLights(env as Bindings, at(trigger + 9), io);
+    expect(calls).toEqual([]);
+    await runScheduledLights(env as Bindings, phoenix(2026, 11, 5, 20, 40), io);
+    expect(calls).toEqual(['list', 'on:patioplug1']);
+    calls.length = 0;
+    await runScheduledLights(env as Bindings, phoenix(2026, 11, 5, 20, 45), io);
+    expect(calls).toEqual([]);
   });
 });
 

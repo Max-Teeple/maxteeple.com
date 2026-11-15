@@ -47,7 +47,7 @@ import {
 import { clearTuyaToken, friendlyTuyaMessage, listLights, setLight, TuyaError } from './tuya';
 import { plugAlias, plugSortKey } from './plug-names';
 import { scheduleHint } from './light-automation';
-import { formatPhoenixClock, phoenixSunsetMinutes } from './sunset';
+import { phoenixSunsetMinutes } from './sunset';
 import { airUrl, forecastUrl, shapeWeather, type WeatherPayload } from './weather';
 import { GLANCE_BUILD } from './build-id';
 import { createGlancePhoto, listGlancePhotos, photoCacheRequest, readGlancePhoto, removeGlancePhoto, replaceGlancePhoto } from './photos';
@@ -971,7 +971,7 @@ async function lightsPayload(env: Bindings) {
     });
     const parts = partsInZone(Date.now(), PHOENIX);
     const sunset = phoenixSunsetMinutes(parts.y, parts.m, parts.d, settings.lat, settings.lon);
-    return { ok: true as const, configured: true, lights, schedule: scheduleHint(formatPhoenixClock(sunset)) };
+    return { ok: true as const, configured: true, lights, schedule: scheduleHint(sunset) };
   } catch (error) {
     console.error('[glance] lights', error instanceof TuyaError ? error.code : 0);
     return { ok: false as const, configured: true, lights: [], message: friendlyTuyaMessage(error) };
